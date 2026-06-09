@@ -67,6 +67,6 @@ func (t ToolResultBlock) BlockType() string {
 
 // Message rappresenta un messaggio generico.
 type Message struct {
-	Role    string // "user", "assistant", "system", "tool"
+	Role    Role // "user", "assistant", "system", "tool"
 	Content []ContentBlock
 }

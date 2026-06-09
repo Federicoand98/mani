@@ -8,5 +8,5 @@ import (
 )
 
 type LLMClient interface {
-	Send(ctx context.Context, messages []core.Message, tools []tool.Tool) (string, error)
+	Send(ctx context.Context, messages []core.Message, tools []tool.Tool) (Response, error)
 }
