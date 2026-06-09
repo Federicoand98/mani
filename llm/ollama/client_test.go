@@ -8,22 +8,7 @@ import (
 	"testing"
 
 	"github.com/Federicoand98/mani/core"
-	"github.com/Federicoand98/mani/llm"
-	"github.com/Federicoand98/mani/tool"
 )
-
-// mockTool implementa tool.Tool per i test — nessun comportamento reale.
-type mockTool struct {
-	name   string
-	schema tool.ToolSchema
-}
-
-func (m mockTool) Name() string                                                { return m.name }
-func (m mockTool) Description() string                                         { return "mock" }
-func (m mockTool) Schema() tool.ToolSchema                                     { return m.schema }
-func (m mockTool) Execute(_ context.Context, _ map[string]interface{}) (string, error) {
-	return "", nil
-}
 
 // --- mapMessagesToOllama ---
 
@@ -144,19 +129,16 @@ func TestMapMessagesToOllama_MultipleTextBlocksConcatenated(t *testing.T) {
 // --- mapToolsToOllama ---
 
 func TestMapToolsToOllama_SingleTool(t *testing.T) {
-	tools := []tool.Tool{
-		mockTool{
-			name: "read_file",
-			schema: tool.ToolSchema{
-				Name:        "read_file",
-				Description: "Legge un file",
-				InputSchema: tool.InputSchema{
-					Type: "object",
-					Properties: map[string]tool.PropertySchema{
-						"path": {Type: "string", Description: "Percorso del file"},
-					},
-					Required: []string{"path"},
+	tools := []core.ToolDefinition{
+		{
+			Name:        "read_file",
+			Description: "Legge un file",
+			InputSchema: core.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]core.ToolProperty{
+					"path": {Type: "string", Description: "Percorso del file"},
 				},
+				Required: []string{"path"},
 			},
 		},
 	}
@@ -215,8 +197,8 @@ func TestMapOllamaResponseToLLM_TextOnly(t *testing.T) {
 	if tb.Text != "risposta" {
 		t.Errorf("text atteso 'risposta', ottenuto %q", tb.Text)
 	}
-	if got.StopReason != llm.StopReasonEndTurn {
-		t.Errorf("stop reason attesa %q, ottenuta %q", llm.StopReasonEndTurn, got.StopReason)
+	if got.StopReason != core.StopReasonEndTurn {
+		t.Errorf("stop reason attesa %q, ottenuta %q", core.StopReasonEndTurn, got.StopReason)
 	}
 	if got.Usage.InputTokens != 10 || got.Usage.OutputTokens != 20 {
 		t.Errorf("usage atteso {10,20}, ottenuto {%d,%d}", got.Usage.InputTokens, got.Usage.OutputTokens)
@@ -251,8 +233,8 @@ func TestMapOllamaResponseToLLM_ToolUse(t *testing.T) {
 	if tub.Input["path"] != "main.go" {
 		t.Errorf("input path atteso 'main.go', ottenuto %v", tub.Input["path"])
 	}
-	if got.StopReason != llm.StopReasonToolUse {
-		t.Errorf("stop reason attesa %q, ottenuta %q", llm.StopReasonToolUse, got.StopReason)
+	if got.StopReason != core.StopReasonToolUse {
+		t.Errorf("stop reason attesa %q, ottenuta %q", core.StopReasonToolUse, got.StopReason)
 	}
 }
 
@@ -278,8 +260,8 @@ func TestMapOllamaResponseToLLM_Mixed(t *testing.T) {
 	if _, ok := got.Content[1].(core.ToolUseBlock); !ok {
 		t.Errorf("secondo block atteso ToolUseBlock, ottenuto %T", got.Content[1])
 	}
-	if got.StopReason != llm.StopReasonToolUse {
-		t.Errorf("stop reason attesa %q con tool calls, ottenuta %q", llm.StopReasonToolUse, got.StopReason)
+	if got.StopReason != core.StopReasonToolUse {
+		t.Errorf("stop reason attesa %q con tool calls, ottenuta %q", core.StopReasonToolUse, got.StopReason)
 	}
 }
 

@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/core"
-	"github.com/Federicoand98/mani/llm"
-	"github.com/Federicoand98/mani/tool"
 )
 
 type OllamaClient struct {
@@ -28,7 +26,7 @@ func NewOllamaClient(baseURL, model string) *OllamaClient {
 	}
 }
 
-func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools []tool.Tool) (llm.Response, error) {
+func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools []core.ToolDefinition) (core.LLMResponse, error) {
 	// 1. cstruire richiesta ollamaRequest mappando messages e tools
 	ollamaReq := ollamaRequest{
 		Model:    c.Model,
@@ -40,42 +38,42 @@ func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools 
 	// 2. serializzare json
 	ollamaReqBytes, err := json.Marshal(ollamaReq)
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/api/chat", bytes.NewReader(ollamaReqBytes))
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 	defer resp.Body.Close()
 
 	// 4. leggere body
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return llm.Response{}, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(respBytes))
+		return core.LLMResponse{}, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(respBytes))
 	}
 
 	// 5. deserializza
 	var ollamaResp ollamaResponse
 	if err := json.Unmarshal(respBytes, &ollamaResp); err != nil {
-		return llm.Response{}, fmt.Errorf("ollama: unmarshal risposta: %w", err)
+		return core.LLMResponse{}, fmt.Errorf("ollama: unmarshal risposta: %w", err)
 	}
 
 	// 6. mappa su llm.Response
 	return mapOllamaResponseToLLM(ollamaResp), nil
 }
 
-func mapOllamaResponseToLLM(resp ollamaResponse) llm.Response {
+func mapOllamaResponseToLLM(resp ollamaResponse) core.LLMResponse {
 	var blocks []core.ContentBlock
 
 	if resp.Message.Content != "" {
@@ -90,43 +88,43 @@ func mapOllamaResponseToLLM(resp ollamaResponse) llm.Response {
 		})
 	}
 
-	stopReason := llm.StopReasonEndTurn
+	stopReason := core.StopReasonEndTurn
 	if len(resp.Message.ToolCalls) > 0 {
-		stopReason = llm.StopReasonToolUse
+		stopReason = core.StopReasonToolUse
 	}
 
-	return llm.Response{
+	return core.LLMResponse{
 		Content:    blocks,
 		StopReason: stopReason,
-		Usage: llm.TokenUsage{
+		Usage: core.TokenUsage{
 			InputTokens:  resp.PromptEvalCount,
 			OutputTokens: resp.EvalCount,
 		},
 	}
 }
 
-func mapToolsToOllama(tools []tool.Tool) []ollamaTool {
+func mapToolsToOllama(tools []core.ToolDefinition) []ollamaTool {
+	if len(tools) == 0 {
+		return nil
+	}
 	result := make([]ollamaTool, len(tools))
 	for i, t := range tools {
-		schema := t.Schema()
-
-		props := make(map[string]ollamaProperty, len(schema.InputSchema.Properties))
-		for name, p := range schema.InputSchema.Properties {
+		props := make(map[string]ollamaProperty, len(t.InputSchema.Properties))
+		for name, p := range t.InputSchema.Properties {
 			props[name] = ollamaProperty{
 				Type:        p.Type,
 				Description: p.Description,
 			}
 		}
-
 		result[i] = ollamaTool{
 			Type: "function",
 			Function: ollamaToolFunction{
-				Name:        schema.Name,
-				Description: schema.Description,
+				Name:        t.Name,
+				Description: t.Description,
 				Parameters: ollamaParameters{
-					Type:       schema.InputSchema.Type,
+					Type:       t.InputSchema.Type,
 					Properties: props,
-					Required:   schema.InputSchema.Required,
+					Required:   t.InputSchema.Required,
 				},
 			},
 		}
