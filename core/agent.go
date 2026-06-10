@@ -26,7 +26,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 	memory.Add(Message{Role: RoleUser, Content: []ContentBlock{TextBlock{Text: userInput}}})
 
 	for range maxIterations {
-		resp, err := a.Client.Send(ctx, memory.Messages(), nil, a.streamHandler)
+		resp, err := a.Client.Send(ctx, memory.Messages(), a.tools, a.streamHandler)
 		if err != nil {
 			return fmt.Errorf("agent: %w", err)
 		}

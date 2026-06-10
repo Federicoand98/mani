@@ -78,7 +78,7 @@ func TestMapMessagesToOllama_AssistantWithToolUse(t *testing.T) {
 func TestMapMessagesToOllama_ToolResult(t *testing.T) {
 	messages := []core.Message{
 		{
-			Role: core.RoleUser,
+			Role: core.RoleTool,
 			Content: []core.ContentBlock{
 				core.ToolResultBlock{ToolUseID: "call_0", Content: "package main", IsError: false},
 			},
@@ -97,7 +97,7 @@ func TestMapMessagesToOllama_ToolResult(t *testing.T) {
 func TestMapMessagesToOllama_ToolResultError(t *testing.T) {
 	messages := []core.Message{
 		{
-			Role: core.RoleUser,
+			Role: core.RoleTool,
 			Content: []core.ContentBlock{
 				core.ToolResultBlock{ToolUseID: "call_0", Content: "file not found", IsError: true},
 			},
