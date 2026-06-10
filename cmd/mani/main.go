@@ -12,6 +12,8 @@ import (
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/ollama"
+	"github.com/Federicoand98/mani/tool"
+	fstools "github.com/Federicoand98/mani/tool/fs"
 )
 
 const (
@@ -26,11 +28,16 @@ var mu sync.Mutex
 func main() {
 	cfg := config.FromEnv()
 	ctx := context.Background()
+
 	thinkingEnabled := true
+	workspaceDir, _ := os.Getwd()
+
+	readFileTool := fstools.NewReadFileTool(workspaceDir)
 
 	client := ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.OllamaModel)
-	agent := core.NewAgent(client)
 	memory := core.NewInMemory()
+	agent := core.NewAgent(client)
+	agent.AddTool(tool.ToDefinition(readFileTool), readFileTool)
 
 	fmt.Printf("mani agent - %s\nCtrl+C to exit\n\n", cfg.OllamaModel)
 

@@ -216,7 +216,6 @@ func mapMessagesToOllama(messages []core.Message) []ollamaMessage {
 				})
 
 			case core.ToolResultBlock:
-				om.Role = "tool"
 				if b.IsError {
 					om.Content = "[ERROR] " + b.Content
 				} else {

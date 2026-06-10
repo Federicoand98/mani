@@ -27,6 +27,7 @@ const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	RoleSystem    Role = "system"
+	RoleTool      Role = "tool"
 )
 
 // ContentBlock rappresenta un blocco di contenuto generico.

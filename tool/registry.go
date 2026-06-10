@@ -11,15 +11,18 @@ func NewToolRegistry() *ToolRegistry {
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
-	// TODO
+	r.tools[tool.Name()] = tool
 }
 
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
-	// TODO
-	return nil, false
+	tool, ok := r.tools[name]
+	return tool, ok
 }
 
 func (r *ToolRegistry) List() []Tool {
-	// TODO
-	return nil
+	tools := make([]Tool, 0, len(r.tools))
+	for _, tool := range r.tools {
+		tools = append(tools, tool)
+	}
+	return tools
 }
