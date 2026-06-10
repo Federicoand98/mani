@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Federicoand98/mani/config"
@@ -17,6 +18,10 @@ const (
 	colorReset   = "\033[0m"
 	colorDimGrey = "\033[2m\033[90m"
 )
+
+// mu serializza tutte le scritture su stdout tra il goroutine dello spinner
+// e il goroutine principale che chiama il token handler.
+var mu sync.Mutex
 
 func main() {
 	cfg := config.FromEnv()
@@ -54,7 +59,6 @@ func main() {
 			continue
 		}
 
-		// spinner
 		spinCtx, stopSpinner := context.WithCancel(ctx)
 		go runSpinner(spinCtx)
 
@@ -62,43 +66,77 @@ func main() {
 
 		err := agent.Run(ctx, memory, input)
 		stopSpinner()
+
+		// cancella la riga dello spinner in ogni caso (errore, nessun token ricevuto, ecc.)
+		mu.Lock()
+		fmt.Print("\r\033[2K")
+		mu.Unlock()
+
 		fmt.Println()
 
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
 		}
-
-		// messages := memory.Messages()
-		// lastMsg := messages[len(messages)-1]
-		// fmt.Printf("\n%s\n\n", core.TextFrom(lastMsg.Content))
 		fmt.Println()
 	}
 }
 
 func runSpinner(ctx context.Context) {
-	frames := []string{"⣾ thinking", "⣷ thinking", "⣯ thinking", "⣟ thinking", "⣻ thinking", "⣽ thinking"}
-	i := 0
+	frames := []string{
+		"⠋ thinking",
+		"⠙ thinking",
+		"⠹ thinking",
+		"⠸ thinking",
+		"⠼ thinking",
+		"⠴ thinking",
+		"⠦ thinking",
+		"⠧ thinking",
+	}
 
+	// primo frame subito, senza aspettare il tick
+	mu.Lock()
+	fmt.Print("\r" + frames[0])
+	mu.Unlock()
+
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+
+	i := 1
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Print("\r\033[2k")
+			// il chiamante (handler o main loop) pulisce la riga: qui non stampiamo nulla
 			return
-		case <-time.After(300 * time.Millisecond):
-			fmt.Printf("\r%s", frames[i%len(frames)])
+		case <-ticker.C:
+			mu.Lock()
+			// controlla di nuovo dentro il lock: il contesto potrebbe essere stato
+			// cancellato mentre aspettavamo di acquisire il mutex
+			select {
+			case <-ctx.Done():
+				mu.Unlock()
+				return
+			default:
+				fmt.Printf("\r%s", frames[i%len(frames)])
+				mu.Unlock()
+			}
 			i++
 		}
 	}
 }
 
 func makeStreamHandler(thinkingEnabled *bool, stopSpinner context.CancelFunc) core.TokenHandler {
-	firstToken := true
+	cleared := false
 
 	return func(token string, isThinking bool) {
-		if firstToken {
+		mu.Lock()
+		defer mu.Unlock()
+
+		// al primo token: pulisci la riga dello spinner e fermalo
+		if !cleared {
+			fmt.Print("\r\033[2K")
 			stopSpinner()
-			firstToken = false
+			cleared = true
 		}
 
 		if isThinking {
