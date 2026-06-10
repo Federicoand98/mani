@@ -3,8 +3,10 @@ package ollama
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Federicoand98/mani/core"
@@ -305,7 +307,7 @@ func TestSend_TextResponse(t *testing.T) {
 		{Role: core.RoleUser, Content: []core.ContentBlock{core.TextBlock{Text: "ciao"}}},
 	}
 
-	got, err := client.Send(context.Background(), messages, nil)
+	got, err := client.Send(context.Background(), messages, nil, nil)
 	if err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
@@ -331,7 +333,7 @@ func TestSend_VerificaRequestBody(t *testing.T) {
 	defer server.Close()
 
 	client := NewOllamaClient(server.URL, "qwen2.5-coder")
-	client.Send(context.Background(), nil, nil)
+	client.Send(context.Background(), nil, nil, nil)
 
 	if receivedReq.Model != "qwen2.5-coder" {
 		t.Errorf("model atteso 'qwen2.5-coder', ottenuto %q", receivedReq.Model)
@@ -348,7 +350,7 @@ func TestSend_HTTP500(t *testing.T) {
 	defer server.Close()
 
 	client := NewOllamaClient(server.URL, "test-model")
-	_, err := client.Send(context.Background(), nil, nil)
+	_, err := client.Send(context.Background(), nil, nil, nil)
 	if err == nil {
 		t.Fatal("atteso errore per HTTP 500, ottenuto nil")
 	}
@@ -364,8 +366,241 @@ func TestSend_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancella subito
 
-	_, err := client.Send(ctx, nil, nil)
+	_, err := client.Send(ctx, nil, nil, nil)
 	if err == nil {
 		t.Fatal("atteso errore per context cancellato, ottenuto nil")
+	}
+}
+
+// --- Send streaming ---
+
+// helper: costruisce un server httptest che risponde con NDJSON.
+func ndjsonServer(t *testing.T, chunks []string) *httptest.Server {
+	t.Helper()
+	body := strings.Join(chunks, "\n")
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprint(w, body)
+	}))
+}
+
+func TestSend_Streaming_SetsStreamTrue(t *testing.T) {
+	var receivedReq ollamaRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedReq)
+		fmt.Fprint(w, `{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`)
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+	client.Send(context.Background(), nil, nil, func(string, bool) {})
+
+	if !receivedReq.Stream {
+		t.Error("stream dovrebbe essere true quando tokenHandler != nil")
+	}
+}
+
+func TestSend_Streaming_AccumulatesTokens(t *testing.T) {
+	chunks := []string{
+		`{"message":{"role":"assistant","content":"ciao"},"done":false}`,
+		`{"message":{"role":"assistant","content":" mondo"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":3,"eval_count":2}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+
+	var received []string
+	handler := func(token string, isThinking bool) {
+		received = append(received, token)
+	}
+
+	got, err := client.Send(context.Background(), nil, nil, handler)
+	if err != nil {
+		t.Fatalf("errore inatteso: %v", err)
+	}
+
+	// token ricevuti nell'ordine corretto
+	if len(received) != 2 {
+		t.Fatalf("attesi 2 token, ottenuti %d: %v", len(received), received)
+	}
+	if received[0] != "ciao" || received[1] != " mondo" {
+		t.Errorf("token attesi ['ciao', ' mondo'], ottenuti %v", received)
+	}
+
+	// contenuto accumulato correttamente nella risposta
+	tb, ok := got.Content[0].(core.TextBlock)
+	if !ok {
+		t.Fatalf("atteso TextBlock, ottenuto %T", got.Content[0])
+	}
+	if tb.Text != "ciao mondo" {
+		t.Errorf("contenuto accumulato atteso 'ciao mondo', ottenuto %q", tb.Text)
+	}
+}
+
+func TestSend_Streaming_HandlerCalledInOrder(t *testing.T) {
+	words := []string{"uno", " due", " tre", " quattro"}
+	var chunks []string
+	for _, w := range words {
+		chunks = append(chunks, fmt.Sprintf(`{"message":{"role":"assistant","content":%q},"done":false}`, w))
+	}
+	chunks = append(chunks, `{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`)
+
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+
+	var received []string
+	client.Send(context.Background(), nil, nil, func(token string, _ bool) {
+		received = append(received, token)
+	})
+
+	for i, w := range words {
+		if i >= len(received) || received[i] != w {
+			t.Errorf("token[%d]: atteso %q, ottenuto %q", i, w, received[i])
+		}
+	}
+}
+
+func TestSend_Streaming_ThinkingTokens_IsThinkingTrue(t *testing.T) {
+	chunks := []string{
+		`{"message":{"role":"assistant","content":"","thinking":"sto ragionando"},"done":false}`,
+		`{"message":{"role":"assistant","content":"risposta"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+
+	type call struct {
+		token      string
+		isThinking bool
+	}
+	var calls []call
+	client.Send(context.Background(), nil, nil, func(token string, isThinking bool) {
+		calls = append(calls, call{token, isThinking})
+	})
+
+	if len(calls) != 2 {
+		t.Fatalf("attese 2 chiamate al handler, ottenute %d", len(calls))
+	}
+	if calls[0].token != "sto ragionando" || !calls[0].isThinking {
+		t.Errorf("prima call: atteso thinking='sto ragionando' isThinking=true, ottenuto %+v", calls[0])
+	}
+	if calls[1].token != "risposta" || calls[1].isThinking {
+		t.Errorf("seconda call: atteso token='risposta' isThinking=false, ottenuto %+v", calls[1])
+	}
+}
+
+func TestSend_Streaming_EmptyChunks_HandlerNotCalled(t *testing.T) {
+	// chunk con content="" e thinking="" non devono chiamare il handler
+	chunks := []string{
+		`{"message":{"role":"assistant","content":""},"done":false}`,
+		`{"message":{"role":"assistant","content":"testo"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+
+	callCount := 0
+	client.Send(context.Background(), nil, nil, func(string, bool) { callCount++ })
+
+	if callCount != 1 {
+		t.Errorf("attesa 1 chiamata (solo per 'testo'), ottenute %d", callCount)
+	}
+}
+
+func TestSend_Streaming_UsageFromLastChunk(t *testing.T) {
+	chunks := []string{
+		`{"message":{"role":"assistant","content":"ok"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":42,"eval_count":7}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+	got, err := client.Send(context.Background(), nil, nil, func(string, bool) {})
+	if err != nil {
+		t.Fatalf("errore inatteso: %v", err)
+	}
+
+	if got.Usage.InputTokens != 42 {
+		t.Errorf("InputTokens atteso 42, ottenuto %d", got.Usage.InputTokens)
+	}
+	if got.Usage.OutputTokens != 7 {
+		t.Errorf("OutputTokens atteso 7, ottenuto %d", got.Usage.OutputTokens)
+	}
+}
+
+func TestSend_Streaming_StopReason_EndTurn(t *testing.T) {
+	chunks := []string{
+		`{"message":{"role":"assistant","content":"ok"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+	got, err := client.Send(context.Background(), nil, nil, func(string, bool) {})
+	if err != nil {
+		t.Fatalf("errore inatteso: %v", err)
+	}
+	if got.StopReason != core.StopReasonEndTurn {
+		t.Errorf("StopReason atteso end_turn, ottenuto %q", got.StopReason)
+	}
+}
+
+func TestSend_Streaming_ToolCall_StopReasonToolUse(t *testing.T) {
+	chunks := []string{
+		`{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":{"path":"main.go"}}}]},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+	}
+	server := ndjsonServer(t, chunks)
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+	got, err := client.Send(context.Background(), nil, nil, func(string, bool) {})
+	if err != nil {
+		t.Fatalf("errore inatteso: %v", err)
+	}
+
+	if got.StopReason != core.StopReasonToolUse {
+		t.Errorf("StopReason atteso tool_use, ottenuto %q", got.StopReason)
+	}
+
+	// cerca il ToolUseBlock nella risposta
+	var toolBlock *core.ToolUseBlock
+	for _, b := range got.Content {
+		if tub, ok := b.(core.ToolUseBlock); ok {
+			toolBlock = &tub
+			break
+		}
+	}
+	if toolBlock == nil {
+		t.Fatal("ToolUseBlock non trovato nella risposta")
+	}
+	if toolBlock.Name != "read_file" {
+		t.Errorf("tool name atteso 'read_file', ottenuto %q", toolBlock.Name)
+	}
+	if toolBlock.Input["path"] != "main.go" {
+		t.Errorf("tool input path atteso 'main.go', ottenuto %v", toolBlock.Input["path"])
+	}
+}
+
+func TestSend_Streaming_HTTP500_ReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "test-model")
+	_, err := client.Send(context.Background(), nil, nil, func(string, bool) {})
+	if err == nil {
+		t.Fatal("atteso errore per HTTP 500 con streaming, ottenuto nil")
 	}
 }

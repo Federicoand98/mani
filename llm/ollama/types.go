@@ -66,6 +66,7 @@ type ollamaRequest struct {
 type ollamaMessage struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking,omitempty"` // Solo nei messaggi in streaming
 	ToolCalls []ollamaToolCall `json:"tool_calls,omitempty"`
 }
 
@@ -115,4 +116,13 @@ type ollamaResponse struct {
 	// Contatori token — corrispondono a llm.TokenUsage
 	PromptEvalCount int `json:"prompt_eval_count"`
 	EvalCount       int `json:"eval_count"`
+}
+
+type ollamaStreamChunk struct {
+	Model           string        `json:"model"`
+	Message         ollamaMessage `json:"message"`
+	Done            bool          `json:"done"`
+	DoneReason      string        `json:"done_reason"`
+	PromptEvalCount int           `json:"prompt_eval_count"`
+	EvalCount       int           `json:"eval_count"`
 }

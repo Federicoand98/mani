@@ -2,8 +2,10 @@ package core
 
 import "context"
 
+type TokenHandler func(token string, isThinking bool)
+
 type LLMClient interface {
-	Send(ctx context.Context, messages []Message, tools []ToolDefinition) (LLMResponse, error)
+	Send(ctx context.Context, messages []Message, tools []ToolDefinition, tokenHandler TokenHandler) (LLMResponse, error)
 }
 
 type LLMResponse struct {

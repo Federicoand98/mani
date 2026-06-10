@@ -1,12 +1,14 @@
 package ollama
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Federicoand98/mani/core"
@@ -26,13 +28,13 @@ func NewOllamaClient(baseURL, model string) *OllamaClient {
 	}
 }
 
-func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools []core.ToolDefinition) (core.LLMResponse, error) {
+func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools []core.ToolDefinition, tokenHandler core.TokenHandler) (core.LLMResponse, error) {
 	// 1. cstruire richiesta ollamaRequest mappando messages e tools
 	ollamaReq := ollamaRequest{
 		Model:    c.Model,
 		Messages: mapMessagesToOllama(messages),
 		Tools:    mapToolsToOllama(tools),
-		Stream:   false,
+		Stream:   tokenHandler != nil,
 	}
 
 	// 2. serializzare json
@@ -53,25 +55,88 @@ func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools 
 	}
 	defer resp.Body.Close()
 
-	// 4. leggere body
-	respBytes, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return core.LLMResponse{}, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	if tokenHandler != nil {
+		return c.readStream(resp.Body, tokenHandler)
+	}
+	return c.readBlocking(resp.Body)
+}
+
+func (c *OllamaClient) readBlocking(body io.Reader) (core.LLMResponse, error) {
+	respBytes, err := io.ReadAll(body)
 	if err != nil {
 		return core.LLMResponse{}, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return core.LLMResponse{}, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(respBytes))
-	}
-
-	// 5. deserializza
 	var ollamaResp ollamaResponse
 	if err := json.Unmarshal(respBytes, &ollamaResp); err != nil {
 		return core.LLMResponse{}, fmt.Errorf("ollama: unmarshal risposta: %w", err)
 	}
 
-	// 6. mappa su llm.Response
 	return mapOllamaResponseToLLM(ollamaResp), nil
 }
+
+func (c *OllamaClient) readStream(body io.Reader, handler core.TokenHandler) (core.LLMResponse, error) {
+	var (
+		fullContent  strings.Builder
+		allToolCalls []ollamaToolCall
+		lastChunk    ollamaStreamChunk
+	)
+
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var chunk ollamaStreamChunk
+		if err := json.Unmarshal(line, &chunk); err != nil {
+			return core.LLMResponse{}, fmt.Errorf("ollama: unmarshal chunk: %w", err)
+		}
+
+		if chunk.Message.Thinking != "" {
+			handler(chunk.Message.Thinking, true)
+		}
+
+		if chunk.Message.Content != "" {
+			handler(chunk.Message.Content, false)
+			fullContent.WriteString(chunk.Message.Content)
+		}
+
+		allToolCalls = append(allToolCalls, chunk.Message.ToolCalls...)
+
+		if chunk.Done {
+			lastChunk = chunk
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return core.LLMResponse{}, fmt.Errorf("ollama: read stream: %w", err)
+	}
+
+	synthetic := ollamaResponse{
+		Message: ollamaMessage{
+			Role:      "assistant",
+			Content:   fullContent.String(),
+			ToolCalls: allToolCalls,
+		},
+		DoneReason:      lastChunk.DoneReason,
+		PromptEvalCount: lastChunk.PromptEvalCount,
+		EvalCount:       lastChunk.EvalCount,
+	}
+
+	return mapOllamaResponseToLLM(synthetic), nil
+}
+
+// ---------------------------------------------------------
+// -------------------- Utility mapping --------------------
+// ---------------------------------------------------------
 
 func mapOllamaResponseToLLM(resp ollamaResponse) core.LLMResponse {
 	var blocks []core.ContentBlock
