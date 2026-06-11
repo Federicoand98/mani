@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Federicoand98/mani/app"
@@ -19,6 +20,7 @@ const (
 type REPL struct {
 	runtime         *app.Runtime
 	thinkingEnabled bool
+	mu              sync.Mutex
 }
 
 func New(rt *app.Runtime) *REPL {
@@ -38,31 +40,37 @@ func (r *REPL) Run(ctx context.Context) {
 
 		input := strings.TrimSpace(scanner.Text())
 
-		if r.handleCommand(input) {
+		quit, handled := r.handleCommand(input)
+		if quit {
+			return
+		}
+		if handled {
 			continue
 		}
 
+		fmt.Println()
 		events := r.runtime.Execute(ctx, input)
 
 		spinCtx, stopSpinner := context.WithCancel(ctx)
-		go runSpinner(spinCtx)
+		go r.runSpinner(spinCtx)
 
 		r.handleEvents(events, stopSpinner)
 		fmt.Println()
 	}
 }
 
-func (r *REPL) handleCommand(cmd string) bool {
+// returns (quit, handled)
+func (r *REPL) handleCommand(cmd string) (bool, bool) {
 	switch cmd {
 	case "/quit":
 		fmt.Println("Goodbye :(")
-		return true
+		return true, true
 	case "/thinking":
 		r.thinkingEnabled = !r.thinkingEnabled
 		fmt.Println("Thinking mode:", r.thinkingEnabled)
-		return false
+		return false, true
 	default:
-		return false
+		return false, false
 	}
 }
 
@@ -71,41 +79,62 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 	stopOnce := func() {
 		if !spinnerStopped {
 			stopSpinner()
-			fmt.Print("\r\033[2k")
+			r.mu.Lock()
+			fmt.Print("\r\033[2K")
+			r.mu.Unlock()
 			spinnerStopped = true
 		}
 	}
+
+	thinkingShown := false
 
 	for event := range events {
 		switch event.Type {
 		case app.EventToken:
 			stopOnce()
+			r.mu.Lock()
+			if thinkingShown {
+				fmt.Println()
+				thinkingShown = false
+			}
 			p := event.Payload.(app.TokenPayload)
-			fmt.Print(p)
+			fmt.Print(p.Text)
+			r.mu.Unlock()
+
 		case app.EventThinking:
 			if r.thinkingEnabled {
 				stopOnce()
+				r.mu.Lock()
 				p := event.Payload.(app.TokenPayload)
-				fmt.Print("\033[2m\033[90m" + p.Text + "\033[0m")
+				fmt.Print(colorDimGrey + p.Text + colorReset)
+				thinkingShown = true
+				r.mu.Unlock()
 			}
+
 		case app.EventToolCall:
 			stopOnce()
+			r.mu.Lock()
 			p := event.Payload.(app.ToolCallPayload)
-			fmt.Printf("\n[tool call] %s\n", p.Name)
+			fmt.Printf("\n[tool: %s]\n", p.Name)
+			r.mu.Unlock()
+
 		case app.EventToolResult:
-			// per ora silenzioso
+			// silenzioso
+
 		case app.EventError:
 			stopOnce()
+			r.mu.Lock()
 			p := event.Payload.(app.ErrorPayload)
-			fmt.Printf("[error] %s\n", p.Err)
+			fmt.Printf("[error] %v\n", p.Err)
+			r.mu.Unlock()
+
 		case app.EventDone:
 			stopOnce()
-			// silezioso
 		}
 	}
 }
 
-func runSpinner(ctx context.Context) {
+func (r *REPL) runSpinner(ctx context.Context) {
 	frames := []string{
 		"⠋ thinking",
 		"⠙ thinking",
@@ -117,7 +146,9 @@ func runSpinner(ctx context.Context) {
 		"⠧ thinking",
 	}
 
+	r.mu.Lock()
 	fmt.Print("\r" + frames[0])
+	r.mu.Unlock()
 
 	ticker := time.NewTicker(150 * time.Millisecond)
 	defer ticker.Stop()
@@ -126,15 +157,15 @@ func runSpinner(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// il chiamante (handler o main loop) pulisce la riga: qui non stampiamo nulla
 			return
 		case <-ticker.C:
-			select {
-			case <-ctx.Done():
+			r.mu.Lock()
+			if ctx.Err() != nil {
+				r.mu.Unlock()
 				return
-			default:
-				fmt.Printf("\r%s", frames[i%len(frames)])
 			}
+			fmt.Printf("\r%s", frames[i%len(frames)])
+			r.mu.Unlock()
 			i++
 		}
 	}
