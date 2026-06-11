@@ -31,6 +31,7 @@ type ToolDefinition struct {
 	Name        string
 	Description string
 	InputSchema ToolInputSchema
+	RiskLevel   RiskLevel
 }
 
 type ToolInputSchema struct {

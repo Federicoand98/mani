@@ -13,6 +13,7 @@ type Agent struct {
 	executors        map[string]ToolExecutor
 	streamHandler    TokenHandler
 	toolEventHandler ToolEventHandler
+	preToolUseHooks  []PreToolUseHook // TODO: in futuro voglio un manager per tutti gli hooks
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -54,6 +55,10 @@ func (a *Agent) AddTool(def ToolDefinition, exec ToolExecutor) {
 	a.executors[def.Name] = exec
 }
 
+func (a *Agent) AddPreToolUseHook(hook PreToolUseHook) {
+	a.preToolUseHooks = append(a.preToolUseHooks, hook)
+}
+
 func (a *Agent) SetStreamHandler(handler TokenHandler) {
 	a.streamHandler = handler
 }
@@ -72,6 +77,25 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		executor, found := a.executors[call.Name]
 		if !found {
 			return fmt.Errorf("agent: no executor found for tool %s", call.Name)
+		}
+
+		riskLevel := RiskNone
+		for _, tool := range a.tools {
+			if tool.Name == call.Name {
+				riskLevel = tool.RiskLevel
+				break
+			}
+		}
+
+		if err := a.runPreToolUseHooks(call.Name, riskLevel); err != nil {
+			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
+				ToolResultBlock{
+					ToolUseID: call.ID,
+					Content:   fmt.Sprintf("[blocked tool: %s]", err.Error()),
+					IsError:   true,
+				},
+			}})
+			continue
 		}
 
 		result, err := executor.Execute(ctx, call.Input)
@@ -98,6 +122,15 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 				IsError:   false,
 			},
 		}})
+	}
+	return nil
+}
+
+func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel) error {
+	for _, hook := range a.preToolUseHooks {
+		if err := hook(toolName, level); err != nil {
+			return err
+		}
 	}
 	return nil
 }

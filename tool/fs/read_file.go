@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
 )
 
@@ -28,6 +29,10 @@ func (t *ReadFileTool) Name() string {
 
 func (t *ReadFileTool) Description() string {
 	return "Reads the content of a file. The file path should be relative to the workspace root."
+}
+
+func (t *ReadFileTool) RiskLevel() core.RiskLevel {
+	return core.RiskNone
 }
 
 func (t *ReadFileTool) Schema() tool.ToolSchema {

@@ -14,7 +14,8 @@ func main() {
 	ws, _ := os.Getwd()
 
 	runtime := app.NewFromConfig(config.FromEnv()).
-		WithTool(fstools.NewReadFileTool(ws))
+		WithTool(fstools.NewReadFileTool(ws)).
+		WithTool(fstools.NewEditFileTool(ws))
 
 	cli.New(runtime).Run(context.Background())
 }

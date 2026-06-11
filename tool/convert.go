@@ -17,6 +17,7 @@ func ToDefinition(t Tool) core.ToolDefinition {
 	return core.ToolDefinition{
 		Name:        t.Name(),
 		Description: t.Description(),
+		RiskLevel:   t.RiskLevel(),
 		InputSchema: core.ToolInputSchema{
 			Type:       schema.InputSchema.Type,
 			Properties: props,

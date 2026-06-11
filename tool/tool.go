@@ -1,6 +1,10 @@
 package tool
 
-import "context"
+import (
+	"context"
+
+	"github.com/Federicoand98/mani/core"
+)
 
 type ToolSchema struct {
 	Name        string      `json:"name"`
@@ -23,5 +27,6 @@ type Tool interface {
 	Name() string
 	Description() string
 	Schema() ToolSchema
+	RiskLevel() core.RiskLevel
 	Execute(ctx context.Context, input map[string]any) (string, error)
 }

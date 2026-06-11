@@ -32,6 +32,9 @@ func (r *REPL) Run(ctx context.Context) {
 
 	scanner := bufio.NewScanner(os.Stdin)
 
+	// hooks
+	r.runtime.AddPermissionHook(r.permissionHook)
+
 	for {
 		fmt.Print("> ")
 		if !scanner.Scan() {
@@ -132,6 +135,25 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 			stopOnce()
 		}
 	}
+}
+
+func (r *REPL) permissionHook(toolName string, level string) error {
+	if level == "none" {
+		return nil
+	}
+
+	r.mu.Lock()
+	fmt.Printf("\n[required permission] %s (risk: %s) - continue? [y/n] ", toolName, level)
+	r.mu.Unlock()
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		if strings.ToLower(strings.TrimSpace(scanner.Text())) == "y" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("permission denied")
 }
 
 func (r *REPL) runSpinner(ctx context.Context) {

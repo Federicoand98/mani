@@ -32,6 +32,11 @@ func (r *Runtime) WithTool(t tool.Tool) *Runtime {
 	return r
 }
 
+func (r *Runtime) AddPreToolUseHook(h core.PreToolUseHook) *Runtime {
+	r.agent.AddPreToolUseHook(h)
+	return r
+}
+
 func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	// TODO: per ora il canale lo faccio buffered ma devo tener presente questo:
 	// cosa succede se la CLI renderizza piu lentamente di quanto l'agent produce i token?
