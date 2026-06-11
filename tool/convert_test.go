@@ -19,7 +19,7 @@ type mockToolWithSchema struct {
 func (m mockToolWithSchema) Name() string        { return m.toolName }
 func (m mockToolWithSchema) Description() string { return m.toolDesc }
 func (m mockToolWithSchema) Schema() ToolSchema  { return m.toolSchema }
-func (m mockToolWithSchema) Execute(_ context.Context, _ map[string]interface{}) (string, error) {
+func (m mockToolWithSchema) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "", nil
 }
 

@@ -8,10 +8,11 @@ import (
 const maxIterations = 10
 
 type Agent struct {
-	Client        LLMClient
-	tools         []ToolDefinition
-	executors     map[string]ToolExecutor
-	streamHandler TokenHandler
+	Client           LLMClient
+	tools            []ToolDefinition
+	executors        map[string]ToolExecutor
+	streamHandler    TokenHandler
+	toolEventHandler ToolEventHandler
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -57,6 +58,10 @@ func (a *Agent) SetStreamHandler(handler TokenHandler) {
 	a.streamHandler = handler
 }
 
+func (a *Agent) SetToolEventHandler(h ToolEventHandler) {
+	a.toolEventHandler = h
+}
+
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
 	for _, block := range blocks {
 		call, ok := block.(ToolUseBlock)
@@ -80,6 +85,10 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 				},
 			}})
 			continue
+		}
+
+		if a.toolEventHandler != nil {
+			a.toolEventHandler(call.Name, call.Input, result, false)
 		}
 
 		memory.Add(Message{Role: RoleTool, Content: []ContentBlock{

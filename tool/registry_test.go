@@ -9,10 +9,10 @@ type mockTool struct {
 	name string
 }
 
-func (m mockTool) Name() string                                                { return m.name }
-func (m mockTool) Description() string                                         { return "mock" }
-func (m mockTool) Schema() ToolSchema                                          { return ToolSchema{Name: m.name} }
-func (m mockTool) Execute(_ context.Context, _ map[string]interface{}) (string, error) {
+func (m mockTool) Name() string        { return m.name }
+func (m mockTool) Description() string { return "mock" }
+func (m mockTool) Schema() ToolSchema  { return ToolSchema{Name: m.name} }
+func (m mockTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "ok", nil
 }
 

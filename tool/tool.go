@@ -23,5 +23,5 @@ type Tool interface {
 	Name() string
 	Description() string
 	Schema() ToolSchema
-	Execute(ctx context.Context, input map[string]interface{}) (string, error)
+	Execute(ctx context.Context, input map[string]any) (string, error)
 }

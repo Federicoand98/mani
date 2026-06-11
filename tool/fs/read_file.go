@@ -47,7 +47,7 @@ func (t *ReadFileTool) Schema() tool.ToolSchema {
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
+func (t *ReadFileTool) Execute(ctx context.Context, input map[string]any) (string, error) {
 	raw, ok := input["path"]
 	if !ok {
 		return "", fmt.Errorf("read_file: missing required input 'path'")
