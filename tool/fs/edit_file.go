@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Federicoand98/mani/core"
@@ -24,11 +23,11 @@ import (
  */
 
 type EditFileTool struct {
-	workspaceRoot string
+	Workspace
 }
 
 func NewEditFileTool(workspaceRoot string) *EditFileTool {
-	return &EditFileTool{workspaceRoot: workspaceRoot}
+	return &EditFileTool{Workspace: NewWorkspace(workspaceRoot)}
 }
 
 // --------------------------------------------------
@@ -107,7 +106,7 @@ func (t *EditFileTool) Execute(ctx context.Context, input map[string]any) (strin
 		return "", fmt.Errorf("edit_file: input 'new_content' should be a string")
 	}
 
-	safePath, err := t.safePath(path)
+	safePath, err := t.Workspace.Resolve(path)
 	if err != nil {
 		return "", err
 	}
@@ -146,27 +145,4 @@ func (t *EditFileTool) Execute(ctx context.Context, input map[string]any) (strin
 	}
 
 	return fmt.Sprintf("edited file: %s", path), nil
-}
-
-// --------------------------------------------------
-// Private methods ----------------------------------
-// --------------------------------------------------
-
-func (t *EditFileTool) safePath(path string) (string, error) {
-	root, err := filepath.Abs(t.workspaceRoot)
-	if err != nil {
-		return "", fmt.Errorf("edit_file: failed to resolve workspace root: %w", err)
-	}
-
-	abs := filepath.Clean(filepath.Join(root, path))
-
-	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("edit_file: access to path '%s' is outside of the workspace", path)
-	}
-
-	if abs == root {
-		return "", fmt.Errorf("edit_file: path cannot be the workspace root")
-	}
-
-	return abs, nil
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
@@ -19,11 +17,11 @@ import (
 */
 
 type WriteFileTool struct {
-	workspaceRoot string
+	Workspace
 }
 
 func NewWriteFileTool(workspaceRoot string) *WriteFileTool {
-	return &WriteFileTool{workspaceRoot: workspaceRoot}
+	return &WriteFileTool{Workspace: NewWorkspace(workspaceRoot)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -70,7 +68,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, input map[string]any) (stri
 		return "", fmt.Errorf("write_file: content must be a string")
 	}
 
-	abs, err := t.safePath(path)
+	abs, err := t.Workspace.Resolve(path)
 	if err != nil {
 		return "", fmt.Errorf("write_file: %w", err)
 	}
@@ -89,23 +87,4 @@ func (t *WriteFileTool) Execute(ctx context.Context, input map[string]any) (stri
 	}
 
 	return fmt.Sprintf("File written to %s", path), nil
-}
-
-func (t *WriteFileTool) safePath(path string) (string, error) {
-	root, err := filepath.Abs(t.workspaceRoot)
-	if err != nil {
-		return "", fmt.Errorf("edit_file: failed to resolve workspace root: %w", err)
-	}
-
-	abs := filepath.Clean(filepath.Join(root, path))
-
-	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("edit_file: access to path '%s' is outside of the workspace", path)
-	}
-
-	if abs == root {
-		return "", fmt.Errorf("edit_file: path cannot be the workspace root")
-	}
-
-	return abs, nil
 }

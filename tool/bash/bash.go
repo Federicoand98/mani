@@ -59,11 +59,6 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 		return "", fmt.Errorf("bash: command must be a string")
 	}
 
-	// CDW in the workspace folder
-	// 30 seconds timeout
-	// Catch stdout and stderr and return them as a string concatenated
-	// exit code != 0 ritorn output + "exit code N" come errore
-
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
@@ -18,11 +16,11 @@ import (
 */
 
 type DeleteFileTool struct {
-	workspaceRoot string
+	Workspace
 }
 
 func NewDeleteFileTool(workspaceRoot string) *DeleteFileTool {
-	return &DeleteFileTool{workspaceRoot: workspaceRoot}
+	return &DeleteFileTool{Workspace: NewWorkspace(workspaceRoot)}
 }
 
 func (t *DeleteFileTool) Name() string {
@@ -60,7 +58,7 @@ func (t *DeleteFileTool) Execute(ctx context.Context, input map[string]any) (str
 		return "", fmt.Errorf("delete_file: path must be a string")
 	}
 
-	abs, err := t.safePath(path)
+	abs, err := t.Workspace.Resolve(path)
 	if err != nil {
 		return "", fmt.Errorf("delete_file: %w", err)
 	}
@@ -78,23 +76,4 @@ func (t *DeleteFileTool) Execute(ctx context.Context, input map[string]any) (str
 	}
 
 	return fmt.Sprintf("File deleted successfully %s", path), nil
-}
-
-func (t *DeleteFileTool) safePath(path string) (string, error) {
-	root, err := filepath.Abs(t.workspaceRoot)
-	if err != nil {
-		return "", fmt.Errorf("edit_file: failed to resolve workspace root: %w", err)
-	}
-
-	abs := filepath.Clean(filepath.Join(root, path))
-
-	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("edit_file: access to path '%s' is outside of the workspace", path)
-	}
-
-	if abs == root {
-		return "", fmt.Errorf("edit_file: path cannot be the workspace root")
-	}
-
-	return abs, nil
 }
