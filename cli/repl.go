@@ -16,6 +16,7 @@ import (
 const (
 	colorReset   = "\033[0m"
 	colorDimGrey = "\033[2m\033[90m"
+	colorCyan    = "\033[36m"
 )
 
 type REPL struct {
@@ -117,6 +118,9 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 			r.mu.Lock()
 			p := event.Payload.(app.ToolCallPayload)
 			fmt.Printf("\n[tool: %s]\n", p.Name)
+			if cmd, ok := p.Input["command"].(string); ok {
+				fmt.Printf("%s$ %s%s\n", colorCyan, cmd, colorReset)
+			}
 			r.mu.Unlock()
 
 		case app.EventToolResult:
@@ -135,9 +139,15 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 	}
 }
 
-func (r *REPL) permissionPrompter(toolName, riskLevel string) app.Decision {
+func (r *REPL) permissionPrompter(toolName, riskLevel string, input map[string]any) app.Decision {
 	r.mu.Lock()
-	fmt.Printf("\n[required permission] %s (risk: %s) - continue? [y]once / [n]no / [a]always ", toolName, riskLevel)
+	fmt.Printf("\n[tool: %s]\n", toolName)
+	if cmd, ok := input["command"].(string); ok {
+		fmt.Printf("%s$ %s%s\n", colorCyan, cmd, colorReset)
+	} else if path, ok := input["path"].(string); ok {
+		fmt.Printf("%spath: %s%s\n", colorCyan, path, colorReset)
+	}
+	fmt.Printf("[required permission] %s (risk: %s) - continue? [y]once / [n]no / [a]always ", toolName, riskLevel)
 	r.mu.Unlock()
 
 	scanner := bufio.NewScanner(os.Stdin)

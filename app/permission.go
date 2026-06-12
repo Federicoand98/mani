@@ -14,7 +14,7 @@ const (
 	AllowAlways
 )
 
-type Prompter func(toolName string, riskLeve string) Decision
+type Prompter func(toolName string, riskLevel string, input map[string]any) Decision
 
 type PermissionManager struct {
 	prompter      Prompter
@@ -28,7 +28,7 @@ func NewPermissionManager(prompter Prompter) *PermissionManager {
 	}
 }
 
-func (m *PermissionManager) check(toolName string, level core.RiskLevel) error {
+func (m *PermissionManager) check(toolName string, level core.RiskLevel, input map[string]any) error {
 	if level == core.RiskNone {
 		return nil
 	}
@@ -37,7 +37,7 @@ func (m *PermissionManager) check(toolName string, level core.RiskLevel) error {
 		return nil
 	}
 
-	switch m.prompter(toolName, level.String()) {
+	switch m.prompter(toolName, level.String(), input) {
 	case AllowAlways:
 		m.alwaysAllowed[toolName] = true
 		return nil
@@ -49,7 +49,7 @@ func (m *PermissionManager) check(toolName string, level core.RiskLevel) error {
 }
 
 func (m *PermissionManager) Hook() core.PreToolUseHook {
-	return func(name string, level core.RiskLevel) error {
-		return m.check(name, level)
+	return func(name string, level core.RiskLevel, input map[string]any) error {
+		return m.check(name, level, input)
 	}
 }

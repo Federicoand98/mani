@@ -19,4 +19,4 @@ func (r RiskLevel) String() string {
 	}
 }
 
-type PreToolUseHook func(toolName string, level RiskLevel) error
+type PreToolUseHook func(toolName string, level RiskLevel, input map[string]any) error

@@ -87,7 +87,7 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 			}
 		}
 
-		if err := a.runPreToolUseHooks(call.Name, riskLevel); err != nil {
+		if err := a.runPreToolUseHooks(call.Name, riskLevel, call.Input); err != nil {
 			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
 				ToolResultBlock{
 					ToolUseID: call.ID,
@@ -126,9 +126,9 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 	return nil
 }
 
-func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel) error {
+func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel, input map[string]any) error {
 	for _, hook := range a.preToolUseHooks {
-		if err := hook(toolName, level); err != nil {
+		if err := hook(toolName, level, input); err != nil {
 			return err
 		}
 	}
