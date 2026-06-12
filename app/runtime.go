@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
@@ -10,9 +11,10 @@ import (
 )
 
 type Runtime struct {
-	agent  *core.Agent
-	memory core.Memory
-	cfg    config.Config
+	agent           *core.Agent
+	memory          core.Memory
+	cfg             config.Config
+	thinkingEnabled bool
 }
 
 func NewFromConfig(cfg config.Config) *Runtime {
@@ -20,9 +22,10 @@ func NewFromConfig(cfg config.Config) *Runtime {
 	agent := core.NewAgent(client)
 
 	return &Runtime{
-		agent:  agent,
-		memory: core.NewInMemory(),
-		cfg:    cfg,
+		agent:           agent,
+		memory:          core.NewInMemory(),
+		cfg:             cfg,
+		thinkingEnabled: true,
 	}
 }
 
@@ -32,8 +35,9 @@ func (r *Runtime) WithTool(t tool.Tool) *Runtime {
 	return r
 }
 
-func (r *Runtime) AddPreToolUseHook(h core.PreToolUseHook) *Runtime {
-	r.agent.AddPreToolUseHook(h)
+func (r *Runtime) UsePermissionManager(p Prompter) *Runtime {
+	pm := NewPermissionManager(p)
+	r.agent.AddPreToolUseHook(pm.Hook())
 	return r
 }
 
@@ -44,10 +48,13 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 
 	r.agent.SetStreamHandler(func(token string, isThinking bool) {
 		if isThinking {
-			ch <- Event{Type: EventThinking, Payload: TokenPayload{Text: token}}
-		} else {
-			ch <- Event{Type: EventToken, Payload: TokenPayload{Text: token}}
+			if r.thinkingEnabled {
+				ch <- Event{Type: EventThinking, Payload: TokenPayload{Text: token}}
+			}
+			return
 		}
+
+		ch <- Event{Type: EventToken, Payload: TokenPayload{Text: token}}
 	})
 
 	r.agent.SetToolEventHandler(func(name string, input map[string]any, result string, isError bool) {
@@ -67,4 +74,17 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	}()
 
 	return ch
+}
+
+func (r *Runtime) ToggleThinking() bool {
+	r.thinkingEnabled = !r.thinkingEnabled
+	return r.thinkingEnabled
+}
+
+func (r *Runtime) ClearMemory() {
+	r.memory.Clear()
+}
+
+func (r *Runtime) Memory() string {
+	return fmt.Sprintf("%v", r.memory.Messages())
 }

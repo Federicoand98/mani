@@ -1,12 +1,55 @@
 package app
 
-import "github.com/Federicoand98/mani/core"
+import (
+	"fmt"
 
-type PermissionHook func(toolName string, riskLevel string) error
+	"github.com/Federicoand98/mani/core"
+)
 
-func (r *Runtime) AddPermissionHook(h PermissionHook) *Runtime {
-	r.agent.AddPreToolUseHook(func(name string, level core.RiskLevel) error {
-		return h(name, level.String())
-	})
-	return r
+type Decision int
+
+const (
+	Deny Decision = iota
+	AllowOnce
+	AllowAlways
+)
+
+type Prompter func(toolName string, riskLeve string) Decision
+
+type PermissionManager struct {
+	prompter      Prompter
+	alwaysAllowed map[string]bool // sessione, non persistente
+}
+
+func NewPermissionManager(prompter Prompter) *PermissionManager {
+	return &PermissionManager{
+		prompter:      prompter,
+		alwaysAllowed: make(map[string]bool),
+	}
+}
+
+func (m *PermissionManager) check(toolName string, level core.RiskLevel) error {
+	if level == core.RiskNone {
+		return nil
+	}
+
+	if m.alwaysAllowed[toolName] {
+		return nil
+	}
+
+	switch m.prompter(toolName, level.String()) {
+	case AllowAlways:
+		m.alwaysAllowed[toolName] = true
+		return nil
+	case AllowOnce:
+		return nil
+	default:
+		return fmt.Errorf("permission denied from user")
+	}
+}
+
+func (m *PermissionManager) Hook() core.PreToolUseHook {
+	return func(name string, level core.RiskLevel) error {
+		return m.check(name, level)
+	}
 }

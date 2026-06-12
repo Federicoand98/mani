@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/cli/command"
 )
 
 const (
@@ -20,11 +21,18 @@ const (
 type REPL struct {
 	runtime         *app.Runtime
 	thinkingEnabled bool
+	commandRegistry *command.Registry
 	mu              sync.Mutex
 }
 
 func New(rt *app.Runtime) *REPL {
-	return &REPL{runtime: rt, thinkingEnabled: true}
+	registry := command.NewRegistry()
+	registry.Register(command.NewQuitCommand(rt))
+	registry.Register(command.NewThinkingCommand(rt))
+	registry.Register(command.NewClearCommand(rt))
+	registry.Register(command.NewMemoryCommand(rt))
+
+	return &REPL{runtime: rt, thinkingEnabled: true, commandRegistry: registry}
 }
 
 func (r *REPL) Run(ctx context.Context) {
@@ -33,7 +41,7 @@ func (r *REPL) Run(ctx context.Context) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	// hooks
-	r.runtime.AddPermissionHook(r.permissionHook)
+	r.runtime.UsePermissionManager(r.permissionPrompter)
 
 	for {
 		fmt.Print("> ")
@@ -43,11 +51,16 @@ func (r *REPL) Run(ctx context.Context) {
 
 		input := strings.TrimSpace(scanner.Text())
 
-		quit, handled := r.handleCommand(input)
-		if quit {
-			return
-		}
+		res, handled, err := r.commandRegistry.Dispatch(input)
 		if handled {
+			if err != nil {
+				fmt.Println("Error:", err)
+			} else if res.Output != "" {
+				fmt.Println(res.Output)
+			}
+			if res.Quit {
+				return
+			}
 			continue
 		}
 
@@ -59,21 +72,6 @@ func (r *REPL) Run(ctx context.Context) {
 
 		r.handleEvents(events, stopSpinner)
 		fmt.Println()
-	}
-}
-
-// returns (quit, handled)
-func (r *REPL) handleCommand(cmd string) (bool, bool) {
-	switch cmd {
-	case "/quit":
-		fmt.Println("Goodbye :(")
-		return true, true
-	case "/thinking":
-		r.thinkingEnabled = !r.thinkingEnabled
-		fmt.Println("Thinking mode:", r.thinkingEnabled)
-		return false, true
-	default:
-		return false, false
 	}
 }
 
@@ -137,23 +135,22 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 	}
 }
 
-func (r *REPL) permissionHook(toolName string, level string) error {
-	if level == "none" {
-		return nil
-	}
-
+func (r *REPL) permissionPrompter(toolName, riskLevel string) app.Decision {
 	r.mu.Lock()
-	fmt.Printf("\n[required permission] %s (risk: %s) - continue? [y/n] ", toolName, level)
+	fmt.Printf("\n[required permission] %s (risk: %s) - continue? [y]once / [n]no / [a]always ", toolName, riskLevel)
 	r.mu.Unlock()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
-		if strings.ToLower(strings.TrimSpace(scanner.Text())) == "y" {
-			return nil
+		switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
+		case "y":
+			return app.AllowOnce
+		case "a":
+			return app.AllowAlways
 		}
 	}
 
-	return fmt.Errorf("permission denied")
+	return app.Deny
 }
 
 func (r *REPL) runSpinner(ctx context.Context) {
