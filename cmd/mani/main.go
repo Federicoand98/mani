@@ -18,6 +18,7 @@ func main() {
 		WithTool(fstools.NewReadFileTool(ws)).
 		WithTool(fstools.NewEditFileTool(ws)).
 		WithTool(fstools.NewWriteFileTool(ws)).
+		WithTool(fstools.NewDeleteFileTool(ws)).
 		WithTool(bash.NewBashTool(ws))
 
 	cli.New(runtime).Run(context.Background())
