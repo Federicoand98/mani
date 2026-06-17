@@ -3,12 +3,13 @@ package app
 type EventType string
 
 const (
-	EventToken      EventType = "token"
-	EventThinking   EventType = "thinking"
-	EventToolCall   EventType = "tool_call"
-	EventToolResult EventType = "tool_result"
-	EventDone       EventType = "done"
-	EventError      EventType = "error"
+	EventToken             EventType = "token"
+	EventThinking          EventType = "thinking"
+	EventToolCall          EventType = "tool_call"
+	EventToolResult        EventType = "tool_result"
+	EventPermissionRequest EventType = "permission_request"
+	EventDone              EventType = "done"
+	EventError             EventType = "error"
 )
 
 type Event struct {
@@ -33,4 +34,11 @@ type ToolCallResultPayload struct {
 
 type ErrorPayload struct {
 	Err error
+}
+
+type PermissionRequestPayload struct {
+	ToolName  string
+	RiskLevel string
+	Input     map[string]any
+	Respond   chan Decision
 }

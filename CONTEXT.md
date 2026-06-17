@@ -1,0 +1,57 @@
+# mani
+
+Framework micro-agent in Go per costruire agenti LLM. Architettura esagonale:
+il dominio (`core`) non sa nulla di provider, trasporto, filesystem o UI.
+
+## Language
+
+**Agent**:
+Il ciclo di dominio che, data una memoria e un input, chiama l'LLM ed esegue tool
+finché il modello non chiude il turno. Vive in `core`, non conosce adapter concreti.
+
+**Runtime**:
+La radice di composizione della CLI: cabla Agent, provider, tool e permessi, ed espone
+l'esecuzione come stream di `Event`. È un adapter applicativo, non dominio. Un utente
+libreria lo salta e cabla `core` da sé.
+_Avoid_: Engine, Orchestrator, App.
+
+**Emitter**:
+La porta (in `core`) attraverso cui l'Agent comunica verso l'esterno ciò che produce
+mentre gira: token, reasoning, chiamate ed esiti dei tool. Parla solo stringhe e
+`map[string]any` — non sa di canali, eventi o UI. L'adapter a canale vive in `app`.
+_Avoid_: Handler, Listener, Sink, Callback.
+
+**Tool**:
+Una capacità che l'Agent può invocare (leggere file, eseguire bash). Dichiara nome,
+schema e un `Risk Level`. Definito nel package `tool`, consumato dagli adapter.
+
+**Risk Level**:
+La pericolosità dichiarata da un Tool: `none`, `write`, `execute`. Determina se serve
+un permesso prima dell'esecuzione. Vive in `core`.
+_Avoid_: Danger, Severity, Permission level.
+
+**Hook**:
+Un punto di intercettazione nel ciclo dell'Agent. Il `PreToolUse` gira prima di ogni
+tool e, ritornando `error`, può negarne l'esecuzione. È la porta astratta del permesso:
+il dominio conosce solo "hook che ritorna error", mai canali o decisioni utente.
+_Avoid_: Middleware, Filter, Interceptor.
+
+**Permission Manager**:
+L'implementazione applicativa (in `app`) del `PreToolUse` hook: traduce un `Risk Level`
+in una richiesta all'utente e ne attende la `Decision`. Tiene lo stato di sessione di
+ciò che è "sempre permesso". Non è dominio.
+
+**Decision**:
+La risposta dell'utente a una richiesta di permesso: `Deny`, `AllowOnce`, `AllowAlways`.
+Concetto applicativo (`app`), mai esposto al `core`.
+_Avoid_: Permission, Choice, Answer.
+
+**Event**:
+Un'unità del flusso asincrono `Runtime → UI`: token, reasoning, chiamata/esito tool,
+richiesta di permesso, fine, errore. Concetto applicativo. La UI lo consuma per
+renderizzare. Distinto dall'`Emitter`, che è la porta lato dominio.
+
+**Memory**:
+La sequenza di messaggi del turno corrente passata all'LLM. Porta in `core`;
+l'implementazione di default è in-memory.
+_Avoid_: History, Context, Conversation.

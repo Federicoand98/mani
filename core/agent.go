@@ -8,12 +8,11 @@ import (
 const maxIterations = 10
 
 type Agent struct {
-	Client           LLMClient
-	tools            []ToolDefinition
-	executors        map[string]ToolExecutor
-	streamHandler    TokenHandler
-	toolEventHandler ToolEventHandler
-	preToolUseHooks  []PreToolUseHook // TODO: in futuro voglio un manager per tutti gli hooks
+	Client          LLMClient
+	tools           []ToolDefinition
+	executors       map[string]ToolExecutor
+	emitter         Emitter
+	preToolUseHooks []PreToolUseHook // TODO: in futuro voglio un manager per tutti gli hooks
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -21,14 +20,23 @@ func NewAgent(client LLMClient) *Agent {
 		Client:    client,
 		tools:     []ToolDefinition{},
 		executors: make(map[string]ToolExecutor),
+		emitter:   nopEmitter{},
 	}
 }
 
 func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error {
 	memory.Add(Message{Role: RoleUser, Content: []ContentBlock{TextBlock{Text: userInput}}})
 
+	onToken := func(token string, isThinking bool) {
+		if isThinking {
+			a.emitter.Thinking(token)
+		} else {
+			a.emitter.Token(token)
+		}
+	}
+
 	for range maxIterations {
-		resp, err := a.Client.Send(ctx, memory.Messages(), a.tools, a.streamHandler)
+		resp, err := a.Client.Send(ctx, memory.Messages(), a.tools, onToken)
 		if err != nil {
 			return fmt.Errorf("agent: %w", err)
 		}
@@ -59,12 +67,8 @@ func (a *Agent) AddPreToolUseHook(hook PreToolUseHook) {
 	a.preToolUseHooks = append(a.preToolUseHooks, hook)
 }
 
-func (a *Agent) SetStreamHandler(handler TokenHandler) {
-	a.streamHandler = handler
-}
-
-func (a *Agent) SetToolEventHandler(h ToolEventHandler) {
-	a.toolEventHandler = h
+func (a *Agent) SetEmitter(emitter Emitter) {
+	a.emitter = emitter
 }
 
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
@@ -98,29 +102,25 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 			continue
 		}
 
+		a.emitter.ToolCall(call.Name, call.Input)
+
 		result, err := executor.Execute(ctx, call.Input)
 		if err != nil {
 			// l'errore non deve rompere il loop ma rimandato al modello in modo da correggersi
 			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-				ToolResultBlock{
-					ToolUseID: call.ID,
-					Content:   err.Error(),
-					IsError:   true,
-				},
+				ToolResultBlock{ToolUseID: call.ID, Content: err.Error(), IsError: true},
 			}})
 			continue
 		}
 
-		if a.toolEventHandler != nil {
-			a.toolEventHandler(call.Name, call.Input, result, false)
-		}
+		// if a.toolEventHandler != nil {
+		// 	a.toolEventHandler(call.Name, call.Input, result, false)
+		// }
+
+		a.emitter.ToolResult(call.Name, result, false)
 
 		memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-			ToolResultBlock{
-				ToolUseID: call.ID,
-				Content:   result,
-				IsError:   false,
-			},
+			ToolResultBlock{ToolUseID: call.ID, Content: result, IsError: false},
 		}})
 	}
 	return nil

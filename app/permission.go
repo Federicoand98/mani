@@ -14,30 +14,39 @@ const (
 	AllowAlways
 )
 
-type Prompter func(toolName string, riskLevel string, input map[string]any) Decision
-
 type PermissionManager struct {
-	prompter      Prompter
+	emit          func(PermissionRequestPayload)
 	alwaysAllowed map[string]bool // sessione, non persistente
 }
 
-func NewPermissionManager(prompter Prompter) *PermissionManager {
+func NewPermissionManager() *PermissionManager {
 	return &PermissionManager{
-		prompter:      prompter,
 		alwaysAllowed: make(map[string]bool),
 	}
 }
 
+func (m *PermissionManager) setEmit(emit func(PermissionRequestPayload)) {
+	m.emit = emit
+}
+
 func (m *PermissionManager) check(toolName string, level core.RiskLevel, input map[string]any) error {
-	if level == core.RiskNone {
+	if level == core.RiskNone || m.alwaysAllowed[toolName] {
 		return nil
 	}
 
-	if m.alwaysAllowed[toolName] {
-		return nil
+	if m.emit == nil {
+		return fmt.Errorf("no emit function set")
 	}
 
-	switch m.prompter(toolName, level.String(), input) {
+	respond := make(chan Decision, 1)
+
+	m.emit(PermissionRequestPayload{
+		ToolName:  toolName,
+		RiskLevel: level.String(),
+		Input:     input,
+	})
+
+	switch <-respond {
 	case AllowAlways:
 		m.alwaysAllowed[toolName] = true
 		return nil

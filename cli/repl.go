@@ -21,7 +21,6 @@ const (
 
 type REPL struct {
 	runtime         *app.Runtime
-	thinkingEnabled bool
 	commandRegistry *command.Registry
 	mu              sync.Mutex
 }
@@ -33,7 +32,7 @@ func New(rt *app.Runtime) *REPL {
 	registry.Register(command.NewClearCommand(rt))
 	registry.Register(command.NewMemoryCommand(rt))
 
-	return &REPL{runtime: rt, thinkingEnabled: true, commandRegistry: registry}
+	return &REPL{runtime: rt, commandRegistry: registry}
 }
 
 func (r *REPL) Run(ctx context.Context) {
@@ -42,7 +41,7 @@ func (r *REPL) Run(ctx context.Context) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	// hooks
-	r.runtime.UsePermissionManager(r.permissionPrompter)
+	r.runtime.UsePermissionManager()
 
 	for {
 		fmt.Print("> ")
@@ -71,12 +70,12 @@ func (r *REPL) Run(ctx context.Context) {
 		spinCtx, stopSpinner := context.WithCancel(ctx)
 		go r.runSpinner(spinCtx)
 
-		r.handleEvents(events, stopSpinner)
+		r.handleEvents(events, stopSpinner, scanner)
 		fmt.Println()
 	}
 }
 
-func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelFunc) {
+func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelFunc, scanner *bufio.Scanner) {
 	spinnerStopped := false
 	stopOnce := func() {
 		if !spinnerStopped {
@@ -104,14 +103,12 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 			r.mu.Unlock()
 
 		case app.EventThinking:
-			if r.thinkingEnabled {
-				stopOnce()
-				r.mu.Lock()
-				p := event.Payload.(app.TokenPayload)
-				fmt.Print(colorDimGrey + p.Text + colorReset)
-				thinkingShown = true
-				r.mu.Unlock()
-			}
+			stopOnce()
+			r.mu.Lock()
+			p := event.Payload.(app.TokenPayload)
+			fmt.Print(colorDimGrey + p.Text + colorReset)
+			thinkingShown = true
+			r.mu.Unlock()
 
 		case app.EventToolCall:
 			stopOnce()
@@ -126,6 +123,32 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 		case app.EventToolResult:
 			// silenzioso
 
+		case app.EventPermissionRequest:
+			stopOnce()
+			p := event.Payload.(app.PermissionRequestPayload)
+
+			r.mu.Lock()
+			fmt.Printf("\n[tool: %s]\n", p.ToolName)
+			if cmd, ok := p.Input["command"].(string); ok {
+				fmt.Printf("%s$ %s%s\n", colorCyan, cmd, colorReset)
+			} else if path, ok := p.Input["path"].(string); ok {
+				fmt.Printf("%spath: %s%s\n", colorCyan, path, colorReset)
+			}
+
+			fmt.Printf("\n[permission request] %s (risk: %s) - continue? [y]once / [n]no / [a]always ", p.ToolName, p.RiskLevel)
+			r.mu.Unlock()
+
+			decision := app.Deny
+			if scanner.Scan() {
+				switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
+				case "y":
+					decision = app.AllowOnce
+				case "a":
+					decision = app.AllowAlways
+				}
+			}
+			p.Respond <- decision
+
 		case app.EventError:
 			stopOnce()
 			r.mu.Lock()
@@ -137,30 +160,6 @@ func (r *REPL) handleEvents(events <-chan app.Event, stopSpinner context.CancelF
 			stopOnce()
 		}
 	}
-}
-
-func (r *REPL) permissionPrompter(toolName, riskLevel string, input map[string]any) app.Decision {
-	r.mu.Lock()
-	fmt.Printf("\n[tool: %s]\n", toolName)
-	if cmd, ok := input["command"].(string); ok {
-		fmt.Printf("%s$ %s%s\n", colorCyan, cmd, colorReset)
-	} else if path, ok := input["path"].(string); ok {
-		fmt.Printf("%spath: %s%s\n", colorCyan, path, colorReset)
-	}
-	fmt.Printf("[required permission] %s (risk: %s) - continue? [y]once / [n]no / [a]always ", toolName, riskLevel)
-	r.mu.Unlock()
-
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
-		case "y":
-			return app.AllowOnce
-		case "a":
-			return app.AllowAlways
-		}
-	}
-
-	return app.Deny
 }
 
 func (r *REPL) runSpinner(ctx context.Context) {

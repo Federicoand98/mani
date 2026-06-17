@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 
 	"github.com/Federicoand98/mani/app"
@@ -9,6 +10,7 @@ import (
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/tool/bash"
 	fstools "github.com/Federicoand98/mani/tool/fs"
+	"github.com/Federicoand98/mani/tui"
 )
 
 func main() {
@@ -19,7 +21,15 @@ func main() {
 		WithTool(fstools.NewEditFileTool(ws)).
 		WithTool(fstools.NewWriteFileTool(ws)).
 		WithTool(fstools.NewDeleteFileTool(ws)).
-		WithTool(bash.NewBashTool(ws))
+		WithTool(bash.NewBashTool(ws)).
+		UsePermissionManager()
 
-	cli.New(runtime).Run(context.Background())
+	if os.Getenv("MANI_UI") == "repl" {
+		cli.New(runtime).Run(context.Background())
+		return
+	}
+
+	if err := tui.Run(runtime); err != nil {
+		log.Fatal(err)
+	}
 }
