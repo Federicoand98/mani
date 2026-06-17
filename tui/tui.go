@@ -6,7 +6,7 @@ import (
 )
 
 func Run(rt *app.Runtime) error {
-	p := tea.NewProgram(NewModel(rt), tea.WithAltScreen())
+	p := tea.NewProgram(NewModel(rt), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

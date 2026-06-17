@@ -44,6 +44,7 @@ func (m *PermissionManager) check(toolName string, level core.RiskLevel, input m
 		ToolName:  toolName,
 		RiskLevel: level.String(),
 		Input:     input,
+		Respond:   respond,
 	})
 
 	switch <-respond {

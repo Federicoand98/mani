@@ -20,7 +20,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = h
 		}
+		m.input.Width = msg.Width
 		return m, nil
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -73,11 +79,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		m.input.Reset()
-		m.output.WriteString("\n> " + text + "\n")
-		m.viewport.SetContent(m.output.String())
+
+		if res, handled, err := m.commands.Dispatch(text); handled {
+			m.output += "\n> " + text + "\n"
+			if err != nil {
+				m.output += "Error: " + err.Error() + "\n"
+			} else if res.Output != "" {
+				m.output += res.Output + "\n"
+			}
+
+			m.viewport.SetContent(m.rendered())
+			m.viewport.GotoBottom()
+
+			if res.Quit {
+				return m, tea.Quit
+			}
+
+			return m, nil
+		}
+
+		m.output += "\n> " + text + "\n"
+		m.viewport.SetContent(m.rendered())
 		m.events = m.runtime.Execute(context.Background(), text)
 		m.state = stateRunning
 		return m, tea.Batch(m.spinner.Tick, waitForEvent(m.events))
+	}
+
+	switch msg.String() {
+	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 	}
 
 	var cmd tea.Cmd
@@ -88,21 +120,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleEvent(ev app.Event) (tea.Model, tea.Cmd) {
 	switch ev.Type {
 	case app.EventToken:
-		m.output.WriteString(ev.Payload.(app.TokenPayload).Text)
-		m.viewport.SetContent(m.output.String())
+		if m.showThinking {
+			m.output += "\n\n"
+			m.showThinking = false
+		}
+		m.output += ev.Payload.(app.TokenPayload).Text
+		m.viewport.SetContent(m.rendered())
 		m.viewport.GotoBottom()
 		return m, waitForEvent(m.events)
 
 	case app.EventThinking:
-		m.output.WriteString(dimStyle.Render(ev.Payload.(app.TokenPayload).Text))
-		m.viewport.SetContent(m.output.String())
+		m.output += dimStyle.Render(ev.Payload.(app.TokenPayload).Text)
+		m.showThinking = true
+		m.viewport.SetContent(m.rendered())
 		m.viewport.GotoBottom()
 		return m, waitForEvent(m.events)
 
 	case app.EventToolCall:
 		p := ev.Payload.(app.ToolCallPayload)
-		m.output.WriteString(toolStyle.Render("\n[tool: " + p.Name + "]\n"))
-		m.viewport.SetContent(m.output.String())
+		m.output += toolStyle.Render("\n[tool: " + p.Name + "]\n")
+		m.viewport.SetContent(m.rendered())
 		m.viewport.GotoBottom()
 		return m, waitForEvent(m.events)
 
@@ -113,8 +150,8 @@ func (m Model) handleEvent(ev app.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case app.EventError:
-		m.output.WriteString(errStyle.Render("\n[error] " + ev.Payload.(app.ErrorPayload).Err.Error() + "\n"))
-		m.viewport.SetContent(m.output.String())
+		m.output += errStyle.Render("\n[error] " + ev.Payload.(app.ErrorPayload).Err.Error() + "\n")
+		m.viewport.SetContent(m.rendered())
 		m.state = stateIdle
 		return m, nil
 
