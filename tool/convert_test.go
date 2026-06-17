@@ -1,5 +1,3 @@
-//go:build phase2
-
 package tool
 
 import (
@@ -13,12 +11,14 @@ import (
 type mockToolWithSchema struct {
 	toolName   string
 	toolDesc   string
+	toolRisk   core.RiskLevel
 	toolSchema ToolSchema
 }
 
-func (m mockToolWithSchema) Name() string        { return m.toolName }
-func (m mockToolWithSchema) Description() string { return m.toolDesc }
-func (m mockToolWithSchema) Schema() ToolSchema  { return m.toolSchema }
+func (m mockToolWithSchema) Name() string             { return m.toolName }
+func (m mockToolWithSchema) Description() string      { return m.toolDesc }
+func (m mockToolWithSchema) Schema() ToolSchema       { return m.toolSchema }
+func (m mockToolWithSchema) RiskLevel() core.RiskLevel { return m.toolRisk }
 func (m mockToolWithSchema) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "", nil
 }

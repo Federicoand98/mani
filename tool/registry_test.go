@@ -3,15 +3,18 @@ package tool
 import (
 	"context"
 	"testing"
+
+	"github.com/Federicoand98/mani/core"
 )
 
 type mockTool struct {
 	name string
 }
 
-func (m mockTool) Name() string        { return m.name }
-func (m mockTool) Description() string { return "mock" }
-func (m mockTool) Schema() ToolSchema  { return ToolSchema{Name: m.name} }
+func (m mockTool) Name() string             { return m.name }
+func (m mockTool) Description() string      { return "mock" }
+func (m mockTool) Schema() ToolSchema       { return ToolSchema{Name: m.name} }
+func (m mockTool) RiskLevel() core.RiskLevel { return core.RiskNone }
 func (m mockTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "ok", nil
 }
