@@ -71,12 +71,43 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(m.events)
 	}
 
+	// commands palette
+	matches := m.matchingCommands()
+	paletteActive := m.state == stateIdle && len(matches) > 0
+	if paletteActive {
+		if m.paletteIndex >= len(matches) {
+			m.paletteIndex = 0
+		}
+
+		switch msg.String() {
+		case "up":
+			if m.paletteIndex > 0 {
+				m.paletteIndex--
+			}
+			return m, nil
+		case "down":
+			if m.paletteIndex < len(matches)-1 {
+				m.paletteIndex++
+			}
+			return m, nil
+
+		case "tab":
+			m.input.SetValue(matches[m.paletteIndex].Name + " ")
+			m.input.CursorEnd()
+			m.paletteIndex = 0
+			return m, nil
+		}
+	}
+
 	if msg.Type == tea.KeyEnter && m.state == stateIdle {
 		text := m.input.Value()
 
 		if text == "" {
 			return m, nil
 		}
+
+		m.history = append(m.history, text)
+		m.historyIndex = len(m.history)
 
 		m.input.Reset()
 
@@ -106,6 +137,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "up":
+		if m.historyIndex > 0 {
+			m.historyIndex--
+			m.input.SetValue(m.history[m.historyIndex])
+			m.input.CursorEnd()
+		}
+		return m, nil
+
+	case "down":
+		if m.historyIndex < len(m.history)-1 {
+			m.historyIndex++
+			m.input.SetValue(m.history[m.historyIndex])
+			m.input.CursorEnd()
+		} else {
+			m.historyIndex = len(m.history)
+			m.input.SetValue("")
+		}
+		return m, nil
+
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/cli/command"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -30,6 +32,9 @@ type Model struct {
 	output       string
 	ready        bool
 	showThinking bool
+	history      []string
+	historyIndex int
+	paletteIndex int
 }
 
 func NewModel(rt *app.Runtime) Model {
@@ -49,11 +54,14 @@ func NewModel(rt *app.Runtime) Model {
 	registry.Register(command.NewConfigCommand(rt))
 
 	return Model{
-		runtime:  rt,
-		input:    ti,
-		spinner:  sp,
-		state:    stateIdle,
-		commands: registry,
+		runtime:      rt,
+		input:        ti,
+		spinner:      sp,
+		state:        stateIdle,
+		commands:     registry,
+		history:      make([]string, 0),
+		historyIndex: 0,
+		paletteIndex: 0,
 	}
 }
 
@@ -67,4 +75,20 @@ func (m Model) rendered() string {
 	}
 
 	return lipgloss.NewStyle().Width(m.viewport.Width).Render(m.output)
+}
+
+func (m Model) matchingCommands() []command.Info {
+	val := m.input.Value()
+
+	if !strings.HasPrefix(val, "/") {
+		return nil
+	}
+
+	var out []command.Info
+	for _, cmd := range m.commands.List() {
+		if strings.HasPrefix(cmd.Name, val) {
+			out = append(out, cmd)
+		}
+	}
+	return out
 }

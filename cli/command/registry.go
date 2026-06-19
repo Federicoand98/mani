@@ -1,9 +1,17 @@
 package command
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 type Registry struct {
 	commands map[string]Command
+}
+
+type Info struct {
+	Name        string
+	Description string
 }
 
 func NewRegistry() *Registry {
@@ -29,4 +37,15 @@ func (r *Registry) Dispatch(input string) (Result, bool, error) {
 
 	res, err := cmd.Execute(parts[1:])
 	return res, true, err
+}
+
+func (r *Registry) List() []Info {
+	out := make([]Info, 0, len(r.commands))
+
+	for _, c := range r.commands {
+		out = append(out, Info{Name: c.Name(), Description: c.Description()})
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }

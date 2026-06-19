@@ -33,6 +33,23 @@ func (m Model) View() string {
 		b.WriteString(m.spinner.View() + " thinking...")
 
 	case stateIdle:
+		// command palette
+		matches := m.matchingCommands()
+		if len(matches) > 0 {
+			idx := m.paletteIndex
+			if idx >= len(matches) {
+				idx = 0
+			}
+
+			for i, c := range matches {
+				if i == idx {
+					b.WriteString(cyanStyle.Render("> "+c.Name) + "	" + dimStyle.Render(c.Description) + "\n")
+				} else {
+					b.WriteString("  " + c.Name + "	" + dimStyle.Render(c.Description) + "\n")
+				}
+			}
+		}
+
 		b.WriteString(m.input.View())
 	}
 
