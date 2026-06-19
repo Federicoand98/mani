@@ -71,6 +71,12 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 			return
 		}
 
+		// write-through (salva memoria ad ogni turno)
+		if err := r.store.Save(r.current); err != nil {
+			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
+			return
+		}
+
 		ch <- Event{Type: EventDone}
 	}()
 
