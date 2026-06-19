@@ -50,7 +50,7 @@ func (m Model) View() string {
 			}
 		}
 
-		b.WriteString(m.input.View())
+		b.WriteString(promptStyle.Width(m.viewport.Width).Render(m.input.View()))
 	}
 
 	return b.String()
