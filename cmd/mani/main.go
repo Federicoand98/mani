@@ -17,12 +17,17 @@ import (
 func main() {
 	ws, _ := os.Getwd()
 
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	store, err := session.NewFileStore(config.SessionsDir())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	runtime := app.NewFromConfig(config.FromEnv()).
+	runtime := app.NewFromConfig(cfg).
 		WithSessionStore(store).
 		WithTool(fstools.NewReadFileTool(ws)).
 		WithTool(fstools.NewEditFileTool(ws)).
@@ -31,7 +36,7 @@ func main() {
 		WithTool(bash.NewBashTool(ws)).
 		UsePermissionManager()
 
-	if os.Getenv("MANI_UI") == "repl" {
+	if cfg.UI == "repl" {
 		cli.New(runtime).Run(context.Background())
 		return
 	}

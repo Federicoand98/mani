@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/config"
 )
 
 // -----------------------------------
@@ -146,4 +147,18 @@ func (c *SessionCommand) Execute(args []string) (Result, error) {
 	default:
 		return Result{Output: "Unknown subcommand: " + args[0]}, nil
 	}
+}
+
+/* Config command */
+type ConfigCommand struct {
+	runtime *app.Runtime
+}
+
+func NewConfigCommand(rt *app.Runtime) *ConfigCommand { return &ConfigCommand{runtime: rt} }
+
+func (c *ConfigCommand) Name() string        { return "/config" }
+func (c *ConfigCommand) Description() string { return "Displays the current configuration" }
+
+func (c *ConfigCommand) Execute(args []string) (Result, error) {
+	return Result{Output: fmt.Sprintf("file: %s\n%s", config.ConfigPath(), c.runtime.ConfigString())}, nil
 }

@@ -21,15 +21,15 @@ type Runtime struct {
 }
 
 func NewFromConfig(cfg config.Config) *Runtime {
-	client := ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.OllamaModel)
+	client := ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
 	agent := core.NewAgent(client)
 
 	return &Runtime{
 		agent:           agent,
 		cfg:             cfg,
-		thinkingEnabled: true,
+		thinkingEnabled: cfg.Thinking,
 		store:           session.NewInMemoryStore(),
-		current:         session.New(cfg.OllamaModel),
+		current:         session.New(cfg.Model),
 	}
 }
 
@@ -97,7 +97,7 @@ func (r *Runtime) Memory() string {
 }
 
 func (r *Runtime) NewSession() {
-	r.current = session.New(r.cfg.OllamaModel)
+	r.current = session.New(r.cfg.Model)
 }
 
 func (r *Runtime) SwitchSession(id string) error {
@@ -115,4 +115,8 @@ func (r *Runtime) ListSessions() ([]session.Meta, error) {
 
 func (r *Runtime) CurrentSession() *session.Session {
 	return r.current
+}
+
+func (r *Runtime) ConfigString() string {
+	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.Model, r.cfg.UI, r.cfg.Thinking, r.cfg.OllamaBaseURL)
 }
