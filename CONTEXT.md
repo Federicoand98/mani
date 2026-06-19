@@ -55,3 +55,15 @@ renderizzare. Distinto dall'`Emitter`, che è la porta lato dominio.
 La sequenza di messaggi del turno corrente passata all'LLM. Porta in `core`;
 l'implementazione di default è in-memory.
 _Avoid_: History, Context, Conversation.
+
+**Session**:
+Una conversazione distinta, con la sua `Memory` e dei metadati (id, titolo,
+timestamp, modello), switchabile durante un'esecuzione e ripristinabile da disco.
+Concetto di orchestrazione: vive nel package `session/`, il `core` non la conosce.
+_Avoid_: Conversation, Chat, Thread.
+
+**Session Store**:
+La porta che salva, carica, elenca ed elimina le `Session`. Vive in `session/`;
+ha un adapter in memoria e uno su file (un JSON per sessione). Il `core` non lo
+conosce: la serializzazione dei `Message` è interamente nell'adapter (via DTO).
+_Avoid_: Repository, Persistence, DAO.

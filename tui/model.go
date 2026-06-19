@@ -45,6 +45,7 @@ func NewModel(rt *app.Runtime) Model {
 	registry.Register(command.NewThinkingCommand(rt))
 	registry.Register(command.NewMemoryCommand(rt))
 	registry.Register(command.NewQuitCommand(rt))
+	registry.Register(command.NewSessionCommand(rt))
 
 	return Model{
 		runtime:  rt,

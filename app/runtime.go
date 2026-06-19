@@ -7,15 +7,17 @@ import (
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/ollama"
+	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool"
 )
 
 type Runtime struct {
 	agent           *core.Agent
-	memory          core.Memory
 	cfg             config.Config
 	thinkingEnabled bool
 	permission      *PermissionManager
+	store           session.Store    // prima era core.Memory
+	current         *session.Session // sessione attiva
 }
 
 func NewFromConfig(cfg config.Config) *Runtime {
@@ -24,9 +26,10 @@ func NewFromConfig(cfg config.Config) *Runtime {
 
 	return &Runtime{
 		agent:           agent,
-		memory:          core.NewInMemory(),
 		cfg:             cfg,
 		thinkingEnabled: true,
+		store:           session.NewInMemoryStore(),
+		current:         session.New(cfg.OllamaModel),
 	}
 }
 
@@ -39,6 +42,11 @@ func (r *Runtime) WithTool(t tool.Tool) *Runtime {
 func (r *Runtime) UsePermissionManager() *Runtime {
 	r.permission = NewPermissionManager()
 	r.agent.AddPreToolUseHook(r.permission.Hook())
+	return r
+}
+
+func (r *Runtime) WithSessionStore(s session.Store) *Runtime {
+	r.store = s
 	return r
 }
 
@@ -58,7 +66,7 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	go func() {
 		defer close(ch)
 
-		if err := r.agent.Run(ctx, r.memory, input); err != nil {
+		if err := r.agent.Run(ctx, r.current.Memory(), input); err != nil {
 			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
 			return
 		}
@@ -75,9 +83,30 @@ func (r *Runtime) ToggleThinking() bool {
 }
 
 func (r *Runtime) ClearMemory() {
-	r.memory.Clear()
+	r.current.Memory().Clear()
 }
 
 func (r *Runtime) Memory() string {
-	return fmt.Sprintf("%v", r.memory.Messages())
+	return fmt.Sprintf("%v", r.current.Memory().Messages())
+}
+
+func (r *Runtime) NewSession() {
+	r.current = session.New(r.cfg.OllamaModel)
+}
+
+func (r *Runtime) SwitchSession(id string) error {
+	s, err := r.store.Load(id)
+	if err != nil {
+		return err
+	}
+	r.current = s
+	return nil
+}
+
+func (r *Runtime) ListSessions() ([]session.Meta, error) {
+	return r.store.List()
+}
+
+func (r *Runtime) CurrentSession() *session.Session {
+	return r.current
 }

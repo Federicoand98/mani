@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"path/filepath"
+)
 
 type Config struct {
 	OllamaBaseURL string
@@ -22,4 +25,13 @@ func FromEnv() Config {
 		OllamaBaseURL: baseURL,
 		OllamaModel:   model,
 	}
+}
+
+func SessionsDir() string {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "mani", "sessions")
 }

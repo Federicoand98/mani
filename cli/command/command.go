@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Federicoand98/mani/app"
 )
@@ -88,3 +89,61 @@ func (c *MemoryCommand) Execute(args []string) (Result, error) {
 }
 
 // TODO: /help and /export
+
+/* Session command */
+type SessionCommand struct {
+	runtime *app.Runtime
+}
+
+func NewSessionCommand(rt *app.Runtime) *SessionCommand { return &SessionCommand{runtime: rt} }
+
+func (c *SessionCommand) Name() string        { return "/session" }
+func (c *SessionCommand) Description() string { return "Manages sessions: list, new, switch <id>" }
+
+func (c *SessionCommand) Execute(args []string) (Result, error) {
+	if len(args) == 0 {
+		return Result{Output: "Usage: /session <list|new|switch> [id]"}, nil
+	}
+
+	switch args[0] {
+	case "list":
+		metas, err := c.runtime.ListSessions()
+		if err != nil {
+			return Result{}, err
+		}
+
+		if len(metas) == 0 {
+			return Result{Output: "[no sessions found]"}, nil
+		}
+
+		var b strings.Builder
+		cur := c.runtime.CurrentSession().ID
+		for _, m := range metas {
+			marker := "  "
+			if m.ID == cur {
+				marker = "* "
+			}
+			b.WriteString(fmt.Sprintf("%s%s  %s (%s)\n", marker, m.ID, m.Title, m.UpdatedAt.Format("15:04 02/01")))
+		}
+
+		return Result{Output: b.String()}, nil
+
+	case "new":
+		c.runtime.NewSession()
+		return Result{Output: "[new session: " + c.runtime.CurrentSession().ID + "]"}, nil
+
+	case "switch":
+		if len(args) < 2 {
+			return Result{Output: "Usage: /session switch <id>"}, nil
+		}
+
+		if err := c.runtime.SwitchSession(args[1]); err != nil {
+			return Result{}, err
+		}
+
+		return Result{Output: "[switched to session: " + c.runtime.CurrentSession().ID + "]"}, nil
+
+	default:
+		return Result{Output: "Unknown subcommand: " + args[0]}, nil
+	}
+}

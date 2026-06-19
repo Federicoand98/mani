@@ -16,6 +16,14 @@ func NewInMemory() *InMemory {
 	}
 }
 
+func NewInMemoryFrom(messages []Message) *InMemory {
+	if messages == nil {
+		messages = []Message{}
+	}
+
+	return &InMemory{messages: messages}
+}
+
 func (m *InMemory) Messages() []Message {
 	return m.messages
 }
