@@ -9,6 +9,7 @@ const (
 	HookPostToolUse HookType = "post_tool_use"
 	HookPreLLMCall  HookType = "pre_llm_call"
 	HookPostLLMCall HookType = "post_llm_call"
+	HookContextFull HookType = "context_full"
 )
 
 type HookEvent struct {
@@ -37,6 +38,12 @@ type PreLLMCallPayload struct {
 
 type PostLLMCallPayload struct {
 	Response *LLMResponse // mutabile
+}
+
+type ContextFullPayload struct {
+	Messages []Message // mutabile
+	Tokens   int       // stima
+	Limit    int       // limite finestra
 }
 
 // ---- manager ----
@@ -95,6 +102,15 @@ func (m *HookManager) OnPostLLMCall(fn func(context.Context, *PostLLMCallPayload
 			return nil
 		}
 		return fn(ctx, ev.Payload.(*PostLLMCallPayload))
+	})
+}
+
+func (m *HookManager) OnContextFull(fn func(context.Context, *ContextFullPayload) error) {
+	m.Register(func(ctx context.Context, ev HookEvent) error {
+		if ev.Type != HookContextFull {
+			return nil
+		}
+		return fn(ctx, ev.Payload.(*ContextFullPayload))
 	})
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Config struct {
@@ -15,6 +16,7 @@ type Config struct {
 	UI            string `json:"ui"`
 	Thinking      bool   `json:"thinking"`
 	Debug         bool   `json:"debug"`
+	ContextWindow int    `json:"context_window"`
 }
 
 func defaults() Config {
@@ -25,6 +27,7 @@ func defaults() Config {
 		UI:            "tui",
 		Thinking:      true,
 		Debug:         true,
+		ContextWindow: 8192,
 	}
 }
 
@@ -87,6 +90,12 @@ func applyEnv(c *Config) {
 
 	if v, ok := os.LookupEnv("MANI_DEBUG"); ok {
 		c.Debug = v == "true"
+	}
+
+	if v, ok := os.LookupEnv("MANI_CONTEXT_WINDOW"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.ContextWindow = n
+		}
 	}
 }
 

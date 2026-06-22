@@ -23,6 +23,7 @@ type Runtime struct {
 func NewFromConfig(cfg config.Config) *Runtime {
 	client := ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
 	agent := core.NewAgent(client)
+	agent.SetContextLimit(cfg.ContextWindow)
 
 	return &Runtime{
 		agent:           agent,
@@ -69,6 +70,11 @@ func (r *Runtime) OnPreLLMCall(fn func(context.Context, *core.PreLLMCallPayload)
 
 func (r *Runtime) OnPostLLMCall(fn func(context.Context, *core.PostLLMCallPayload) error) *Runtime {
 	r.agent.Hooks().OnPostLLMCall(fn)
+	return r
+}
+
+func (r *Runtime) OnContextFull(fn func(context.Context, *core.ContextFullPayload) error) *Runtime {
+	r.agent.Hooks().OnContextFull(fn)
 	return r
 }
 

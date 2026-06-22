@@ -38,6 +38,9 @@ func main() {
 		OnPostToolUse(hookToolAudit).
 		UsePermissionManager()
 
+	app.RegistrerContextInjection(runtime, ws)
+	app.RegisterTrimCompaction(runtime, 20)
+
 	if cfg.UI == "repl" {
 		cli.New(runtime).Run(context.Background())
 		return

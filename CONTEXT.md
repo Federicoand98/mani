@@ -44,6 +44,13 @@ l'orchestratore può aggiungere i suoi, es. session) e un `Payload` a puntatore 
 mutabile in place.
 _Avoid_: Signal, Message.
 
+**Compaction**:
+La riduzione della storia dei messaggi quando la stima dei token supera una soglia della
+finestra di contesto. Non è incorporata nell'Agent: è una *strategia* implementata da un
+hook `ContextFull` (che muta i messaggi in place). L'Agent si limita a stimare i token e
+sparare l'evento.
+_Avoid_: Truncation, Summarization (sono strategie specifiche di compaction).
+
 **Permission Manager**:
 Il gate che, prima di eseguire un tool, traduce un `Risk Level` in una richiesta
 all'utente e ne attende la `Decision`. **Non è un Hook generico**: è un meccanismo a sé,

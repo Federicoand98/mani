@@ -14,6 +14,7 @@ type Agent struct {
 	emitter         Emitter
 	preToolUseHooks []PreToolUseHook // gate permesso
 	hooks           *HookManager
+	contextLimit    int // 0: unlimited
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -42,6 +43,18 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 		pre := &PreLLMCallPayload{Messages: cloneMessages(memory.Messages()), Tools: a.tools}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreLLMCall, Payload: pre}); err != nil {
 			return fmt.Errorf("agent: pre llm call hook: %w", err)
+		}
+
+		// context window tracking
+		if a.contextLimit > 0 {
+			tokens := EstimateTokens(pre.Messages)
+			if tokens > a.contextLimit*8/10 { // soglia 80%
+				cf := &ContextFullPayload{Messages: pre.Messages, Tokens: tokens, Limit: a.contextLimit}
+				if err := a.hooks.Fire(ctx, HookEvent{Type: HookContextFull, Payload: cf}); err != nil {
+					return fmt.Errorf("agent: context full hook: %w", err)
+				}
+				pre.Messages = cf.Messages
+			}
 		}
 
 		resp, err := a.Client.Send(ctx, pre.Messages, a.tools, onToken)
@@ -89,6 +102,10 @@ func (a *Agent) SetEmitter(emitter Emitter) {
 	a.emitter = emitter
 }
 
+func (a *Agent) SetContextLimit(limit int) {
+	a.contextLimit = limit
+}
+
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
 	for _, block := range blocks {
 		call, ok := block.(ToolUseBlock)
@@ -100,14 +117,6 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		if !found {
 			return fmt.Errorf("agent: no executor found for tool %s", call.Name)
 		}
-
-		// riskLevel := RiskNone
-		// for _, tool := range a.tools {
-		// 	if tool.Name == call.Name {
-		// 		riskLevel = tool.RiskLevel
-		// 		break
-		// 	}
-		// }
 
 		// fase 1: HOOK pre_tool_use
 		pre := &PreToolUsePayload{ToolName: call.Name, Input: call.Input}
