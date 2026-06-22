@@ -50,6 +50,52 @@ func (r *Runtime) WithSessionStore(s session.Store) *Runtime {
 	return r
 }
 
+// ------------ HOOKS ----------------
+
+func (r *Runtime) OnPreToolUse(fn func(context.Context, *core.PreToolUsePayload) error) *Runtime {
+	r.agent.Hooks().OnPreToolUse(fn)
+	return r
+}
+
+func (r *Runtime) OnPostToolUse(fn func(context.Context, *core.PostToolUsePayload) error) *Runtime {
+	r.agent.Hooks().OnPostToolUse(fn)
+	return r
+}
+
+func (r *Runtime) OnPreLLMCall(fn func(context.Context, *core.PreLLMCallPayload) error) *Runtime {
+	r.agent.Hooks().OnPreLLMCall(fn)
+	return r
+}
+
+func (r *Runtime) OnPostLLMCall(fn func(context.Context, *core.PostLLMCallPayload) error) *Runtime {
+	r.agent.Hooks().OnPostLLMCall(fn)
+	return r
+}
+
+func (r *Runtime) OnSessionStart(fn func(context.Context, *SessionEventPayload) error) *Runtime {
+	r.agent.Hooks().Register(func(ctx context.Context, ev core.HookEvent) error {
+		if ev.Type == HookSessionStart {
+			payload := ev.Payload.(*SessionEventPayload)
+			return fn(ctx, payload)
+		}
+		return nil
+	})
+	return r
+}
+
+func (r *Runtime) OnSessionEnd(fn func(context.Context, *SessionEventPayload) error) *Runtime {
+	r.agent.Hooks().Register(func(ctx context.Context, ev core.HookEvent) error {
+		if ev.Type == HookSessionEnd {
+			payload := ev.Payload.(*SessionEventPayload)
+			return fn(ctx, payload)
+		}
+		return nil
+	})
+	return r
+}
+
+// ----------------------------------
+
 func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	// TODO: per ora il canale lo faccio buffered ma devo tener presente questo:
 	// cosa succede se la CLI renderizza piu lentamente di quanto l'agent produce i token?
@@ -97,7 +143,9 @@ func (r *Runtime) Memory() string {
 }
 
 func (r *Runtime) NewSession() {
+	r.fireSession(HookSessionEnd)
 	r.current = session.New(r.cfg.Model)
+	r.fireSession(HookSessionStart)
 }
 
 func (r *Runtime) SwitchSession(id string) error {
@@ -105,7 +153,9 @@ func (r *Runtime) SwitchSession(id string) error {
 	if err != nil {
 		return err
 	}
+	r.fireSession(HookSessionEnd)
 	r.current = s
+	r.fireSession(HookSessionStart)
 	return nil
 }
 
@@ -117,6 +167,17 @@ func (r *Runtime) CurrentSession() *session.Session {
 	return r.current
 }
 
+func (r *Runtime) fireSession(t core.HookType) {
+	_ = r.agent.Hooks().Fire(context.Background(), core.HookEvent{
+		Type:    t,
+		Payload: &SessionEventPayload{SessionID: r.current.ID, Title: r.current.Title},
+	})
+}
+
 func (r *Runtime) ConfigString() string {
 	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.Model, r.cfg.UI, r.cfg.Thinking, r.cfg.OllamaBaseURL)
+}
+
+func (r *Runtime) IsDebugMode() bool {
+	return r.cfg.Debug
 }

@@ -14,6 +14,7 @@ type Config struct {
 	OllamaBaseURL string `json:"ollama_base_url"`
 	UI            string `json:"ui"`
 	Thinking      bool   `json:"thinking"`
+	Debug         bool   `json:"debug"`
 }
 
 func defaults() Config {
@@ -23,6 +24,7 @@ func defaults() Config {
 		OllamaBaseURL: "http://localhost:11434",
 		UI:            "tui",
 		Thinking:      true,
+		Debug:         true,
 	}
 }
 
@@ -81,6 +83,10 @@ func applyEnv(c *Config) {
 
 	if v, ok := os.LookupEnv("MANI_THINKING"); ok {
 		c.Thinking = v == "true"
+	}
+
+	if v, ok := os.LookupEnv("MANI_DEBUG"); ok {
+		c.Debug = v == "true"
 	}
 }
 

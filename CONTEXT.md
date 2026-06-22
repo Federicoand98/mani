@@ -31,15 +31,25 @@ un permesso prima dell'esecuzione. Vive in `core`.
 _Avoid_: Danger, Severity, Permission level.
 
 **Hook**:
-Un punto di intercettazione nel ciclo dell'Agent. Il `PreToolUse` gira prima di ogni
-tool e, ritornando `error`, può negarne l'esecuzione. È la porta astratta del permesso:
-il dominio conosce solo "hook che ritorna error", mai canali o decisioni utente.
-_Avoid_: Middleware, Filter, Interceptor.
+Un middleware registrato sull'Agent, invocato a punti precisi del ciclo di vita
+(pre/post tool, pre/post chiamata LLM nel core; session start/end lato orchestratore).
+Riceve un `HookEvent` (`Type` + payload a puntatore) e può osservare, **mutare** i dati
+in place, o abortire ritornando `error`. Uniforme: ogni hook riceve tutti gli eventi e
+filtra sul `Type`. Il payload è valido solo per la durata della chiamata.
+_Avoid_: Filter, Interceptor, Listener.
+
+**HookEvent**:
+Ciò che un Hook riceve: un `Type` (stringa aperta — il core dichiara gli eventi di loop,
+l'orchestratore può aggiungere i suoi, es. session) e un `Payload` a puntatore tipizzato
+mutabile in place.
+_Avoid_: Signal, Message.
 
 **Permission Manager**:
-L'implementazione applicativa (in `app`) del `PreToolUse` hook: traduce un `Risk Level`
-in una richiesta all'utente e ne attende la `Decision`. Tiene lo stato di sessione di
-ciò che è "sempre permesso". Non è dominio.
+Il gate che, prima di eseguire un tool, traduce un `Risk Level` in una richiesta
+all'utente e ne attende la `Decision`. **Non è un Hook generico**: è un meccanismo a sé,
+invocato dall'Agent *dopo* gli hook `PreToolUse` (che possono aver mutato l'input), così
+decide sull'input finale (niente TOCTOU). Tiene lo stato di sessione di ciò che è
+"sempre permesso". Vive in `app`, non è dominio.
 
 **Decision**:
 La risposta dell'utente a una richiesta di permesso: `Deny`, `AllowOnce`, `AllowAlways`.

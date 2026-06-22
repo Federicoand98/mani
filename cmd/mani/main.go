@@ -8,6 +8,7 @@ import (
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/cli"
 	"github.com/Federicoand98/mani/config"
+	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool/bash"
 	fstools "github.com/Federicoand98/mani/tool/fs"
@@ -34,6 +35,7 @@ func main() {
 		WithTool(fstools.NewWriteFileTool(ws)).
 		WithTool(fstools.NewDeleteFileTool(ws)).
 		WithTool(bash.NewBashTool(ws)).
+		OnPostToolUse(hookToolAudit).
 		UsePermissionManager()
 
 	if cfg.UI == "repl" {
@@ -44,4 +46,9 @@ func main() {
 	if err := tui.Run(runtime); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func hookToolAudit(ctx context.Context, p *core.PostToolUsePayload) error {
+	log.Printf("[AUDIT] post_tool_use: %s\n\n", p.ToolName)
+	return nil
 }

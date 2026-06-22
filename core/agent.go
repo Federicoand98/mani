@@ -12,7 +12,8 @@ type Agent struct {
 	tools           []ToolDefinition
 	executors       map[string]ToolExecutor
 	emitter         Emitter
-	preToolUseHooks []PreToolUseHook // TODO: in futuro voglio un manager per tutti gli hooks
+	preToolUseHooks []PreToolUseHook // gate permesso
+	hooks           *HookManager
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -21,6 +22,7 @@ func NewAgent(client LLMClient) *Agent {
 		tools:     []ToolDefinition{},
 		executors: make(map[string]ToolExecutor),
 		emitter:   nopEmitter{},
+		hooks:     NewHookManager(),
 	}
 }
 
@@ -36,9 +38,21 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 	}
 
 	for range maxIterations {
-		resp, err := a.Client.Send(ctx, memory.Messages(), a.tools, onToken)
+		// HOOK: pre llm call
+		pre := &PreLLMCallPayload{Messages: cloneMessages(memory.Messages()), Tools: a.tools}
+		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreLLMCall, Payload: pre}); err != nil {
+			return fmt.Errorf("agent: pre llm call hook: %w", err)
+		}
+
+		resp, err := a.Client.Send(ctx, pre.Messages, a.tools, onToken)
 		if err != nil {
 			return fmt.Errorf("agent: %w", err)
+		}
+
+		// HOOK: post llm call
+		post := &PostLLMCallPayload{Response: &resp}
+		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostLLMCall, Payload: post}); err != nil {
+			return fmt.Errorf("agent: post llm call hook: %w", err)
 		}
 
 		memory.Add(Message{Role: RoleAssistant, Content: resp.Content})
@@ -56,6 +70,10 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 	}
 
 	return nil
+}
+
+func (a *Agent) Hooks() *HookManager {
+	return a.hooks
 }
 
 func (a *Agent) AddTool(def ToolDefinition, exec ToolExecutor) {
@@ -83,41 +101,51 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 			return fmt.Errorf("agent: no executor found for tool %s", call.Name)
 		}
 
-		riskLevel := RiskNone
-		for _, tool := range a.tools {
-			if tool.Name == call.Name {
-				riskLevel = tool.RiskLevel
-				break
-			}
-		}
-
-		if err := a.runPreToolUseHooks(call.Name, riskLevel, call.Input); err != nil {
-			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-				ToolResultBlock{
-					ToolUseID: call.ID,
-					Content:   fmt.Sprintf("[blocked tool: %s]", err.Error()),
-					IsError:   true,
-				},
-			}})
-			continue
-		}
-
-		a.emitter.ToolCall(call.Name, call.Input)
-
-		result, err := executor.Execute(ctx, call.Input)
-		if err != nil {
-			// l'errore non deve rompere il loop ma rimandato al modello in modo da correggersi
-			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-				ToolResultBlock{ToolUseID: call.ID, Content: err.Error(), IsError: true},
-			}})
-			continue
-		}
-
-		// if a.toolEventHandler != nil {
-		// 	a.toolEventHandler(call.Name, call.Input, result, false)
+		// riskLevel := RiskNone
+		// for _, tool := range a.tools {
+		// 	if tool.Name == call.Name {
+		// 		riskLevel = tool.RiskLevel
+		// 		break
+		// 	}
 		// }
 
-		a.emitter.ToolResult(call.Name, result, false)
+		// fase 1: HOOK pre_tool_use
+		pre := &PreToolUsePayload{ToolName: call.Name, Input: call.Input}
+		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreToolUse, Payload: pre}); err != nil {
+			memory.Add(blockedResult(call.ID, "hook blocked: "+err.Error()))
+			continue
+		}
+
+		input := pre.Input
+
+		// fase 2: gate permesso (risk level check)
+		riskLevel := a.riskFor(call.Name)
+		if err := a.runPreToolUseHooks(call.Name, riskLevel, input); err != nil {
+			memory.Add(blockedResult(call.ID, err.Error()))
+			continue
+		}
+
+		// fase 3: esecuzione tool
+		a.emitter.ToolCall(call.Name, input)
+		result, execErr := executor.Execute(ctx, input)
+
+		isError := false
+		if execErr != nil {
+			result = execErr.Error()
+			isError = true
+		}
+
+		// fase 4: HOOK post_tool_use
+		pp := &PostToolUsePayload{ToolName: call.Name, Input: input, Result: result, IsError: isError}
+		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostToolUse, Payload: pp}); err != nil {
+			return fmt.Errorf("agent: post_tool_use: %w", err)
+		}
+
+		result, isError = pp.Result, pp.IsError
+
+		if !isError {
+			a.emitter.ToolResult(call.Name, result, false)
+		}
 
 		memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
 			ToolResultBlock{ToolUseID: call.ID, Content: result, IsError: false},
@@ -133,4 +161,25 @@ func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel, input map[s
 		}
 	}
 	return nil
+}
+
+func (a *Agent) riskFor(toolName string) RiskLevel {
+	for _, t := range a.tools {
+		if t.Name == toolName {
+			return t.RiskLevel
+		}
+	}
+	return RiskNone
+}
+
+func blockedResult(id, msg string) Message {
+	return Message{Role: RoleTool, Content: []ContentBlock{
+		ToolResultBlock{ToolUseID: id, Content: "[blocked: " + msg + "]", IsError: true},
+	}}
+}
+
+func cloneMessages(src []Message) []Message {
+	dst := make([]Message, len(src))
+	copy(dst, src)
+	return dst
 }
