@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
@@ -18,10 +21,13 @@ type Runtime struct {
 	permission      *PermissionManager
 	store           session.Store    // prima era core.Memory
 	current         *session.Session // sessione attiva
+	cancel          context.CancelFunc
+	mu              sync.Mutex // protege l'accesso a cancel
 }
 
 func NewFromConfig(cfg config.Config) *Runtime {
-	client := ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
+	var client core.LLMClient = ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
+	client = NewRetryClient(client, 3, 500*time.Millisecond)
 	agent := core.NewAgent(client)
 	agent.SetContextLimit(cfg.ContextWindow)
 
@@ -107,6 +113,11 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	// cosa succede se la CLI renderizza piu lentamente di quanto l'agent produce i token?
 	ch := make(chan Event, 32)
 
+	runCtx, cancel := context.WithCancel(ctx)
+	r.mu.Lock()
+	r.cancel = cancel
+	r.mu.Unlock()
+
 	r.agent.SetEmitter(&channelEmitter{ch: ch, thinking: r.thinkingEnabled})
 
 	if r.permission != nil {
@@ -117,22 +128,34 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 
 	go func() {
 		defer close(ch)
+		defer cancel()
 
-		if err := r.agent.Run(ctx, r.current.Memory(), input); err != nil {
+		err := r.agent.Run(runCtx, r.current.Memory(), input)
+
+		switch {
+		case errors.Is(err, context.Canceled):
+			_ = r.store.Save(r.current) // memoria coerente marcata
+			ch <- Event{Type: EventCancelled}
+		case err != nil:
 			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
-			return
+		default:
+			_ = r.store.Save(r.current)
+			ch <- Event{Type: EventDone}
 		}
-
-		// write-through (salva memoria ad ogni turno)
-		if err := r.store.Save(r.current); err != nil {
-			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
-			return
-		}
-
-		ch <- Event{Type: EventDone}
 	}()
 
 	return ch
+}
+
+// Cancel cancels the current turn. Safe to call concurrently.
+func (r *Runtime) Cancel() {
+	r.mu.Lock()
+	c := r.cancel
+	r.mu.Unlock()
+
+	if c != nil {
+		c()
+	}
 }
 
 func (r *Runtime) ToggleThinking() bool {

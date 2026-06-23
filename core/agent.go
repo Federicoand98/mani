@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -107,10 +108,16 @@ func (a *Agent) SetContextLimit(limit int) {
 }
 
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
-	for _, block := range blocks {
+	for i, block := range blocks {
 		call, ok := block.(ToolUseBlock)
 		if !ok {
 			continue
+		}
+
+		// tool interrotto prima di eseguire
+		if ctx.Err() != nil {
+			a.cancelPending(memory, blocks[i:])
+			return ctx.Err()
 		}
 
 		executor, found := a.executors[call.Name]
@@ -138,6 +145,12 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		a.emitter.ToolCall(call.Name, input)
 		result, execErr := executor.Execute(ctx, input)
 
+		// tool interrotto durante l'esecuzione
+		if errors.Is(execErr, context.Canceled) {
+			a.cancelPending(memory, blocks[i:])
+			return ctx.Err()
+		}
+
 		isError := false
 		if execErr != nil {
 			result = execErr.Error()
@@ -161,6 +174,15 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		}})
 	}
 	return nil
+}
+
+// cancelPending: per ogni tool_use non risposto aggiunge alla memoria un tool_result: CANCELLED
+func (a *Agent) cancelPending(memory Memory, remaining []ContentBlock) {
+	for _, b := range remaining {
+		if call, ok := b.(ToolUseBlock); ok {
+			memory.Add(Message{Role: RoleTool, Content: []ContentBlock{ToolResultBlock{ToolUseID: call.ID, Content: "[cancelled by user]", IsError: true}}})
+		}
+	}
 }
 
 func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel, input map[string]any) error {

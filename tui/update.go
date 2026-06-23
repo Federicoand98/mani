@@ -71,6 +71,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(m.events)
 	}
 
+	if msg.Type == tea.KeyEsc && m.state == stateRunning {
+		m.runtime.Cancel()
+		return m, nil
+	}
+
 	// commands palette
 	matches := m.matchingCommands()
 	paletteActive := m.state == stateIdle && len(matches) > 0
@@ -197,6 +202,12 @@ func (m Model) handleEvent(ev app.Event) (tea.Model, tea.Cmd) {
 		p := ev.Payload.(app.PermissionRequestPayload)
 		m.pending = &p
 		m.state = stateAvaitingPermission
+		return m, nil
+
+	case app.EventCancelled:
+		m.output += dimStyle.Render("\n[cancelled]\n")
+		m.viewport.SetContent(m.rendered())
+		m.state = stateIdle
 		return m, nil
 
 	case app.EventError:

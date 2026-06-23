@@ -10,6 +10,7 @@ const (
 	EventPermissionRequest EventType = "permission_request"
 	EventDone              EventType = "done"
 	EventError             EventType = "error"
+	EventCancelled         EventType = "cancelled"
 )
 
 type Event struct {
