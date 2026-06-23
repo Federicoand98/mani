@@ -171,6 +171,10 @@ func (r *Runtime) Memory() string {
 	return fmt.Sprintf("%v", r.current.Memory().Messages())
 }
 
+func (r *Runtime) ContextLimit() int {
+	return r.cfg.ContextWindow
+}
+
 func (r *Runtime) NewSession() {
 	r.fireSession(HookSessionEnd)
 	r.current = session.New(r.cfg.Model)

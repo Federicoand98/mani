@@ -204,6 +204,12 @@ func (m Model) handleEvent(ev app.Event) (tea.Model, tea.Cmd) {
 		m.state = stateAvaitingPermission
 		return m, nil
 
+	case app.EventUsage:
+		p := ev.Payload.(app.UsagePayload)
+		m.lastInput = p.Input
+		m.lastOutput = p.Output
+		return m, waitForEvent(m.events)
+
 	case app.EventCancelled:
 		m.output += dimStyle.Render("\n[cancelled]\n")
 		m.viewport.SetContent(m.rendered())

@@ -69,6 +69,8 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 			return fmt.Errorf("agent: post llm call hook: %w", err)
 		}
 
+		a.emitter.Usage(resp.Usage.InputTokens, resp.Usage.OutputTokens)
+
 		memory.Add(Message{Role: RoleAssistant, Content: resp.Content})
 
 		switch resp.StopReason {
@@ -83,7 +85,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 		}
 	}
 
-	return nil
+	return fmt.Errorf("agent: reached max iterations without completing the task (%d)", maxIterations)
 }
 
 func (a *Agent) Hooks() *HookManager {

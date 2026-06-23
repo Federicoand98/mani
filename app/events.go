@@ -11,6 +11,7 @@ const (
 	EventDone              EventType = "done"
 	EventError             EventType = "error"
 	EventCancelled         EventType = "cancelled"
+	EventUsage             EventType = "usage"
 )
 
 type Event struct {
@@ -42,4 +43,9 @@ type PermissionRequestPayload struct {
 	RiskLevel string
 	Input     map[string]any
 	Respond   chan Decision
+}
+
+type UsagePayload struct {
+	Input  int
+	Output int
 }

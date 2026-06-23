@@ -35,6 +35,8 @@ type Model struct {
 	history      []string
 	historyIndex int
 	paletteIndex int
+	lastInput    int
+	lastOutput   int
 }
 
 func NewModel(rt *app.Runtime) Model {

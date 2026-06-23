@@ -51,6 +51,17 @@ func (m Model) View() string {
 		}
 
 		b.WriteString(promptStyle.Width(m.viewport.Width).Render(m.input.View()))
+
+		if m.lastInput > 0 {
+			limit := m.runtime.ContextLimit()
+			pct := 0
+			if limit > 0 {
+				pct = m.lastInput * 100 / limit
+			}
+
+			b.WriteString("\n")
+			b.WriteString(dimStyle.Render(fmt.Sprintf("[%d/%d (%d%%)] out %d tokens", m.lastInput, limit, pct, m.lastOutput)))
+		}
 	}
 
 	return b.String()

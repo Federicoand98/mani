@@ -24,3 +24,7 @@ func (e *channelEmitter) ToolCall(name string, input map[string]any) {
 func (e *channelEmitter) ToolResult(name string, result string, isError bool) {
 	e.ch <- Event{Type: EventToolResult, Payload: ToolCallResultPayload{Name: name, Result: result, IsError: isError}}
 }
+
+func (e *channelEmitter) Usage(input, output int) {
+	e.ch <- Event{Type: EventUsage, Payload: UsagePayload{Input: input, Output: output}}
+}
