@@ -13,22 +13,30 @@ type promptCall struct {
 	input     map[string]any
 }
 
+// recordingPrompter simula la UI: registra ogni richiesta di permesso e risponde
+// sul canale Respond del payload (il manager è event-based, non più Prompter iniettato).
 type recordingPrompter struct {
-	calls   []promptCall
-	decide  func(call promptCall) Decision
+	calls  []promptCall
+	decide func(call promptCall) Decision
 }
 
-func (r *recordingPrompter) prompter() Prompter {
-	return func(toolName, riskLevel string, input map[string]any) Decision {
-		c := promptCall{toolName: toolName, riskLevel: riskLevel, input: input}
+func (r *recordingPrompter) emit() func(PermissionRequestPayload) {
+	return func(p PermissionRequestPayload) {
+		c := promptCall{toolName: p.ToolName, riskLevel: p.RiskLevel, input: p.Input}
 		r.calls = append(r.calls, c)
-		return r.decide(c)
+		p.Respond <- r.decide(c)
 	}
+}
+
+func newManager(rp *recordingPrompter) *PermissionManager {
+	pm := NewPermissionManager()
+	pm.setEmit(rp.emit())
+	return pm
 }
 
 func TestPermissionManager_RiskNone_SkipsPrompter(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return Deny }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	err := pm.check("anything", core.RiskNone, nil)
 	if err != nil {
@@ -41,7 +49,7 @@ func TestPermissionManager_RiskNone_SkipsPrompter(t *testing.T) {
 
 func TestPermissionManager_AllowOnce_DoesNotCache(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return AllowOnce }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	if err := pm.check("bash", core.RiskExecute, nil); err != nil {
 		t.Fatalf("prima check inattesa: %v", err)
@@ -56,7 +64,7 @@ func TestPermissionManager_AllowOnce_DoesNotCache(t *testing.T) {
 
 func TestPermissionManager_AllowAlways_Caches(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return AllowAlways }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	for i := 0; i < 3; i++ {
 		if err := pm.check("bash", core.RiskExecute, nil); err != nil {
@@ -70,7 +78,7 @@ func TestPermissionManager_AllowAlways_Caches(t *testing.T) {
 
 func TestPermissionManager_Deny_ReturnsError(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return Deny }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	err := pm.check("bash", core.RiskExecute, nil)
 	if err == nil {
@@ -83,7 +91,7 @@ func TestPermissionManager_Deny_ReturnsError(t *testing.T) {
 
 func TestPermissionManager_PrompterReceivesArgs(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return AllowOnce }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	input := map[string]any{"command": "ls"}
 	pm.check("bash", core.RiskExecute, input)
@@ -110,7 +118,7 @@ func TestPermissionManager_DifferentTools_NotShared(t *testing.T) {
 		}
 		return Deny
 	}}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	if err := pm.check("bash", core.RiskExecute, nil); err != nil {
 		t.Fatalf("bash AllowAlways: %v", err)
@@ -122,7 +130,7 @@ func TestPermissionManager_DifferentTools_NotShared(t *testing.T) {
 
 func TestPermissionManager_Hook_DelegatesToCheck(t *testing.T) {
 	rp := &recordingPrompter{decide: func(promptCall) Decision { return AllowOnce }}
-	pm := NewPermissionManager(rp.prompter())
+	pm := newManager(rp)
 
 	hook := pm.Hook()
 	input := map[string]any{"x": 1}

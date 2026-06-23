@@ -50,6 +50,29 @@ func (m *mockToolExecutor) Execute(_ context.Context, _ map[string]any) (string,
 	return m.result, m.err
 }
 
+// captureEmitter cattura gli eventi emessi dall'Agent (sostituisce il vecchio ToolEventHandler).
+type captureEmitter struct {
+	toolCalls   int
+	toolResults int
+	lastName    string
+	lastResult  string
+	lastIsError bool
+}
+
+func (c *captureEmitter) Token(string)    {}
+func (c *captureEmitter) Thinking(string) {}
+func (c *captureEmitter) ToolCall(name string, _ map[string]any) {
+	c.toolCalls++
+	c.lastName = name
+}
+func (c *captureEmitter) ToolResult(name, result string, isError bool) {
+	c.toolResults++
+	c.lastName = name
+	c.lastResult = result
+	c.lastIsError = isError
+}
+func (c *captureEmitter) Usage(int, int) {}
+
 func textResp(text string) LLMResponse {
 	return LLMResponse{
 		Content:    []ContentBlock{TextBlock{Text: text}},
@@ -212,7 +235,7 @@ func TestAgent_Run_UnknownTool_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestAgent_Run_MaxIterations_ReturnsNil(t *testing.T) {
+func TestAgent_Run_MaxIterations_ReturnsError(t *testing.T) {
 	responses := make([]LLMResponse, maxIterations+5)
 	for i := range responses {
 		responses[i] = toolUseResp("c0", "t", nil)
@@ -221,9 +244,9 @@ func TestAgent_Run_MaxIterations_ReturnsNil(t *testing.T) {
 	agent := NewAgent(client)
 	agent.AddTool(ToolDefinition{Name: "t"}, &mockToolExecutor{result: "ok"})
 
-	// l'agent attualmente esce nil dopo maxIterations (vedi agent.go:50)
-	if err := agent.Run(context.Background(), NewInMemory(), "loop"); err != nil {
-		t.Errorf("atteso nil al limite iterazioni, ottenuto %v", err)
+	// dopo maxIterations senza completare, l'agent ritorna errore (non più nil)
+	if err := agent.Run(context.Background(), NewInMemory(), "loop"); err == nil {
+		t.Error("atteso errore al raggiungimento del limite iterazioni")
 	}
 }
 
@@ -286,7 +309,7 @@ func TestAgent_Hook_Blocks_ToolNotExecuted(t *testing.T) {
 	if !trb.IsError {
 		t.Error("IsError deve essere true su block")
 	}
-	if !strings.Contains(trb.Content, "[blocked tool:") || !strings.Contains(trb.Content, "denied") {
+	if !strings.Contains(trb.Content, "[blocked:") || !strings.Contains(trb.Content, "denied") {
 		t.Errorf("Content non contiene il marker di block: %q", trb.Content)
 	}
 }
@@ -351,7 +374,7 @@ func TestAgent_Hook_ReceivesCorrectRiskLevel(t *testing.T) {
 	}
 }
 
-func TestAgent_ToolEventHandler_NotCalledOnBlock(t *testing.T) {
+func TestAgent_ToolEvent_NotEmittedOnBlock(t *testing.T) {
 	client := &mockLLMClient{
 		responses: []LLMResponse{
 			toolUseResp("c0", "t", nil),
@@ -364,18 +387,16 @@ func TestAgent_ToolEventHandler_NotCalledOnBlock(t *testing.T) {
 		return errors.New("denied")
 	})
 
-	events := 0
-	agent.SetToolEventHandler(func(_ string, _ map[string]any, _ string, _ bool) {
-		events++
-	})
+	cap := &captureEmitter{}
+	agent.SetEmitter(cap)
 
 	agent.Run(context.Background(), NewInMemory(), "x")
-	if events != 0 {
-		t.Errorf("toolEventHandler non doveva essere chiamato su block, events=%d", events)
+	if cap.toolCalls != 0 || cap.toolResults != 0 {
+		t.Errorf("emitter non doveva emettere tool events su block: calls=%d results=%d", cap.toolCalls, cap.toolResults)
 	}
 }
 
-func TestAgent_ToolEventHandler_CalledOnSuccess(t *testing.T) {
+func TestAgent_ToolEvent_EmittedOnSuccess(t *testing.T) {
 	client := &mockLLMClient{
 		responses: []LLMResponse{
 			toolUseResp("c0", "t", nil),
@@ -385,16 +406,14 @@ func TestAgent_ToolEventHandler_CalledOnSuccess(t *testing.T) {
 	agent := NewAgent(client)
 	agent.AddTool(ToolDefinition{Name: "t"}, &mockToolExecutor{result: "done"})
 
-	var gotName, gotResult string
-	var gotIsError bool
-	agent.SetToolEventHandler(func(name string, _ map[string]any, result string, isError bool) {
-		gotName = name
-		gotResult = result
-		gotIsError = isError
-	})
+	cap := &captureEmitter{}
+	agent.SetEmitter(cap)
 
 	agent.Run(context.Background(), NewInMemory(), "x")
-	if gotName != "t" || gotResult != "done" || gotIsError {
-		t.Errorf("handler args inattesi: name=%q result=%q isError=%v", gotName, gotResult, gotIsError)
+	if cap.lastName != "t" || cap.lastResult != "done" || cap.lastIsError {
+		t.Errorf("emitter args inattesi: name=%q result=%q isError=%v", cap.lastName, cap.lastResult, cap.lastIsError)
+	}
+	if cap.toolResults != 1 {
+		t.Errorf("atteso 1 ToolResult emesso, ottenuto %d", cap.toolResults)
 	}
 }

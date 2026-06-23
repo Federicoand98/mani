@@ -172,7 +172,7 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		}
 
 		memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-			ToolResultBlock{ToolUseID: call.ID, Content: result, IsError: false},
+			ToolResultBlock{ToolUseID: call.ID, Content: result, IsError: isError},
 		}})
 	}
 	return nil
