@@ -7,9 +7,9 @@ dove agisce il **gate permesso** e dove vengono emessi gli **eventi** verso la U
 
 | Simbolo | Significato |
 |---|---|
-| 🪝 (giallo) | **Hook** — punto di middleware. Può osservare, **mutare** il payload, o abortire (`error`) |
-| 🔒 (rosso) | **Permission gate** — NON è un hook: meccanismo a sé, decide sull'input *finale* (post-mutazione) |
-| azzurro | **Evento** emesso dall'`Emitter` verso la UI (REPL/TUI). Non interrompe il loop |
+| **Hook** (giallo) | punto di middleware. Può osservare, **mutare** il payload, o abortire (`error`) |
+| **Gate** (rosso) | NON è un hook: meccanismo a sé, decide sull'input *finale* (post-mutazione) |
+| **Evento** (azzurro) | emesso dall'`Emitter` verso la UI (REPL/TUI). Non interrompe il loop |
 | grigio | Passo interno dell'Agent |
 
 Due layer: gli hook di **loop** (`PreLLMCall`, `ContextFull`, `PostLLMCall`, `PreToolUse`,
@@ -26,12 +26,12 @@ flowchart LR
     classDef step fill:#eeeeee,stroke:#888888,color:#222222;
 
     A["startup · NewSession · SwitchSession"]:::step
-    SS["🪝 SessionStart"]:::hook
+    SS["HOOK SessionStart"]:::hook
     T1["Execute (turno 1)"]:::step
     T2["Execute (turno 2)"]:::step
     DOTS["…"]:::step
     Q["switch away · /quit"]:::step
-    SE["🪝 SessionEnd"]:::hook
+    SE["HOOK SessionEnd"]:::hook
 
     A --> SS --> T1 --> T2 --> DOTS --> Q --> SE
 ```
@@ -52,26 +52,26 @@ flowchart TD
     IN(["User input"]):::step
     ADD["memory.Add(user)"]:::step
     LOOP{{"Loop · max 10 iterazioni"}}
-    PRE["🪝 PreLLMCall<br/>muta i messaggi da inviare"]:::hook
+    PRE["HOOK PreLLMCall<br/>muta i messaggi da inviare"]:::hook
     EST["EstimateTokens(messaggi)"]:::step
     CHK{"stima &gt; 80% del limite?"}
-    CF["🪝 ContextFull<br/>compaction · muta i messaggi"]:::hook
+    CF["HOOK ContextFull<br/>compaction · muta i messaggi"]:::hook
     SEND["Client.Send → streaming"]:::step
     SEV["EventThinking · EventToken"]:::event
-    POST["🪝 PostLLMCall<br/>osserva/muta la risposta"]:::hook
+    POST["HOOK PostLLMCall<br/>osserva/muta la risposta"]:::hook
     ADDA["memory.Add(assistant)"]:::step
     SR{"StopReason?"}
     DONE["EventDone"]:::event
     EERR["EventError"]:::event
     RET(["fine turno"]):::step
 
-    TPRE["🪝 PreToolUse<br/>muta Input · può abortire"]:::hook
-    GATE["🔒 Permission gate<br/>decide sull'Input finale"]:::gate
+    TPRE["HOOK PreToolUse<br/>muta Input · può abortire"]:::hook
+    GATE["GATE Permission gate<br/>decide sull'Input finale"]:::gate
     PREQ["EventPermissionRequest"]:::event
     TBLK["memory.Add(blocked result)"]:::step
     TCALL["EventToolCall"]:::event
     TEXEC["executor.Execute(Input)"]:::step
-    TPOST["🪝 PostToolUse<br/>osserva/muta result"]:::hook
+    TPOST["HOOK PostToolUse<br/>osserva/muta result"]:::hook
     TRES["EventToolResult"]:::event
     TADD["memory.Add(tool result)"]:::step
 
@@ -120,8 +120,3 @@ rendering, e non alterano il loop.
 
 `EventThinking` · `EventToken` · `EventToolCall` · `EventToolResult` ·
 `EventPermissionRequest` · `EventDone` · `EventError`
-
----
-
-*Diagrammi in [Mermaid](https://mermaid.js.org/) — si renderizzano su GitHub e nella
-maggior parte dei viewer Markdown.*
