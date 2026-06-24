@@ -18,6 +18,8 @@ const (
 	stateIdle state = iota
 	stateRunning
 	stateAvaitingPermission
+	stateChoosing // picker
+	stateLogin
 )
 
 type Model struct {
@@ -37,6 +39,8 @@ type Model struct {
 	paletteIndex int
 	lastInput    int
 	lastOutput   int
+	picker       picker
+	loginTarget  string
 }
 
 func NewModel(rt *app.Runtime) Model {
@@ -54,6 +58,11 @@ func NewModel(rt *app.Runtime) Model {
 	registry.Register(command.NewQuitCommand(rt))
 	registry.Register(command.NewSessionCommand(rt))
 	registry.Register(command.NewConfigCommand(rt))
+	registry.Register(command.NewLogoutCommand(rt))
+	registry.Register(command.NewLoginCommand(rt))
+	registry.Register(command.NewModelCommand(rt))
+	registry.Register(command.NewProviderCommand(rt))
+	registry.Register(command.NewHelpCommand(registry))
 
 	return Model{
 		runtime:      rt,

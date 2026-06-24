@@ -4,7 +4,10 @@ import (
 	"context"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/cli/command"
+	"github.com/Federicoand98/mani/config"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -42,6 +45,69 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case modelMsg:
+		if msg.err != nil {
+			m.state = stateIdle
+			m.output += "\nmodel list error: " + msg.err.Error() + "\n"
+			m.viewport.SetContent(m.rendered())
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+		m.picker = picker{
+			title:  "Model",
+			items:  msg.models,
+			onPick: func(model string) tea.Cmd { return applyModel(m.runtime, model) },
+		}
+		return m, nil
+
+	case deviceCodeMsg:
+		if msg.err != nil {
+			m.state = stateIdle
+			m.output += "\ndevice code error: " + msg.err.Error() + "\n"
+			m.viewport.SetContent(m.rendered())
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+		m.output += "\nOpen " + hyperlink(msg.dc.VerificationURI, cyanStyle.Render(msg.dc.VerificationURI)) +
+			" and insert this code:\n\n  " + cyanStyle.Bold(true).Render(msg.dc.UserCode) + "\n"
+		m.viewport.SetContent(m.rendered())
+		m.viewport.GotoBottom()
+		return m, tea.Batch(
+			copyToClipboard(msg.dc.UserCode),
+			pollCopilotLogin(m.runtime, msg.dc),
+		)
+
+	case clipboardMsg:
+		if msg.ok {
+			m.output += dimStyle.Render("  (code copied to clipboard)") + "\n"
+		}
+		m.viewport.SetContent(m.rendered())
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case loginDoneMsg:
+		m.state = stateIdle
+		m.input.EchoMode = textinput.EchoNormal
+		if msg.err != nil {
+			m.output += "\nlogin error: " + msg.err.Error() + "\n"
+		} else {
+			m.output += "\nlogin done: " + msg.provider + "\n"
+		}
+		m.viewport.SetContent(m.rendered())
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case appliedMsg:
+		m.state = stateIdle
+		if msg.err != nil {
+			m.output += "\n" + msg.err.Error() + "\n"
+		} else {
+			m.output += "\n" + msg.text + "\n"
+		}
+		m.viewport.SetContent(m.rendered())
+		m.viewport.GotoBottom()
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -69,6 +135,39 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pending = nil
 		m.state = stateRunning
 		return m, waitForEvent(m.events)
+	}
+
+	if m.state == stateChoosing {
+		if msg.Type == tea.KeyEsc {
+			m.state = stateIdle
+			return m, nil
+		}
+		return m, m.picker.update(msg)
+	}
+
+	if m.state == stateLogin {
+		if msg.Type == tea.KeyEsc {
+			m.state = stateIdle
+			m.input.SetValue("")
+			m.input.EchoMode = textinput.EchoNormal
+			return m, nil
+		}
+		if m.loginTarget == "copilot" {
+			return m, nil // device flow in corso
+		}
+		if msg.Type == tea.KeyEnter {
+			key := m.input.Value()
+			target := m.loginTarget
+			m.input.SetValue("")
+			m.input.EchoMode = textinput.EchoNormal
+			return m, func() tea.Msg {
+				err := m.runtime.Login(target, config.Credential{Type: config.CredAPI, Key: key})
+				return loginDoneMsg{provider: target, err: err}
+			}
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
 	}
 
 	if msg.Type == tea.KeyEsc && m.state == stateRunning {
@@ -116,23 +215,70 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		m.input.Reset()
 
-		if res, handled, err := m.commands.Dispatch(text); handled {
-			m.output += "\n> " + text + "\n"
-			if err != nil {
-				m.output += "Error: " + err.Error() + "\n"
-			} else if res.Output != "" {
-				m.output += res.Output + "\n"
-			}
+		res, handled, err := m.commands.Dispatch(text)
+		if err != nil {
+			m.output += "\n" + err.Error() + "\n"
+			m.input.SetValue("")
+			return m, nil
+		}
 
-			m.viewport.SetContent(m.rendered())
-			m.viewport.GotoBottom()
-
+		if handled {
 			if res.Quit {
 				return m, tea.Quit
 			}
 
+			switch res.Action {
+			case command.ActionPickProvider:
+				m.picker = picker{
+					title:  "Provider",
+					items:  m.runtime.AvailableProviders(),
+					onPick: func(p string) tea.Cmd { return applyProvider(m.runtime, p) },
+				}
+				m.state = stateChoosing
+
+			case command.ActionPickModel:
+				m.state = stateChoosing
+				m.picker = picker{title: "Loading models..."}
+				return m, fetchModels(m.runtime)
+
+			case command.ActionLogin:
+				m.loginTarget = res.Arg
+				m.state = stateLogin
+				if res.Arg == "copilot" {
+					return m, startCopilotLogin(m.runtime)
+				}
+				m.input.SetValue("")
+				m.input.Placeholder = "paste API key and press enter"
+				m.input.EchoMode = textinput.EchoPassword
+				return m, nil
+
+			default:
+				m.output += "\n" + res.Output + "\n"
+			}
+
+			m.input.SetValue("")
+			m.viewport.SetContent(m.rendered())
+			m.viewport.GotoBottom()
 			return m, nil
 		}
+
+		// if res, handled, err := m.commands.Dispatch(text); handled {
+		// 	m.output += "\n> " + text + "\n"
+		// 	if err != nil {
+		// 		m.output += "Error: " + err.Error() + "\n"
+		// 	} else if res.Output != "" {
+		// 		m.output += res.Output + "\n"
+		// 	}
+
+		// 	m.viewport.SetContent(m.rendered())
+		// 	m.viewport.GotoBottom()
+
+		// 	if res.Quit {
+		// 		return m, tea.Quit
+		// 	}
+
+		// 	return m, nil
+		// }
 
 		m.output += "\n> " + text + "\n"
 		m.viewport.SetContent(m.rendered())

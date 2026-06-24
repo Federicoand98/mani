@@ -52,6 +52,15 @@ func (r *retryClient) Send(ctx context.Context, messages []core.Message, tools [
 	return core.LLMResponse{}, fmt.Errorf("retry: %d failed attempts: %w", r.maxAttempts, lastErr)
 }
 
+// ListModels: passthrough verso l'inner se supporta ModelLister. Senza questo, il
+// decorator nasconde la capability e /model fallisce con "does not support model listing".
+func (r *retryClient) ListModels(ctx context.Context) ([]string, error) {
+	if ml, ok := r.inner.(core.ModelLister); ok {
+		return ml.ListModels(ctx)
+	}
+	return nil, fmt.Errorf("retry: inner client does not support model listing")
+}
+
 func isRetryable(err error) bool {
 	return err != nil
 }

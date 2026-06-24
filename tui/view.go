@@ -52,6 +52,9 @@ func (m Model) View() string {
 
 		b.WriteString(promptStyle.Width(m.viewport.Width).Render(m.input.View()))
 
+		b.WriteString("\n")
+		b.WriteString(cyanStyle.Render(m.runtime.Provider() + " · " + m.runtime.ModelName()))
+
 		if m.lastInput > 0 {
 			limit := m.runtime.ContextLimit()
 			pct := 0
@@ -59,9 +62,17 @@ func (m Model) View() string {
 				pct = m.lastInput * 100 / limit
 			}
 
-			b.WriteString("\n")
-			b.WriteString(dimStyle.Render(fmt.Sprintf("[%d/%d (%d%%)] out %d tokens", m.lastInput, limit, pct, m.lastOutput)))
+			b.WriteString(dimStyle.Render(fmt.Sprintf("   [%d/%d (%d%%)] out %d tokens", m.lastInput, limit, pct, m.lastOutput)))
 		}
+
+	case stateChoosing:
+		return m.picker.view()
+
+	case stateLogin:
+		if m.loginTarget == "copilot" {
+			return m.output
+		}
+		return "Login " + m.loginTarget + "\n\n" + m.input.View()
 	}
 
 	return b.String()

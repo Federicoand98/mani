@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -62,6 +63,60 @@ func (r *Runtime) UsePermissionManager() *Runtime {
 func (r *Runtime) WithSessionStore(s session.Store) *Runtime {
 	r.store = s
 	return r
+}
+
+func (r *Runtime) UseProvider(name string) error {
+	prev := r.cfg.Provider
+	r.cfg.Provider = name
+	if err := r.rebuildClient(); err != nil {
+		r.cfg.Provider = prev
+		return err
+	}
+
+	_ = config.Save(r.cfg)
+	return nil
+}
+
+func (r *Runtime) UseModel(name string) error {
+	prev := r.cfg.Model
+	r.cfg.Model = name
+	if err := r.rebuildClient(); err != nil {
+		r.cfg.Model = prev
+		return err
+	}
+
+	_ = config.Save(r.cfg)
+	return nil
+}
+
+func (r *Runtime) AvailableProviders() []string {
+	out := make([]string, 0, len(r.cfg.Providers))
+	for k := range r.cfg.Providers {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (r *Runtime) ListModels(ctx context.Context) ([]string, error) {
+	if ml, ok := r.agent.Client.(core.ModelLister); ok {
+		return ml.ListModels(ctx)
+	}
+	return nil, fmt.Errorf("provider %q does not support model listing", r.cfg.Provider)
+}
+
+func (r *Runtime) Provider() string  { return r.cfg.Provider }
+func (r *Runtime) ModelName() string { return r.cfg.Model }
+
+func (r *Runtime) rebuildClient() error {
+	auth, _ := config.LoadAuth()
+	client, err := newLLMClient(r.cfg, auth)
+	if err != nil {
+		return err
+	}
+
+	r.agent.Client = client
+	return nil
 }
 
 // ------------ HOOKS ----------------
@@ -163,6 +218,28 @@ func (r *Runtime) Cancel() {
 	if c != nil {
 		c()
 	}
+}
+
+// --------------- Commands ----------------
+
+func (r *Runtime) Login(provider string, cred config.Credential) error {
+	auth, _ := config.LoadAuth()
+	auth.Set(provider, cred)
+	if err := config.SaveAuth(auth); err != nil {
+		return err
+	}
+
+	if provider == r.cfg.Provider {
+		return r.rebuildClient()
+	}
+
+	return nil
+}
+
+func (r *Runtime) Logout(provider string) error {
+	auth, _ := config.LoadAuth()
+	auth.Delete(provider)
+	return config.SaveAuth(auth)
 }
 
 func (r *Runtime) ToggleThinking() bool {

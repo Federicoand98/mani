@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,12 +21,52 @@ type OllamaClient struct {
 	HTTPClient *http.Client
 }
 
+var (
+	_ core.LLMClient   = (*OllamaClient)(nil)
+	_ core.ModelLister = (*OllamaClient)(nil)
+)
+
 func NewOllamaClient(baseURL, model string) *OllamaClient {
 	return &OllamaClient{
 		BaseURL:    baseURL,
 		Model:      model,
 		HTTPClient: &http.Client{Timeout: 120 * time.Second},
 	}
+}
+
+// ListModels interroga /api/tags per i modelli installati localmente su Ollama.
+func (c *OllamaClient) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama: tags HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tags struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("ollama: decode tags: %w", err)
+	}
+
+	out := make([]string, 0, len(tags.Models))
+	for _, m := range tags.Models {
+		out = append(out, m.Name)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools []core.ToolDefinition, tokenHandler core.TokenHandler) (core.LLMResponse, error) {

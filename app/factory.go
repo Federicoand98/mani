@@ -6,6 +6,7 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/llm/copilot"
 	"github.com/Federicoand98/mani/llm/ollama"
 	"github.com/Federicoand98/mani/llm/openai"
 	"github.com/Federicoand98/mani/llm/openrouter"
@@ -27,6 +28,13 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 		}
 
 		client = openai.New(openai.Config{BaseURL: base, Model: model, AuthFn: openai.StaticKey(cred.Key)})
+
+	case "copilot":
+		cred, ok := auth.Get("copilot")
+		if !ok || cred.Refresh == "" {
+			return nil, fmt.Errorf("provider copilot: no creds, use /login copilot before")
+		}
+		client = copilot.New(base, model, cred)
 
 	case "openrouter":
 		cred, ok := auth.Get("openrouter")
