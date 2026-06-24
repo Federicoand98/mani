@@ -9,10 +9,15 @@ import (
 	"strconv"
 )
 
+type ProviderConfig struct {
+	BaseURL string `json:"base_url"`
+}
+
 type Config struct {
-	Provider      string `json:"provider"`
+	Provider  string                    `json:"provider"`
+	Providers map[string]ProviderConfig `json:"providers"`
+	// OllamaBaseURL string                    `json:"ollama_base_url"`
 	Model         string `json:"model"`
-	OllamaBaseURL string `json:"ollama_base_url"`
 	UI            string `json:"ui"`
 	Thinking      bool   `json:"thinking"`
 	Debug         bool   `json:"debug"`
@@ -21,14 +26,28 @@ type Config struct {
 
 func defaults() Config {
 	return Config{
-		Provider:      "ollama",
+		Provider: "ollama",
+		Providers: map[string]ProviderConfig{
+			"ollama":     {BaseURL: "http://localhost:11434"},
+			"openai":     {BaseURL: "https://api.openai.com/v1"},
+			"anthropic":  {BaseURL: "https://api.anthropic.com"},
+			"copilot":    {BaseURL: "https://api.githubcopilot.com"},
+			"openrouter": {BaseURL: "https://openrouter.ai/api/v1"},
+		},
+		// OllamaBaseURL: "http://localhost:11434",
 		Model:         "qwen3.5:9b",
-		OllamaBaseURL: "http://localhost:11434",
 		UI:            "tui",
 		Thinking:      true,
 		Debug:         true,
 		ContextWindow: 8192,
 	}
+}
+
+func (c Config) ProviderBaseURL(name string) string {
+	if url, ok := c.Providers[name]; ok {
+		return url.BaseURL
+	}
+	return ""
 }
 
 func ConfigDir() string {
@@ -74,10 +93,6 @@ func applyEnv(c *Config) {
 
 	if v, ok := os.LookupEnv("MANI_MODEL"); ok {
 		c.Model = v
-	}
-
-	if v, ok := os.LookupEnv("MANI_OLLAMA_BASE_URL"); ok {
-		c.OllamaBaseURL = v
 	}
 
 	if v, ok := os.LookupEnv("MANI_UI"); ok {

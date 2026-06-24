@@ -26,8 +26,15 @@ type Runtime struct {
 }
 
 func NewFromConfig(cfg config.Config) *Runtime {
-	var client core.LLMClient = ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
-	client = NewRetryClient(client, 3, 500*time.Millisecond)
+	auth, _ := config.LoadAuth()
+	// var client core.LLMClient = ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
+	// client = NewRetryClient(client, 3, 500*time.Millisecond)
+
+	client, err := newLLMClient(cfg, auth)
+	if err != nil {
+		client = NewRetryClient(ollama.NewOllamaClient(cfg.ProviderBaseURL("ollama"), cfg.Model), 3, 500*time.Millisecond)
+	}
+
 	agent := core.NewAgent(client)
 	agent.SetContextLimit(cfg.ContextWindow)
 
@@ -208,7 +215,7 @@ func (r *Runtime) fireSession(t core.HookType) {
 }
 
 func (r *Runtime) ConfigString() string {
-	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.Model, r.cfg.UI, r.cfg.Thinking, r.cfg.OllamaBaseURL)
+	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.Model, r.cfg.UI, r.cfg.Thinking, r.cfg.ProviderBaseURL(r.cfg.Provider))
 }
 
 func (r *Runtime) IsDebugMode() bool {

@@ -84,3 +84,29 @@ La porta che salva, carica, elenca ed elimina le `Session`. Vive in `session/`;
 ha un adapter in memoria e uno su file (un JSON per sessione). Il `core` non lo
 conosce: la serializzazione dei `Message` è interamente nell'adapter (via DTO).
 _Avoid_: Repository, Persistence, DAO.
+
+**Provider**:
+Un servizio LLM concreto (ollama, openai, anthropic, copilot, openrouter). È una
+*scelta di configurazione*, non un tipo: il `provider` attivo nella config seleziona
+quale adapter cablare. Più Provider possono condividere lo stesso `Wire Format`.
+_Avoid_: Backend, Vendor, Engine.
+
+**Wire Format**:
+Il protocollo concreto con cui un adapter parla all'LLM (OpenAI Chat Completions vs
+Anthropic Messages). Determina mappatura di messaggi/tool e parsing dello streaming.
+Copilot e Openrouter usano il Wire Format di OpenAI con endpoint/auth diversi.
+_Avoid_: Protocol, API style.
+
+**Credential**:
+Il segreto per autenticarsi a un Provider: una API key (tipo `api`) o un token OAuth
+con refresh ed expiry (tipo `oauth`, es. Copilot). Vive **solo** in `auth.json`
+(`$XDG_DATA_HOME/mani/auth.json`, 0600), mai in `config.json`. Gestita nel package
+`config/`; `auth.json` è autoritativo.
+_Avoid_: Secret, Token, Key (sono casi specifici).
+
+**Model Lister**:
+Capability *opzionale* di un adapter: elencare i modelli disponibili per il Provider.
+Interfaccia separata in `core` (`ModelLister`), non parte del port `LLMClient`. Il
+comando `/model` fa type-assert: se l'adapter la implementa mostra il picker, altrimenti
+degrada a testo libero.
+_Avoid_: ModelRegistry, Catalog.

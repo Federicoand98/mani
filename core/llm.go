@@ -8,6 +8,10 @@ type LLMClient interface {
 	Send(ctx context.Context, messages []Message, tools []ToolDefinition, tokenHandler TokenHandler) (LLMResponse, error)
 }
 
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]string, error)
+}
+
 type LLMResponse struct {
 	Content    []ContentBlock
 	StopReason StopReason
