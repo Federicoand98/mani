@@ -8,6 +8,7 @@ import (
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/ollama"
 	"github.com/Federicoand98/mani/llm/openai"
+	"github.com/Federicoand98/mani/llm/openrouter"
 )
 
 func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
@@ -26,6 +27,14 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 		}
 
 		client = openai.New(openai.Config{BaseURL: base, Model: model, AuthFn: openai.StaticKey(cred.Key)})
+
+	case "openrouter":
+		cred, ok := auth.Get("openrouter")
+		if !ok || cred.Key == "" {
+			return nil, fmt.Errorf("provider openrouter: no creds, use /login openrouter before")
+		}
+
+		client = openrouter.New(base, model, cred.Key)
 
 	default:
 		return nil, fmt.Errorf("provider %s: unknown", provider)
