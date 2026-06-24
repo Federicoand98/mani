@@ -104,6 +104,13 @@ con refresh ed expiry (tipo `oauth`, es. Copilot). Vive **solo** in `auth.json`
 `config/`; `auth.json` è autoritativo.
 _Avoid_: Secret, Token, Key (sono casi specifici).
 
+**Command**:
+Un comando slash della TUI (`/model`, `/clear`, `/login`, …): parsa gli argomenti,
+agisce sul `Runtime` e ritorna un `Result` — output sincrono, oppure un `Action` che
+chiede alla TUI di entrare in una modalità (picker, login). Vive in `tui/command`,
+consumato **solo** dalla TUI (il REPL è stato deprecato). _Avoid_: Action (è un campo
+del Result), Handler, Verb.
+
 **Model Lister**:
 Capability *opzionale* di un adapter: elencare i modelli disponibili per il Provider.
 Interfaccia separata in `core` (`ModelLister`), non parte del port `LLMClient`. Il

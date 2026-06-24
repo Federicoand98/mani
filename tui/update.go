@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/Federicoand98/mani/app"
-	"github.com/Federicoand98/mani/cli/command"
 	"github.com/Federicoand98/mani/config"
+	"github.com/Federicoand98/mani/tui/command"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"

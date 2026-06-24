@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/Federicoand98/mani/app"
-	"github.com/Federicoand98/mani/cli"
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/session"
@@ -59,11 +58,6 @@ func main() {
 	)
 
 	runtime.WithTool(weatherTool)
-
-	if cfg.UI == "repl" {
-		cli.New(runtime).Run(context.Background())
-		return
-	}
 
 	if err := tui.Run(runtime); err != nil {
 		log.Fatal(err)
