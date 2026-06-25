@@ -31,7 +31,7 @@ func RegistrerContextInjection(rt *Runtime, workspace string) {
 func buildSystemPrompt(workspace string) string {
 	sys := baseSystemPrompt
 
-	if data, err := os.ReadFile(filepath.Join(workspace, "AGENTS.nd")); err == nil {
+	if data, err := os.ReadFile(filepath.Join(workspace, "AGENTS.md")); err == nil {
 		sys += "\n\n# Project Context (AGENTS.md)\n" + string(data)
 	}
 
