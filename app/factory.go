@@ -13,7 +13,7 @@ import (
 )
 
 func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
-	provider, model := cfg.Provider, cfg.Model
+	provider, model := cfg.Provider, cfg.ActiveModel()
 	base := cfg.ProviderBaseURL(provider)
 
 	var client core.LLMClient
@@ -45,7 +45,15 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 		client = openrouter.New(base, model, cred.Key)
 
 	default:
-		return nil, fmt.Errorf("provider %s: unknown", provider)
+		// return nil, fmt.Errorf("provider %s: unknown", provider)
+		if base == "" {
+			return nil, fmt.Errorf("provider %s: no base url in config", provider)
+		}
+		cred, ok := auth.Get(provider)
+		if !ok || cred.Key == "" {
+			return nil, fmt.Errorf("provider %s: no creds, use /login %s before", provider, provider)
+		}
+		client = openai.New(openai.Config{BaseURL: base, Model: model, AuthFn: openai.StaticKey(cred.Key)})
 	}
 
 	return NewRetryClient(client, 3, 500*time.Millisecond), nil

@@ -33,7 +33,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 
 	client, err := newLLMClient(cfg, auth)
 	if err != nil {
-		client = NewRetryClient(ollama.NewOllamaClient(cfg.ProviderBaseURL("ollama"), cfg.Model), 3, 500*time.Millisecond)
+		client = NewRetryClient(ollama.NewOllamaClient(cfg.ProviderBaseURL("ollama"), cfg.ProviderModel("ollama")), 3, 500*time.Millisecond)
 	}
 
 	agent := core.NewAgent(client)
@@ -44,7 +44,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 		cfg:             cfg,
 		thinkingEnabled: cfg.Thinking,
 		store:           session.NewInMemoryStore(),
-		current:         session.New(cfg.Model),
+		current:         session.New(cfg.ActiveModel()),
 	}
 }
 
@@ -78,10 +78,10 @@ func (r *Runtime) UseProvider(name string) error {
 }
 
 func (r *Runtime) UseModel(name string) error {
-	prev := r.cfg.Model
-	r.cfg.Model = name
+	prev := r.cfg.ActiveModel()
+	r.cfg.SetActiveModel(name)
 	if err := r.rebuildClient(); err != nil {
-		r.cfg.Model = prev
+		r.cfg.SetActiveModel(prev)
 		return err
 	}
 
@@ -106,7 +106,7 @@ func (r *Runtime) ListModels(ctx context.Context) ([]string, error) {
 }
 
 func (r *Runtime) Provider() string  { return r.cfg.Provider }
-func (r *Runtime) ModelName() string { return r.cfg.Model }
+func (r *Runtime) ModelName() string { return r.cfg.ActiveModel() }
 
 func (r *Runtime) rebuildClient() error {
 	auth, _ := config.LoadAuth()
@@ -261,7 +261,7 @@ func (r *Runtime) ContextLimit() int {
 
 func (r *Runtime) NewSession() {
 	r.fireSession(HookSessionEnd)
-	r.current = session.New(r.cfg.Model)
+	r.current = session.New(r.cfg.ActiveModel())
 	r.fireSession(HookSessionStart)
 }
 
@@ -292,7 +292,7 @@ func (r *Runtime) fireSession(t core.HookType) {
 }
 
 func (r *Runtime) ConfigString() string {
-	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.Model, r.cfg.UI, r.cfg.Thinking, r.cfg.ProviderBaseURL(r.cfg.Provider))
+	return fmt.Sprintf("provider: %s\nmodel: %s\nui: %s\nthinking: %v\nbase_url: %s\n", r.cfg.Provider, r.cfg.ActiveModel(), r.cfg.UI, r.cfg.Thinking, r.cfg.ProviderBaseURL(r.cfg.Provider))
 }
 
 func (r *Runtime) IsDebugMode() bool {

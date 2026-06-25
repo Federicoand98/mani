@@ -108,6 +108,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.rendered())
 		m.viewport.GotoBottom()
 		return m, nil
+
+	case needModelMsg:
+		m.output += "\nprovider " + msg.provider + ": no model set\n"
+		m.viewport.SetContent(m.rendered())
+		m.viewport.GotoBottom()
+		m.state = stateChoosing
+		m.picker = picker{title: "Loading models..."}
+		return m, fetchModels(m.runtime)
 	}
 
 	var cmd tea.Cmd

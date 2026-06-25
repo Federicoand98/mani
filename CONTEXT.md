@@ -86,10 +86,12 @@ conosce: la serializzazione dei `Message` è interamente nell'adapter (via DTO).
 _Avoid_: Repository, Persistence, DAO.
 
 **Provider**:
-Un servizio LLM concreto (ollama, openai, anthropic, copilot, openrouter). È una
-*scelta di configurazione*, non un tipo: il `provider` attivo nella config seleziona
-quale adapter cablare. Più Provider possono condividere lo stesso `Wire Format`.
-_Avoid_: Backend, Vendor, Engine.
+Un servizio LLM concreto (ollama, openai, anthropic, copilot, openrouter, o un endpoint
+OpenAI-compatible custom). È una *scelta di configurazione*, non un tipo: il `provider`
+attivo nella config seleziona quale adapter cablare. La sua config (`base_url` + `model`)
+vive nella mappa `providers`, quindi **ogni Provider ricorda il proprio modello**; il
+modello attivo è quello del Provider attivo. Più Provider possono condividere lo stesso
+`Wire Format`. _Avoid_: Backend, Vendor, Engine.
 
 **Wire Format**:
 Il protocollo concreto con cui un adapter parla all'LLM (OpenAI Chat Completions vs

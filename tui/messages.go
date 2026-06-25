@@ -32,6 +32,10 @@ type appliedMsg struct {
 	err  error
 }
 
+type needModelMsg struct {
+	provider string
+}
+
 // segnala che lo stream è stato chiuso
 type streamClosedMsg struct{}
 
@@ -65,6 +69,9 @@ func applyProvider(rt *app.Runtime, provider string) tea.Cmd {
 	return func() tea.Msg {
 		if err := rt.UseProvider(provider); err != nil {
 			return appliedMsg{err: err}
+		}
+		if rt.ModelName() == "" {
+			return needModelMsg{provider: provider}
 		}
 		return appliedMsg{text: "[provider: " + provider + "]"}
 	}

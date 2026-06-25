@@ -11,31 +11,29 @@ import (
 
 type ProviderConfig struct {
 	BaseURL string `json:"base_url"`
+	Model   string `json:"model,omitempty"`
 }
 
 type Config struct {
-	Provider  string                    `json:"provider"`
-	Providers map[string]ProviderConfig `json:"providers"`
-	// OllamaBaseURL string                    `json:"ollama_base_url"`
-	Model         string `json:"model"`
-	UI            string `json:"ui"`
-	Thinking      bool   `json:"thinking"`
-	Debug         bool   `json:"debug"`
-	ContextWindow int    `json:"context_window"`
+	Provider      string                    `json:"provider"`
+	Providers     map[string]ProviderConfig `json:"providers"`
+	UI            string                    `json:"ui"`
+	Thinking      bool                      `json:"thinking"`
+	Debug         bool                      `json:"debug"`
+	ContextWindow int                       `json:"context_window"`
+	LegacyModel   string                    `json:"legacy_model,omitempty"`
 }
 
 func defaults() Config {
 	return Config{
 		Provider: "ollama",
 		Providers: map[string]ProviderConfig{
-			"ollama":     {BaseURL: "http://localhost:11434"},
+			"ollama":     {BaseURL: "http://localhost:11434", Model: "qwen3.5:9b"},
 			"openai":     {BaseURL: "https://api.openai.com/v1"},
 			"anthropic":  {BaseURL: "https://api.anthropic.com"},
 			"copilot":    {BaseURL: "https://api.githubcopilot.com"},
 			"openrouter": {BaseURL: "https://openrouter.ai/api/v1"},
 		},
-		// OllamaBaseURL: "http://localhost:11434",
-		Model:         "qwen3.5:9b",
 		UI:            "tui",
 		Thinking:      true,
 		Debug:         true,
@@ -48,6 +46,24 @@ func (c Config) ProviderBaseURL(name string) string {
 		return url.BaseURL
 	}
 	return ""
+}
+
+func (c Config) ActiveModel() string {
+	return c.Providers[c.Provider].Model
+}
+
+func (c Config) ProviderModel(name string) string {
+	return c.Providers[name].Model
+}
+
+func (c *Config) SetActiveModel(model string) {
+	if c.Providers == nil {
+		c.Providers = map[string]ProviderConfig{}
+	}
+
+	pc := c.Providers[c.Provider]
+	pc.Model = model
+	c.Providers[c.Provider] = pc
 }
 
 func ConfigDir() string {
@@ -72,6 +88,17 @@ func Load() (Config, error) {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return cfg, fmt.Errorf("config: parse %s: %w", path, err)
 		}
+		if cfg.LegacyModel != "" {
+			pc := cfg.Providers[cfg.Provider]
+			if pc.Model == "" {
+				pc.Model = cfg.LegacyModel
+				if cfg.Providers == nil {
+					cfg.Providers = map[string]ProviderConfig{}
+				}
+				cfg.Providers[cfg.Provider] = pc
+			}
+			cfg.LegacyModel = ""
+		}
 
 	case errors.Is(err, os.ErrNotExist):
 		if werr := Save(cfg); werr != nil {
@@ -92,7 +119,7 @@ func applyEnv(c *Config) {
 	}
 
 	if v, ok := os.LookupEnv("MANI_MODEL"); ok {
-		c.Model = v
+		c.SetActiveModel(v)
 	}
 
 	if v, ok := os.LookupEnv("MANI_UI"); ok {
