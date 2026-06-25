@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 const maxIterations = 10
@@ -110,6 +111,17 @@ func (a *Agent) SetContextLimit(limit int) {
 }
 
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
+	type task struct {
+		idx      int
+		call     ToolUseBlock
+		executor ToolExecutor
+		input    map[string]any
+		risk     RiskLevel
+	}
+
+	results := make([]*Message, len(blocks))
+	var pending []task
+
 	for i, block := range blocks {
 		call, ok := block.(ToolUseBlock)
 		if !ok {
@@ -118,19 +130,19 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 
 		// tool interrotto prima di eseguire
 		if ctx.Err() != nil {
-			a.cancelPending(memory, blocks[i:])
-			return ctx.Err()
+			break
 		}
 
 		executor, found := a.executors[call.Name]
 		if !found {
-			return fmt.Errorf("agent: no executor found for tool %s", call.Name)
+			results[i] = toolResult(call.ID, "no executor for tool "+call.Name, true)
+			continue
 		}
 
 		// fase 1: HOOK pre_tool_use
 		pre := &PreToolUsePayload{ToolName: call.Name, Input: call.Input}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreToolUse, Payload: pre}); err != nil {
-			memory.Add(blockedResult(call.ID, "hook blocked: "+err.Error()))
+			results[i] = toolResult(call.ID, "hook blocked: "+err.Error(), true)
 			continue
 		}
 
@@ -139,43 +151,84 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		// fase 2: gate permesso (risk level check)
 		riskLevel := a.riskFor(call.Name)
 		if err := a.runPreToolUseHooks(call.Name, riskLevel, input); err != nil {
-			memory.Add(blockedResult(call.ID, err.Error()))
+			results[i] = toolResult(call.ID, "hook blocked: "+err.Error(), true)
 			continue
 		}
 
-		// fase 3: esecuzione tool
-		a.emitter.ToolCall(call.Name, input)
-		result, execErr := executor.Execute(ctx, input)
-
-		// tool interrotto durante l'esecuzione
-		if errors.Is(execErr, context.Canceled) {
-			a.cancelPending(memory, blocks[i:])
-			return ctx.Err()
-		}
-
-		isError := false
-		if execErr != nil {
-			result = execErr.Error()
-			isError = true
-		}
-
-		// fase 4: HOOK post_tool_use
-		pp := &PostToolUsePayload{ToolName: call.Name, Input: input, Result: result, IsError: isError}
-		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostToolUse, Payload: pp}); err != nil {
-			return fmt.Errorf("agent: post_tool_use: %w", err)
-		}
-
-		result, isError = pp.Result, pp.IsError
-
-		if !isError {
-			a.emitter.ToolResult(call.Name, result, false)
-		}
-
-		memory.Add(Message{Role: RoleTool, Content: []ContentBlock{
-			ToolResultBlock{ToolUseID: call.ID, Content: result, IsError: isError},
-		}})
+		pending = append(pending, task{idx: i, call: call, executor: executor, input: input, risk: riskLevel})
 	}
-	return nil
+
+	// riskNone in parallelo
+	if ctx.Err() == nil {
+		var wg sync.WaitGroup
+		for _, t := range pending {
+			if t.risk != RiskNone {
+				continue
+			}
+
+			wg.Add(1)
+
+			go func(t task) {
+				defer wg.Done()
+				results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input)
+			}(t)
+		}
+		wg.Wait()
+	}
+
+	// write/execute sequenziali in ordine
+	for _, t := range pending {
+		if t.risk == RiskNone {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input)
+	}
+
+	for i, block := range blocks {
+		if call, ok := block.(ToolUseBlock); ok && results[i] == nil {
+			results[i] = toolResult(call.ID, "[cancelled by user]", true)
+		}
+	}
+
+	// scrivo tutto in memoria
+	for _, m := range results {
+		if m != nil {
+			memory.Add(*m)
+		}
+	}
+
+	return ctx.Err()
+}
+
+func (a *Agent) runTool(ctx context.Context, call ToolUseBlock, executor ToolExecutor, input map[string]any) *Message {
+	a.emitter.ToolCall(call.Name, input)
+	result, execErr := executor.Execute(ctx, input)
+
+	if errors.Is(execErr, context.Canceled) {
+		return toolResult(call.ID, "[cancelled by user]", true)
+	}
+
+	isError := false
+	if execErr != nil {
+		result = execErr.Error()
+		isError = true
+	}
+
+	pp := &PostToolUsePayload{ToolName: call.Name, Input: input, Result: result, IsError: isError}
+	if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostToolUse, Payload: pp}); err != nil {
+		return toolResult(call.ID, "post_tool_use hook: "+err.Error(), true)
+	}
+
+	result, isError = pp.Result, pp.IsError
+
+	if !isError {
+		a.emitter.ToolResult(call.Name, result, false)
+	}
+
+	return toolResult(call.ID, result, isError)
 }
 
 // cancelPending: per ogni tool_use non risposto aggiunge alla memoria un tool_result: CANCELLED
@@ -215,4 +268,10 @@ func cloneMessages(src []Message) []Message {
 	dst := make([]Message, len(src))
 	copy(dst, src)
 	return dst
+}
+
+func toolResult(id, content string, isError bool) *Message {
+	return &Message{Role: RoleTool, Content: []ContentBlock{
+		ToolResultBlock{ToolUseID: id, Content: content, IsError: isError},
+	}}
 }

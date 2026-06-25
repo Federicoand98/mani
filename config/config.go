@@ -37,7 +37,7 @@ func defaults() Config {
 		UI:            "tui",
 		Thinking:      true,
 		Debug:         true,
-		ContextWindow: 8192,
+		ContextWindow: 1500000,
 	}
 }
 
