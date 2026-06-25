@@ -8,4 +8,6 @@ var (
 	cyanStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	promptStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true, false).BorderForeground(lipgloss.Color("240"))
+	addStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	delStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )

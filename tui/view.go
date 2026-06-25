@@ -27,6 +27,12 @@ func (m Model) View() string {
 			b.WriteString("\n")
 		}
 
+		if p.Preview != "" {
+			b.WriteString("\n")
+			b.WriteString(renderDiffColored(p.Preview))
+			b.WriteString("\n")
+		}
+
 		b.WriteString(fmt.Sprintf("[permission] %s (risk: %s) - [y]once / [n]no / [a]always", p.ToolName, p.RiskLevel))
 
 	case stateRunning:
@@ -76,4 +82,20 @@ func (m Model) View() string {
 	}
 
 	return b.String()
+}
+
+func renderDiffColored(diff string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(addStyle.Render(line))
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(delStyle.Render(line))
+		default:
+			b.WriteString(line)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

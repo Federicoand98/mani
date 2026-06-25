@@ -63,6 +63,19 @@ La risposta dell'utente a una richiesta di permesso: `Deny`, `AllowOnce`, `Allow
 Concetto applicativo (`app`), mai esposto al `core`.
 _Avoid_: Permission, Choice, Answer.
 
+**Diff Preview**:
+La rappresentazione `+`/`-` di una modifica che un tool di scrittura sta per applicare,
+derivata dall'`input` (es. `old_content`/`new_content` di edit_file) **prima** di eseguire
+il tool. Viaggia nel campo `Preview` della richiesta di permesso e la TUI la colora, così
+l'utente approva/rifiuta vedendo il cambiamento. Non è un meccanismo a sé: è un
+arricchimento del gate permesso. _Avoid_: Patch, Hunk.
+
+**Tool Output Truncation**:
+Il taglio dell'output di un tool oltre un limite in byte (testa+coda con marker) prima che
+finisca in `Memory`, per non saturare il contesto. Non è nel `core`: è un hook `PostToolUse`
+di default registrato da `app` (muta `Result` in place). _Avoid_: Trim, Clip (Trim è già la
+strategia di Compaction).
+
 **Event**:
 Un'unità del flusso asincrono `Runtime → UI`: token, reasoning, chiamata/esito tool,
 richiesta di permesso, fine, errore. Concetto applicativo. La UI lo consuma per

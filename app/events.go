@@ -43,6 +43,7 @@ type PermissionRequestPayload struct {
 	RiskLevel string
 	Input     map[string]any
 	Respond   chan Decision
+	Preview   string
 }
 
 type UsagePayload struct {
