@@ -41,6 +41,7 @@ func main() {
 
 	app.RegistrerContextInjection(runtime, ws)
 	app.RegisterTrimCompaction(runtime, 20)
+	app.RegisterPlanning(runtime)
 
 	// Se si volesse creare un tool custom
 	type WeatherIn struct {

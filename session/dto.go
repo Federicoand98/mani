@@ -12,6 +12,7 @@ type sessionDTO struct {
 	ID        string       `json:"id"`
 	Title     string       `json:"title"`
 	Model     string       `json:"model"`
+	Plan      []PlanStep   `json:"plan,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
 	Messages  []messageDTO `json:"messages"`
@@ -48,6 +49,7 @@ func toSessionDTO(s *Session) sessionDTO {
 		ID:        s.ID,
 		Title:     s.Title,
 		Model:     s.Model,
+		Plan:      s.Plan,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 		Messages:  out,
@@ -90,6 +92,7 @@ func (d sessionDTO) toSession() *Session {
 		ID:        d.ID,
 		Title:     d.Title,
 		Model:     d.Model,
+		Plan:      d.Plan,
 		CreatedAt: d.CreatedAt,
 		UpdatedAt: d.UpdatedAt,
 		memory:    core.NewInMemoryFrom(msgs),

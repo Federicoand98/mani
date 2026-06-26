@@ -119,6 +119,25 @@ func (r *Runtime) rebuildClient() error {
 	return nil
 }
 
+// ------------- PLANNING ----------------
+
+func (r *Runtime) SetPlan(steps []session.PlanStep) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.current.Plan = steps
+}
+
+func (r *Runtime) Plan() []session.PlanStep {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]session.PlanStep(nil), r.current.Plan...) // copia difensiva
+}
+
+// PlanText: rappresenta il piano attuale come testo, utile per TUI
+func (r *Runtime) PlanText() string {
+	return renderPlanText(r.Plan())
+}
+
 // ------------ HOOKS ----------------
 
 func (r *Runtime) OnPreToolUse(fn func(context.Context, *core.PreToolUsePayload) error) *Runtime {

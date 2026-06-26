@@ -87,10 +87,17 @@ l'implementazione di default è in-memory.
 _Avoid_: History, Context, Conversation.
 
 **Session**:
-Una conversazione distinta, con la sua `Memory` e dei metadati (id, titolo,
-timestamp, modello), switchabile durante un'esecuzione e ripristinabile da disco.
+Una conversazione distinta, con la sua `Memory`, un `Plan` (todo) e dei metadati (id,
+titolo, timestamp, modello), switchabile durante un'esecuzione e ripristinabile da disco.
 Concetto di orchestrazione: vive nel package `session/`, il `core` non la conosce.
 _Avoid_: Conversation, Chat, Thread.
+
+**Plan**:
+La todo list del task corrente: una sequenza di `PlanStep` (`description` + `status`:
+pending/in_progress/done). È **model-owned** — il modello la scrive/aggiorna via il tool
+`todo_write` — e **advisory**: il loop non la impone, guida soltanto. Vive nella `Session`
+(persiste), viene re-iniettata come reminder a ogni chiamata LLM. Il `core` non la conosce:
+è orchestrazione (tool + hook in `app`). _Avoid_: Tasks, Steps (sono le voci), Workflow.
 
 **Session Store**:
 La porta che salva, carica, elenca ed elimina le `Session`. Vive in `session/`;

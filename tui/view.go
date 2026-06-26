@@ -56,6 +56,11 @@ func (m Model) View() string {
 			}
 		}
 
+		if plan := m.runtime.PlanText(); plan != "" {
+			b.WriteString(renderPlanColored(plan))
+			b.WriteString("\n")
+		}
+
 		b.WriteString(promptStyle.Width(m.viewport.Width).Render(m.input.View()))
 
 		b.WriteString("\n")
@@ -92,6 +97,23 @@ func renderDiffColored(diff string) string {
 			b.WriteString(addStyle.Render(line))
 		case strings.HasPrefix(line, "-"):
 			b.WriteString(delStyle.Render(line))
+		default:
+			b.WriteString(line)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderPlanColored(plan string) string {
+	var b strings.Builder
+
+	for _, line := range strings.Split(plan, "\n") {
+		switch {
+		case strings.HasPrefix(line, "[x]"):
+			b.WriteString(dimStyle.Render(line))
+		case strings.HasPrefix(line, "[~]"):
+			b.WriteString(cyanStyle.Render(line))
 		default:
 			b.WriteString(line)
 		}

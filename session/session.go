@@ -9,10 +9,24 @@ import (
 	"github.com/Federicoand98/mani/core"
 )
 
+type StepStatus string
+
+const (
+	StepPending    StepStatus = "pending"
+	StepInProgress StepStatus = "in_progress"
+	StepDone       StepStatus = "done"
+)
+
+type PlanStep struct {
+	Description string     `json:"description"`
+	Status      StepStatus `json:"status"`
+}
+
 type Session struct {
 	ID        string
 	Title     string
 	Model     string
+	Plan      []PlanStep
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	memory    core.Memory
