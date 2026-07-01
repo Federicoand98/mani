@@ -35,7 +35,7 @@ type Daemon struct {
 	policy Policy
 }
 
-func New(rt *Runtime) *Daemon {
+func NewTrigger(rt *Runtime) *Daemon {
 	return &Daemon{rt: rt, queue: make(chan Task, 64), policy: PolicyDeny}
 }
 
