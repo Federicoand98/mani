@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,12 +28,19 @@ type cronSpec struct {
 	prompt   string
 }
 
+type dailySpec struct {
+	hour   int
+	minute int
+	prompt string
+}
+
 type Daemon struct {
-	rt     *Runtime
-	queue  chan Task
-	crons  []cronSpec
-	addr   string
-	policy Policy
+	rt      *Runtime
+	queue   chan Task
+	crons   []cronSpec
+	dailies []dailySpec
+	addr    string
+	policy  Policy
 }
 
 func NewTrigger(rt *Runtime) *Daemon {
@@ -42,6 +50,18 @@ func NewTrigger(rt *Runtime) *Daemon {
 // Every schedules a cron job that will prompt the agent at the specified interval
 func (d *Daemon) Every(interval time.Duration, prompt string) *Daemon {
 	d.crons = append(d.crons, cronSpec{interval: interval, prompt: prompt})
+	return d
+}
+
+// Daily schedules a daily job that will prompt the agent at the specified time
+func (d *Daemon) Daily(clock string, prompt string) *Daemon {
+	h, m, err := parseClock(clock)
+	if err != nil {
+		log.Printf("[trigger] DailyAt: invalid clock %q", clock)
+		return d
+	}
+
+	d.dailies = append(d.dailies, dailySpec{hour: h, minute: m, prompt: prompt})
 	return d
 }
 
@@ -58,6 +78,10 @@ func (d *Daemon) AllowAll() *Daemon {
 func (d *Daemon) Run(ctx context.Context) {
 	for _, c := range d.crons {
 		go d.runCron(ctx, c)
+	}
+
+	for _, dl := range d.dailies {
+		go d.runDaily(ctx, dl)
 	}
 
 	if d.addr != "" {
@@ -112,6 +136,20 @@ func (d *Daemon) runCron(ctx context.Context, c cronSpec) {
 	}
 }
 
+func (d *Daemon) runDaily(ctx context.Context, dl dailySpec) {
+	for {
+		wait := time.Until(nextOccurrence(time.Now(), dl.hour, dl.minute))
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			d.enqueue(Task{Source: "daily", Prompt: dl.prompt})
+		}
+	}
+}
+
 func (d *Daemon) runWebhook(ctx context.Context) {
 	mux := http.NewServeMux()
 
@@ -157,4 +195,23 @@ func (d *Daemon) enqueue(t Task) bool {
 		log.Printf("[trigger: %s] queue full, discard %q", t.Source, t.Prompt)
 		return false
 	}
+}
+
+func parseClock(clock string) (int, int, error) {
+	var h, m int
+	if _, err := fmt.Sscanf(clock, "%d:%d", &h, &m); err != nil {
+		return 0, 0, fmt.Errorf("expected HH:MM: %w", err)
+	}
+	if h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, 0, fmt.Errorf("hour must be between 0 and 23, minute must be between 0 and 59")
+	}
+	return h, m, nil
+}
+
+func nextOccurrence(now time.Time, hour, minute int) time.Time {
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !next.After(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
 }
