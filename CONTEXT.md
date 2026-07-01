@@ -15,6 +15,13 @@ l'esecuzione come stream di `Event`. È un adapter applicativo, non dominio. Un 
 libreria lo salta e cabla `core` da sé.
 _Avoid_: Engine, Orchestrator, App.
 
+**Trigger**:
+Una sorgente di eventi (cron a intervallo, webhook HTTP) che, allo scatto, accoda un task
+eseguito dall'agente. È un **driving adapter** (package `trigger/`, come `cli`/`tui`) che
+guida il `Runtime` da eventi invece che dall'umano. I run sono **serializzati** (una coda,
+un worker) su una sessione condivisa; non essendoci umano, i prompt di permesso seguono una
+**Policy** (deny di default, allow opt-in). _Avoid_: Hook (è middleware del loop), Scheduler.
+
 **Emitter**:
 La porta (in `core`) attraverso cui l'Agent comunica verso l'esterno ciò che produce
 mentre gira: token, reasoning, chiamate ed esiti dei tool. Parla solo stringhe e
@@ -91,6 +98,14 @@ Una conversazione distinta, con la sua `Memory`, un `Plan` (todo) e dei metadati
 titolo, timestamp, modello), switchabile durante un'esecuzione e ripristinabile da disco.
 Concetto di orchestrazione: vive nel package `session/`, il `core` non la conosce.
 _Avoid_: Conversation, Chat, Thread.
+
+**Subagent**:
+Un `core.Agent` figlio spawnato dal tool `delegate` per un sotto-task: memoria fresca,
+stessi tool del padre (incluso `delegate`), gate permesso ereditato, output silenzioso
+(`nopEmitter`). Ritorna al padre solo la risposta finale (un `tool_result`) → isola il
+contesto. La profondità di annidamento viaggia nel `context` ed è limitata da un depth-cap.
+Non è un tipo nuovo: è composizione del `core.Agent` esistente, orchestrata in `app`.
+_Avoid_: Worker, Child agent (in codice "child" ok), Actor.
 
 **Plan**:
 La todo list del task corrente: una sequenza di `PlanStep` (`description` + `status`:

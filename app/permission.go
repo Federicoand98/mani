@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/Federicoand98/mani/core"
 )
@@ -17,6 +18,7 @@ const (
 type PermissionManager struct {
 	emit          func(PermissionRequestPayload)
 	alwaysAllowed map[string]bool // sessione, non persistente
+	mu            sync.Mutex      // per subagents
 }
 
 func NewPermissionManager() *PermissionManager {
@@ -30,6 +32,9 @@ func (m *PermissionManager) setEmit(emit func(PermissionRequestPayload)) {
 }
 
 func (m *PermissionManager) check(toolName string, level core.RiskLevel, input map[string]any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if level == core.RiskNone || m.alwaysAllowed[toolName] {
 		return nil
 	}

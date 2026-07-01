@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
+	"os/signal"
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/session"
-	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/bash"
 	fstools "github.com/Federicoand98/mani/tool/fs"
 	"github.com/Federicoand98/mani/tui"
@@ -42,23 +41,19 @@ func main() {
 	app.RegistrerContextInjection(runtime, ws)
 	app.RegisterTrimCompaction(runtime, 20)
 	app.RegisterPlanning(runtime)
+	app.RegisterSubagents(runtime, 3)
 
-	// Se si volesse creare un tool custom
-	type WeatherIn struct {
-		City string `json:"city" desc: "Nome della città" required: "true"`
-		Days int    `json:"days" desc: "Numero di giorni"`
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		app.NewTrigger(runtime).
+			Webhook(":8787").
+			Run(ctx)
+		// Every(30*time.Minute, "test").
+
+		return
 	}
-
-	weatherTool := tool.MustDefine(
-		"get_weather",
-		"Ritorna il meteo di una città",
-		core.RiskNone,
-		func(ctx context.Context, in WeatherIn) (string, error) {
-			return fmt.Sprintf("Meteo di %s: ...", in.City), nil
-		},
-	)
-
-	runtime.WithTool(weatherTool)
 
 	if err := tui.Run(runtime); err != nil {
 		log.Fatal(err)

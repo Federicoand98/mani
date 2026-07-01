@@ -22,6 +22,7 @@ type Runtime struct {
 	permission      *PermissionManager
 	store           session.Store    // prima era core.Memory
 	current         *session.Session // sessione attiva
+	tools           []tool.Tool
 	cancel          context.CancelFunc
 	mu              sync.Mutex // protege l'accesso a cancel
 }
@@ -51,6 +52,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 // WithTool adds a tool to the runtime and returns a new runtime instance.
 func (r *Runtime) WithTool(t tool.Tool) *Runtime {
 	r.agent.AddTool(tool.ToDefinition(t), t)
+	r.tools = append(r.tools, t)
 	return r
 }
 
@@ -117,6 +119,23 @@ func (r *Runtime) rebuildClient() error {
 
 	r.agent.Client = client
 	return nil
+}
+
+// ------------- SUBAGENTS ----------------
+
+func (r *Runtime) spawnChild() *core.Agent {
+	child := core.NewAgent(r.agent.Client)
+	child.SetContextLimit(r.cfg.ContextWindow)
+
+	for _, t := range r.tools {
+		child.AddTool(tool.ToDefinition(t), t)
+	}
+
+	if r.permission != nil {
+		child.AddPreToolUseHook(r.permission.Hook())
+	}
+
+	return child
 }
 
 // ------------- PLANNING ----------------
@@ -237,6 +256,25 @@ func (r *Runtime) Cancel() {
 	if c != nil {
 		c()
 	}
+}
+
+// LastResponse returns the last response from the agent in the current session
+func (r *Runtime) LastResponse() string {
+	msg := r.current.Memory().Messages()
+
+	for i := len(msg) - 1; i >= 0; i-- {
+		if msg[i].Role == core.RoleAssistant {
+			continue
+		}
+
+		for _, b := range msg[i].Content {
+			if tb, ok := b.(core.TextBlock); ok {
+				return tb.Text
+			}
+		}
+	}
+
+	return ""
 }
 
 // --------------- Commands ----------------
