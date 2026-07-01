@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-const maxIterations = 10
+const defaultMaxIterations = 10
 
 type Agent struct {
 	Client          LLMClient
@@ -17,15 +17,17 @@ type Agent struct {
 	preToolUseHooks []PreToolUseHook // gate permesso
 	hooks           *HookManager
 	contextLimit    int // 0: unlimited
+	maxIterations   int
 }
 
 func NewAgent(client LLMClient) *Agent {
 	return &Agent{
-		Client:    client,
-		tools:     []ToolDefinition{},
-		executors: make(map[string]ToolExecutor),
-		emitter:   nopEmitter{},
-		hooks:     NewHookManager(),
+		Client:        client,
+		tools:         []ToolDefinition{},
+		executors:     make(map[string]ToolExecutor),
+		emitter:       nopEmitter{},
+		hooks:         NewHookManager(),
+		maxIterations: defaultMaxIterations,
 	}
 }
 
@@ -40,7 +42,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 		}
 	}
 
-	for range maxIterations {
+	for range a.maxIterations {
 		// HOOK: pre llm call
 		pre := &PreLLMCallPayload{Messages: cloneMessages(memory.Messages()), Tools: a.tools}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreLLMCall, Payload: pre}); err != nil {
@@ -108,6 +110,12 @@ func (a *Agent) SetEmitter(emitter Emitter) {
 
 func (a *Agent) SetContextLimit(limit int) {
 	a.contextLimit = limit
+}
+
+func (a *Agent) SetMaxIterations(iterations int) {
+	if iterations > 0 {
+		a.maxIterations = iterations
+	}
 }
 
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {

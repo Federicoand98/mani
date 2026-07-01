@@ -21,6 +21,7 @@ type Config struct {
 	Thinking      bool                      `json:"thinking"`
 	Debug         bool                      `json:"debug"`
 	ContextWindow int                       `json:"context_window"`
+	MaxIterations int                       `json:"max_iterations"`
 	LegacyModel   string                    `json:"legacy_model,omitempty"`
 }
 
@@ -38,6 +39,7 @@ func defaults() Config {
 		Thinking:      true,
 		Debug:         true,
 		ContextWindow: 1500000,
+		MaxIterations: 10,
 	}
 }
 
@@ -137,6 +139,12 @@ func applyEnv(c *Config) {
 	if v, ok := os.LookupEnv("MANI_CONTEXT_WINDOW"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.ContextWindow = n
+		}
+	}
+
+	if v, ok := os.LookupEnv("MANI_MAX_ITERATIONS"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.MaxIterations = n
 		}
 	}
 }

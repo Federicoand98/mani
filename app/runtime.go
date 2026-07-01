@@ -39,6 +39,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 
 	agent := core.NewAgent(client)
 	agent.SetContextLimit(cfg.ContextWindow)
+	agent.SetMaxIterations(cfg.MaxIterations)
 
 	return &Runtime{
 		agent:           agent,
@@ -110,6 +111,11 @@ func (r *Runtime) ListModels(ctx context.Context) ([]string, error) {
 func (r *Runtime) Provider() string  { return r.cfg.Provider }
 func (r *Runtime) ModelName() string { return r.cfg.ActiveModel() }
 
+func (r *Runtime) SetMaxIterations(n int) *Runtime {
+	r.agent.SetMaxIterations(n)
+	return r
+}
+
 func (r *Runtime) rebuildClient() error {
 	auth, _ := config.LoadAuth()
 	client, err := newLLMClient(r.cfg, auth)
@@ -126,6 +132,7 @@ func (r *Runtime) rebuildClient() error {
 func (r *Runtime) spawnChild() *core.Agent {
 	child := core.NewAgent(r.agent.Client)
 	child.SetContextLimit(r.cfg.ContextWindow)
+	child.SetMaxIterations(r.cfg.MaxIterations)
 
 	for _, t := range r.tools {
 		child.AddTool(tool.ToDefinition(t), t)
