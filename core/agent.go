@@ -88,7 +88,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 		}
 	}
 
-	return fmt.Errorf("agent: reached max iterations without completing the task (%d)", maxIterations)
+	return fmt.Errorf("agent: reached max iterations without completing the task (%d)", a.maxIterations)
 }
 
 func (a *Agent) Hooks() *HookManager {

@@ -15,6 +15,18 @@ l'esecuzione come stream di `Event`. È un adapter applicativo, non dominio. Un 
 libreria lo salta e cabla `core` da sé.
 _Avoid_: Engine, Orchestrator, App.
 
+**Trace**:
+La sequenza strutturata di step di un run (llm call, tool call/result, con `run_id` di
+correlazione), emessa come log `slog` a livelli (error/warn/info/debug). Non è nel `core`:
+è un osservatore trasversale costruito **sugli hook** esistenti (`RegisterTracing` in `app`).
+Il `run_id` viaggia nel `context`. _Avoid_: Log (è il mezzo), Span (non è OpenTelemetry).
+
+**MCP**:
+Model Context Protocol: standard per esporre tool come processi/server esterni. mani è un
+**MCP client** (`tool/mcp`): collega un server (stdio o HTTP/SSE) via l'SDK ufficiale, elenca
+i suoi tool e li adatta a `tool.Tool`. Rende i tool scrivibili in qualsiasi linguaggio. È un
+adapter sorgente-di-tool, come `tool/fs`. _Avoid_: Plugin, Extension.
+
 **Trigger**:
 Una sorgente di eventi (cron a intervallo, webhook HTTP) che, allo scatto, accoda un task
 eseguito dall'agente. È un **driving adapter** (package `trigger/`, come `cli`/`tui`) che
