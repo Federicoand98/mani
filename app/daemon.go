@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -57,7 +57,7 @@ func (d *Daemon) Every(interval time.Duration, prompt string) *Daemon {
 func (d *Daemon) Daily(clock string, prompt string) *Daemon {
 	h, m, err := parseClock(clock)
 	if err != nil {
-		log.Printf("[trigger] DailyAt: invalid clock %q", clock)
+		slog.Warn("trigger: DailyAt orario invalido", "clock", clock)
 		return d
 	}
 
@@ -103,7 +103,7 @@ func (d *Daemon) worker(ctx context.Context) {
 }
 
 func (d *Daemon) execute(ctx context.Context, t Task) {
-	log.Printf("[trigger: %s] execute %q", t.Source, t.Prompt)
+	slog.Info("trigger run", "source", t.Source, "prompt", t.Prompt)
 
 	ch := d.rt.Execute(ctx, t.Prompt)
 	for ev := range ch {
@@ -116,11 +116,11 @@ func (d *Daemon) execute(ctx context.Context, t Task) {
 				p.Respond <- Deny
 			}
 		case EventError:
-			log.Printf("[trigger error] %v", ev.Payload)
+			slog.Error("trigger run error", "source", t.Source, "err", ev.Payload)
 		}
 	}
 
-	log.Printf("[trigger: %s] done", t.Source)
+	slog.Info("trigger done", "source", t.Source)
 }
 
 func (d *Daemon) runCron(ctx context.Context, c cronSpec) {
@@ -181,9 +181,9 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 		_ = srv.Close()
 	}()
 
-	log.Printf("[trigger] webhook su %s (POST /hook)", d.addr)
+	slog.Info("webhook listening", "addr", d.addr, "path", "/hook")
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Printf("[trigger] webhook: %v", err)
+		slog.Error("webhook server", "err", err)
 	}
 }
 
@@ -192,7 +192,7 @@ func (d *Daemon) enqueue(t Task) bool {
 	case d.queue <- t:
 		return true
 	default:
-		log.Printf("[trigger: %s] queue full, discard %q", t.Source, t.Prompt)
+		slog.Warn("trigger queue full, discarding", "source", t.Source, "prompt", t.Prompt)
 		return false
 	}
 }

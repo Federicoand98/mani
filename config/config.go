@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,6 +24,7 @@ type Config struct {
 	ContextWindow int                       `json:"context_window"`
 	MaxIterations int                       `json:"max_iterations"`
 	LegacyModel   string                    `json:"legacy_model,omitempty"`
+	LogLevel      string                    `json:"log_level"` // error | warn | info | debug
 }
 
 func defaults() Config {
@@ -104,7 +106,7 @@ func Load() (Config, error) {
 
 	case errors.Is(err, os.ErrNotExist):
 		if werr := Save(cfg); werr != nil {
-			fmt.Fprintf(os.Stderr, "config: fail to create %s: %v\n", path, werr)
+			slog.Warn("config: creazione file fallita", "path", path, "err", werr)
 		}
 
 	default:
@@ -140,6 +142,10 @@ func applyEnv(c *Config) {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.ContextWindow = n
 		}
+	}
+
+	if v, ok := os.LookupEnv("MANI_LOG_LEVEL"); ok {
+		c.LogLevel = v
 	}
 
 	if v, ok := os.LookupEnv("MANI_MAX_ITERATIONS"); ok {

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -26,6 +28,8 @@ type Runtime struct {
 	cancel          context.CancelFunc
 	mu              sync.Mutex // protege l'accesso a cancel
 }
+
+type runIDKey struct{}
 
 func NewFromConfig(cfg config.Config) *Runtime {
 	auth, _ := config.LoadAuth()
@@ -221,6 +225,7 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	ch := make(chan Event, 32)
 
 	runCtx, cancel := context.WithCancel(ctx)
+	runCtx = context.WithValue(runCtx, runIDKey{}, newRunID())
 	r.mu.Lock()
 	r.cancel = cancel
 	r.mu.Unlock()
@@ -361,4 +366,15 @@ func (r *Runtime) ConfigString() string {
 
 func (r *Runtime) IsDebugMode() bool {
 	return r.cfg.Debug
+}
+
+func runIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(runIDKey{}).(string)
+	return id
+}
+
+func newRunID() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
