@@ -217,10 +217,7 @@ func mapToolsToOllama(tools []core.ToolDefinition) []ollamaTool {
 	for i, t := range tools {
 		props := make(map[string]ollamaProperty, len(t.InputSchema.Properties))
 		for name, p := range t.InputSchema.Properties {
-			props[name] = ollamaProperty{
-				Type:        p.Type,
-				Description: p.Description,
-			}
+			props[name] = toOllamaProp(p)
 		}
 		result[i] = ollamaTool{
 			Type: "function",
@@ -268,4 +265,20 @@ func mapMessagesToOllama(messages []core.Message) []ollamaMessage {
 		result = append(result, om)
 	}
 	return result
+}
+
+func toOllamaProp(p core.ToolProperty) ollamaProperty {
+	op := ollamaProperty{Type: p.Type, Description: p.Description, Required: p.Required, Enum: p.Enum}
+	if p.Items != nil {
+		it := toOllamaProp(*p.Items)
+		op.Items = &it
+	}
+
+	if len(p.Properties) > 0 {
+		op.Properties = make(map[string]ollamaProperty, len(p.Properties))
+		for k, v := range p.Properties {
+			op.Properties[k] = toOllamaProp(v)
+		}
+	}
+	return op
 }

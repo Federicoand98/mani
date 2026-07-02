@@ -23,8 +23,12 @@ type InputSchema struct {
 }
 
 type PropertySchema struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string                    `json:"type"`
+	Description string                    `json:"description"`
+	Items       *PropertySchema           `json:"items"`
+	Properties  map[string]PropertySchema `json:"properties"`
+	Required    []string                  `json:"required"`
+	Enum        []string                  `json:"enum"`
 }
 
 type Tool interface {
@@ -117,12 +121,12 @@ func schemaFromStruct[T any](name, description string) (ToolSchema, error) {
 			continue
 		}
 
-		jsonType, err := goKindToJSON(f.Type.Kind())
+		jsonType, err := propFromType(f.Type)
 		if err != nil {
 			return ToolSchema{}, fmt.Errorf("tool %q: field: %s: %w", name, f.Name, err)
 		}
 
-		props[jsonName] = PropertySchema{Type: jsonType, Description: f.Tag.Get("desc")}
+		props[jsonName] = PropertySchema{Type: jsonType.Type, Description: f.Tag.Get("desc")}
 
 		if f.Tag.Get("required") == "true" {
 			required = append(required, jsonName)
@@ -153,19 +157,51 @@ func fieldJSONName(f reflect.StructField) string {
 	return tag
 }
 
-func goKindToJSON(kind reflect.Kind) (string, error) {
-	switch kind {
+func propFromType(rt reflect.Type) (PropertySchema, error) {
+	switch rt.Kind() {
 	case reflect.String:
-		return "string", nil
+		return PropertySchema{Type: "string"}, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return "integer", nil
+		return PropertySchema{Type: "integer"}, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return "integer", nil
+		return PropertySchema{Type: "integer"}, nil
 	case reflect.Float32, reflect.Float64:
-		return "number", nil
+		return PropertySchema{Type: "number"}, nil
 	case reflect.Bool:
-		return "boolean", nil
+		return PropertySchema{Type: "boolean"}, nil
+	case reflect.Array, reflect.Slice:
+		item, err := propFromType(rt.Elem())
+		if err != nil {
+			return PropertySchema{}, err
+		}
+		return PropertySchema{Type: "array", Items: &item}, nil
+	case reflect.Struct:
+		props := map[string]PropertySchema{}
+		var required []string
+
+		for i := 0; i < rt.NumField(); i++ {
+			f := rt.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			name := fieldJSONName(f)
+			if name == "" {
+				continue
+			}
+			prop, err := propFromType(f.Type)
+			if err != nil {
+				return PropertySchema{}, err
+			}
+			prop.Description = f.Tag.Get("json")
+			props[name] = prop
+			if f.Tag.Get("required") == "true" {
+				required = append(required, name)
+			}
+		}
+		return PropertySchema{Type: "object", Properties: props, Required: required}, nil
+	case reflect.Ptr:
+		return propFromType(rt.Elem())
 	default:
-		return "", fmt.Errorf("unsupported kind: %s", kind)
+		return PropertySchema{}, fmt.Errorf("unsupported type: %s", rt.Kind())
 	}
 }

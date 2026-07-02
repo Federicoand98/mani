@@ -239,7 +239,7 @@ func mapTools(tools []core.ToolDefinition) []oaiTool {
 	for i, t := range tools {
 		props := make(map[string]oaiProperty, len(t.InputSchema.Properties))
 		for name, p := range t.InputSchema.Properties {
-			props[name] = oaiProperty{Type: p.Type, Description: p.Description}
+			props[name] = toOaiProp(p)
 		}
 		result[i] = oaiTool{
 			Type: "function",
@@ -290,4 +290,19 @@ func assemble(text string, calls map[int]*oaiToolCall, stop string, usage core.T
 	}
 
 	return core.LLMResponse{Content: blocks, StopReason: stopReason, Usage: usage}
+}
+
+func toOaiProp(p core.ToolProperty) oaiProperty {
+	op := oaiProperty{Type: p.Type, Description: p.Description, Required: p.Required, Enum: p.Enum}
+	if p.Items != nil {
+		it := toOaiProp(*p.Items)
+		op.Items = &it
+	}
+	if len(p.Properties) > 0 {
+		op.Properties = make(map[string]oaiProperty, len(p.Properties))
+		for k, v := range p.Properties {
+			op.Properties[k] = toOaiProp(v)
+		}
+	}
+	return op
 }

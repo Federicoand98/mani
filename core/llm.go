@@ -47,4 +47,8 @@ type ToolInputSchema struct {
 type ToolProperty struct {
 	Type        string
 	Description string
+	Items       *ToolProperty           // se Type == "array"
+	Properties  map[string]ToolProperty // se Type == "object"
+	Required    []string                // se Type == "object"
+	Enum        []string                // opzionale
 }

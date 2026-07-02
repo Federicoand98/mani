@@ -36,8 +36,12 @@ type oaiParameters struct {
 }
 
 type oaiProperty struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string                 `json:"type"`
+	Description string                 `json:"description"`
+	Items       *oaiProperty           `json:"items,omitempty"`
+	Properties  map[string]oaiProperty `json:"properties,omitempty"`
+	Required    []string               `json:"required,omitempty"`
+	Enum        []string               `json:"enum,omitempty"`
 }
 
 type oaiRequest struct {

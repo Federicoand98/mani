@@ -101,8 +101,12 @@ type ollamaParameters struct {
 }
 
 type ollamaProperty struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string                    `json:"type"`
+	Description string                    `json:"description"`
+	Items       *ollamaProperty           `json:"items,omitempty"`
+	Properties  map[string]ollamaProperty `json:"properties,omitempty"`
+	Required    []string                  `json:"required,omitempty"`
+	Enum        []string                  `json:"enum,omitempty"`
 }
 
 // --- Tipi per la risposta ---
