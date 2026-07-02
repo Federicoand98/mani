@@ -42,6 +42,7 @@ func defaults() Config {
 		Debug:         true,
 		ContextWindow: 1500000,
 		MaxIterations: 10,
+		LogLevel:      "debug",
 	}
 }
 
