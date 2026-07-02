@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/Federicoand98/mani/llm/ollama"
 	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool"
+	"github.com/Federicoand98/mani/tool/mcp"
 )
 
 type Runtime struct {
@@ -25,6 +27,7 @@ type Runtime struct {
 	store           session.Store    // prima era core.Memory
 	current         *session.Session // sessione attiva
 	tools           []tool.Tool
+	mcpSessions     []*mcp.Session
 	cancel          context.CancelFunc
 	mu              sync.Mutex // protege l'accesso a cancel
 }
@@ -59,6 +62,21 @@ func (r *Runtime) WithTool(t tool.Tool) *Runtime {
 	r.agent.AddTool(tool.ToDefinition(t), t)
 	r.tools = append(r.tools, t)
 	return r
+}
+
+func (r *Runtime) AddMCPServer(ctx context.Context, spec mcp.ServerSpec) error {
+	sess, err := mcp.Connect(ctx, spec)
+	if err != nil {
+		return err
+	}
+	r.mcpSessions = append(r.mcpSessions, sess)
+
+	for _, t := range sess.Tools() {
+		r.WithTool(t)
+	}
+
+	slog.Info("[mcp] server connected", "name", spec.Name, "tools", len(sess.Tools()))
+	return nil
 }
 
 func (r *Runtime) UsePermissionManager() *Runtime {
