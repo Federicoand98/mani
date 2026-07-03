@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -25,6 +27,16 @@ func main() {
 	}
 
 	app.SetupLogging(cfg.LogLevel)
+
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		if err := runFromManifest(ctx, os.Args[2:]); err != nil {
+			slog.Error("run", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	store, err := session.NewFileStore(config.SessionsDir())
 	if err != nil {
@@ -67,4 +79,41 @@ func main() {
 		slog.Error("tui", "err", err)
 		os.Exit(1)
 	}
+}
+
+func runFromManifest(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	configPath := fs.String("config", "", "path to the manifest config file")
+	task := fs.String("task", "", "the task to run (headless mode)")
+	_ = fs.Parse(args)
+
+	if *configPath == "" {
+		return fmt.Errorf("run: --config required")
+	}
+
+	spec, err := app.LoadManifest(*configPath)
+	if err != nil {
+		return err
+	}
+
+	rt, err := app.Build(ctx, spec)
+	if err != nil {
+		return err
+	}
+
+	if *task == "" {
+		return fmt.Errorf("run: --task required (for now)")
+	}
+
+	for ev := range rt.Execute(ctx, *task) {
+		switch ev.Type {
+		case app.EventDone:
+			fmt.Println(rt.LastResponse())
+		case app.EventError:
+			if p, ok := ev.Payload.(app.ErrorPayload); ok {
+				return p.Err
+			}
+		}
+	}
+	return nil
 }
