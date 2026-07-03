@@ -13,8 +13,12 @@ const baseSystemPrompt = "Sei mani, un micro harness. Sei conciso e preciso. Usa
 // RegistrerContextInjection aggancia un prellmcall hook che antepone un messaggio
 // Role: system (base + AGENTS.md del workspace se presente) alla COPIA dei messaggi ad ogni chiamata.
 func RegistrerContextInjection(rt *Runtime, workspace string) {
+	registerContextInjectionWith(rt, "", workspace)
+}
+
+func registerContextInjectionWith(rt *Runtime, customBase, workspace string) {
 	rt.OnPreLLMCall(func(ctx context.Context, p *core.PreLLMCallPayload) error {
-		sys := buildSystemPrompt(workspace)
+		sys := buildSystemPrompt(customBase, workspace)
 		if sys == "" {
 			return nil
 		}
@@ -28,8 +32,11 @@ func RegistrerContextInjection(rt *Runtime, workspace string) {
 	})
 }
 
-func buildSystemPrompt(workspace string) string {
-	sys := baseSystemPrompt
+func buildSystemPrompt(customBase, workspace string) string {
+	sys := customBase
+	if sys == "" {
+		sys = baseSystemPrompt
+	}
 
 	if data, err := os.ReadFile(filepath.Join(workspace, "AGENTS.md")); err == nil {
 		sys += "\n\n# Project Context (AGENTS.md)\n" + string(data)

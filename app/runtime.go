@@ -28,6 +28,7 @@ type Runtime struct {
 	current         *session.Session // sessione attiva
 	tools           []tool.Tool
 	mcpSessions     []*mcp.Session
+	subagents       map[string]SubagentSpec
 	cancel          context.CancelFunc
 	mu              sync.Mutex // protege l'accesso a cancel
 }
@@ -165,6 +166,77 @@ func (r *Runtime) spawnChild() *core.Agent {
 	}
 
 	return child
+}
+
+func (r *Runtime) spawnNamed(name string) (*core.Agent, SubagentSpec, error) {
+	spec, ok := r.subagents[name]
+	if !ok {
+		return nil, SubagentSpec{}, fmt.Errorf("subagent %s not found", name)
+	}
+
+	client := r.agent.Client
+	if spec.Model != "" {
+		auth, _ := config.LoadAuth()
+		cfg := r.cfg
+		cfg.SetActiveModel(spec.Model)
+		c, err := newLLMClient(cfg, auth)
+		if err != nil {
+			return nil, spec, fmt.Errorf("sub-agent %q: model %q: %w", name, spec.Model, err)
+		}
+		client = c
+	}
+
+	child := core.NewAgent(client)
+	child.SetContextLimit(r.cfg.ContextWindow)
+
+	maxIter := r.cfg.MaxIterations
+	if spec.MaxIterations != 0 {
+		maxIter = spec.MaxIterations
+	}
+	child.SetMaxIterations(maxIter)
+
+	tools, err := r.subagentsTools(spec.Tools)
+	if err != nil {
+		return nil, spec, fmt.Errorf("sub-agent %q: %w", name, err)
+	}
+
+	for _, t := range tools {
+		child.AddTool(tool.ToDefinition(t), t)
+	}
+
+	if r.permission != nil {
+		child.AddPreToolUseHook(r.permission.Hook())
+	}
+
+	return child, spec, nil
+}
+
+func (r *Runtime) subagentsTools(names []string) ([]tool.Tool, error) {
+	if len(names) == 0 {
+		out := make([]tool.Tool, 0, len(r.tools))
+		for _, t := range r.tools {
+			if t.Name() == "delegate" {
+				continue
+			}
+			out = append(out, t)
+		}
+		return out, nil
+	}
+
+	byName := make(map[string]tool.Tool, len(r.tools))
+	for _, t := range r.tools {
+		byName[t.Name()] = t
+	}
+
+	out := make([]tool.Tool, 0, len(names))
+	for _, name := range names {
+		t, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("tool %q not found", name)
+		}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 // ------------- PLANNING ----------------

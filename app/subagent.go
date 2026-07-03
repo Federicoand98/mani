@@ -23,6 +23,22 @@ func RegisterSubagents(rt *Runtime, maxDepth int) {
 	rt.WithTool(newDelegateTool(rt, maxDepth))
 }
 
+func registerSubagentsFromSpec(rt *Runtime, specs []SubagentSpec, maxDepth int, deps ToolDeps) {
+	if len(specs) == 0 {
+		RegisterSubagents(rt, maxDepth)
+		return
+	}
+
+	rt.subagents = make(map[string]SubagentSpec, len(specs))
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		rt.subagents[spec.Name] = spec
+		names = append(names, spec.Name)
+	}
+
+	rt.WithTool(newNamedDelegateTool(rt, maxDepth, names))
+}
+
 func newDelegateTool(rt *Runtime, maxDepth int) tool.Tool {
 	schema := tool.ToolSchema{
 		Name: "delegate",
@@ -61,6 +77,62 @@ func newDelegateTool(rt *Runtime, maxDepth int) tool.Tool {
 			mem.Add(core.Message{
 				Role:    core.RoleSystem,
 				Content: []core.ContentBlock{core.TextBlock{Text: instructions}},
+			})
+		}
+
+		childCtx := withDepth(ctx, depth+1)
+
+		if err := child.Run(childCtx, mem, task); err != nil {
+			return "", fmt.Errorf("delegate: sub-agent error: %w", err)
+		}
+
+		return lastAssistantText(mem), nil
+	})
+
+	return tool
+}
+
+func newNamedDelegateTool(rt *Runtime, maxDepth int, names []string) tool.Tool {
+	schema := tool.ToolSchema{
+		Name: "delegate",
+		Description: "Delegates a sub-task to a sub-agent with fresh memory and the same tools." +
+			"Use it to isolate focused work (reasearch, a narrow edit) without bloating your context." +
+			"'task' is what to do; 'instructions' (optional) is the sub-agent's system prompt." +
+			"Returns the final response from the sub-agent.",
+		InputSchema: tool.InputSchema{
+			Type: "object",
+			Properties: map[string]tool.PropertySchema{
+				"task":  {Type: "string", Description: "The sub-task to be performed by the sub-agent."},
+				"agent": {Type: "string", Description: "The name of the sub-agent to delegate to."},
+			},
+			Required: []string{"agent", "task"},
+		},
+	}
+
+	tool := tool.New(schema, core.RiskNone, func(ctx context.Context, input map[string]any) (string, error) {
+		depth := depthFrom(ctx)
+
+		if depth >= maxDepth {
+			return "", fmt.Errorf("delegate: max depth reached (%d), no further delegation.", maxDepth)
+		}
+
+		name, _ := input["agent"].(string)
+		task, _ := input["task"].(string)
+		if task == "" || name == "" {
+			return "", fmt.Errorf("delegate: task and agent are required.")
+		}
+
+		child, spec, err := rt.spawnNamed(name)
+		if err != nil {
+			return "", fmt.Errorf("delegate: %w", err)
+		}
+
+		mem := core.NewInMemory()
+
+		if spec.SystemPrompt != "" {
+			mem.Add(core.Message{
+				Role:    core.RoleSystem,
+				Content: []core.ContentBlock{core.TextBlock{Text: spec.SystemPrompt}},
 			})
 		}
 
