@@ -1,0 +1,42 @@
+provider: ollama
+model: qwen3.5:9b
+
+system_prompt: |
+  Sei un agente di manutenzione del repo. Conciso, preciso.
+  Non modifichi file senza aver prima letto il contesto.
+
+# workspace: assente = os.Getwd() risolto nel Build
+tools:
+  - read_file
+  - edit_file
+  - bash
+
+# feature accese di default: qui spegniamo la compaction e cambiamo la depth come override
+features:
+  compaction:
+    enabled: false
+  subagents:
+    depth: 2
+
+# tool nel manifest = allow, override per cambiarle
+permissions:
+  bash: deny
+  default: allow
+
+mcp:
+  - name: deepwiki
+    url: https://mcp.deepwiki.com/sse
+
+subagents:
+  - name: researcher
+    description: "esplora il codice in sola lettura, riporta con file:riga"
+    system_prompt: "Sei un ricercatore. Non modifichi nulla. Rispondi con riferimenti file:riga."
+    tools: [read_file]         # subset ristretto
+    model: ""                  # eredita il modello del padre
+  - name: coder
+    description: "implementa modifiche una volta deciso cosa fare"
+    system_prompt: "Sei un implementatore. Applichi modifiche minime e mirate."
+    tools: [read_file, edit_file, write_file, bash]
+
+context_window: 0    # 0 = eredita
+max_iterations: 15
