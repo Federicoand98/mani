@@ -11,6 +11,7 @@ import (
 	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool/bash"
 	fstools "github.com/Federicoand98/mani/tool/fs"
+	"github.com/Federicoand98/mani/tool/mcp"
 	"github.com/Federicoand98/mani/tui"
 )
 
@@ -45,6 +46,11 @@ func main() {
 	app.RegisterPlanning(runtime)
 	app.RegisterSubagents(runtime, 3)
 	app.RegisterTracing(runtime)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	runtime.AddMCPServer(ctx, mcp.ServerSpec{Name: "deepwiki", URL: "https://mcp.deepwiki.com/sse"})
 
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
