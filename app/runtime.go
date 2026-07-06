@@ -360,6 +360,14 @@ func (r *Runtime) Cancel() {
 	}
 }
 
+// Close closes all MCP sessions and clears the session list.
+func (r *Runtime) Close() {
+	for _, s := range r.mcpSessions {
+		_ = s.Close()
+	}
+	r.mcpSessions = nil
+}
+
 // LastResponse returns the last response from the agent in the current session
 func (r *Runtime) LastResponse() string {
 	msg := r.current.Memory().Messages()

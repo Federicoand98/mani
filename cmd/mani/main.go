@@ -63,6 +63,7 @@ func main() {
 	defer stop()
 
 	runtime.AddMCPServer(ctx, mcp.ServerSpec{Name: "deepwiki", URL: "https://mcp.deepwiki.com/sse"})
+	defer runtime.Close()
 
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

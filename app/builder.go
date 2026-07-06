@@ -38,7 +38,8 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	}
 
 	// 2. Load permissions. default allow, override with spec
-	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions))
+	rt.permission = NewPermissionManager()
+	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions, rt.permission))
 
 	// 3. Features
 	f := spec.Features
@@ -91,24 +92,25 @@ func mergeConfig(base config.Config, spec RuntimeSpec) config.Config {
 	return c
 }
 
-func manifestPolicyHook(policy map[string]RiskPolicy) core.PreToolUseHook {
+func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager) core.PreToolUseHook {
 	return func(toolName string, level core.RiskLevel, input map[string]any) error {
-		p, ok := policy[toolName]
-		if !ok {
-			if d, has := policy["default"]; has {
-				p = d
-			} else {
-				p = RiskPolicyAllow
-			}
-		}
-
-		switch p {
+		switch resolvePolicy(policy, toolName) {
 		case RiskPolicyDeny:
 			return fmt.Errorf("permission: tool %q denied", toolName)
 		case RiskPolicyAsk:
-			return fmt.Errorf("permission: tool %q ask permission but execution is headless", toolName)
+			return mgr.check(toolName, level, input)
 		default:
 			return nil
 		}
 	}
+}
+
+func resolvePolicy(policy map[string]RiskPolicy, name string) RiskPolicy {
+	if p, ok := policy[name]; ok {
+		return p
+	}
+	if d, has := policy["default"]; has {
+		return d
+	}
+	return RiskPolicyAllow
 }
