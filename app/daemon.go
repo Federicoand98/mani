@@ -35,12 +35,13 @@ type dailySpec struct {
 }
 
 type Daemon struct {
-	rt      *Runtime
-	queue   chan Task
-	crons   []cronSpec
-	dailies []dailySpec
-	addr    string
-	policy  Policy
+	rt            *Runtime
+	queue         chan Task
+	crons         []cronSpec
+	dailies       []dailySpec
+	addr          string
+	webhookPrompt string
+	policy        Policy
 }
 
 func NewTrigger(rt *Runtime) *Daemon {
@@ -65,8 +66,9 @@ func (d *Daemon) Daily(clock string, prompt string) *Daemon {
 	return d
 }
 
-func (d *Daemon) Webhook(addr string) *Daemon {
+func (d *Daemon) Webhook(addr string, promptTemplate string) *Daemon {
 	d.addr = addr
+	d.webhookPrompt = promptTemplate
 	return d
 }
 
@@ -160,7 +162,8 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 		}
 
 		body, _ := io.ReadAll(r.Body)
-		prompt := strings.TrimSpace(string(body))
+		sbody := strings.TrimSpace(string(body))
+		prompt := renderWebhookPrompt(d.webhookPrompt, sbody)
 
 		if prompt == "" {
 			http.Error(w, "empty prompt", http.StatusBadRequest)
@@ -214,4 +217,17 @@ func nextOccurrence(now time.Time, hour, minute int) time.Time {
 		next = next.Add(24 * time.Hour)
 	}
 	return next
+}
+
+func renderWebhookPrompt(template, body string) string {
+	if template == "" {
+		return body
+	}
+	if strings.Contains(template, "{{body}}") {
+		return strings.ReplaceAll(template, "{{body}}", body)
+	}
+	if body == "" {
+		return template
+	}
+	return template + "\n\n" + body
 }

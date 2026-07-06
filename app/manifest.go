@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -138,6 +139,35 @@ func (s RuntimeSpec) Validate() error {
 			if !knownTool(t) {
 				return fmt.Errorf("manifest: unknown tool %s", t)
 			}
+		}
+	}
+
+	for _, t := range s.Triggers {
+		switch t.Type {
+		case "every":
+			if t.Every == "" {
+				return fmt.Errorf("trigger every: campo 'every' richiesto")
+			}
+			if _, err := time.ParseDuration(t.Every); err != nil {
+				return fmt.Errorf("trigger every: durata %q non valida: %w", t.Every, err)
+			}
+			if t.Prompt == "" {
+				return fmt.Errorf("trigger every: 'prompt' richiesto")
+			}
+		case "daily":
+			if t.At == "" {
+				return fmt.Errorf("trigger daily: campo 'at' richiesto")
+			}
+			if t.Prompt == "" {
+				return fmt.Errorf("trigger daily: 'prompt' richiesto")
+			}
+		case "webhook":
+			if t.Addr == "" {
+				return fmt.Errorf("trigger webhook: campo 'addr' richiesto")
+			}
+			// prompt opzionale (template)
+		default:
+			return fmt.Errorf("trigger type sconosciuto: %q", t.Type)
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
@@ -72,6 +73,27 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	}
 
 	return rt, nil
+}
+
+func BuildDaemon(rt *Runtime, specs []TriggerSpec) (*Daemon, error) {
+	d := NewTrigger(rt)
+	for _, t := range specs {
+		switch t.Type {
+		case "every":
+			dur, err := time.ParseDuration(t.Every)
+			if err != nil {
+				return nil, fmt.Errorf("build: invalid duration %q: %w", t.Every, err)
+			}
+			d.Every(dur, t.Prompt)
+		case "daily":
+			d.Daily(t.At, t.Prompt)
+		case "webhook":
+			d.Webhook(t.Addr, t.Prompt)
+		default:
+			return nil, fmt.Errorf("build: invalid trigger type %q", t.Type)
+		}
+	}
+	return d, nil
 }
 
 // mergeConfig merges spec > base config.
