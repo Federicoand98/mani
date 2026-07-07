@@ -3,9 +3,11 @@ package app
 import (
 	"fmt"
 
+	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/bash"
 	"github.com/Federicoand98/mani/tool/fs"
+	"github.com/Federicoand98/mani/tool/subprocess"
 )
 
 // ToolDeps: dependencies for a tool that needs to be passed to the tool's constructor
@@ -34,6 +36,25 @@ func buildTool(name string, deps ToolDeps) (tool.Tool, error) {
 		return nil, fmt.Errorf("unknown tool: %q", name)
 	}
 	return c(deps)
+}
+
+func buildToolRef(ref ToolRef, deps ToolDeps) (tool.Tool, error) {
+	if !ref.isSubprocess() {
+		return buildTool(ref.Name, deps)
+	}
+
+	risk := ref.Risk.toCore()
+	if ref.Risk == "" {
+		risk = core.RiskExecute
+	}
+
+	schema := tool.ToolSchema{
+		Name:        ref.Name,
+		Description: ref.Desc,
+		InputSchema: ref.Schema,
+	}
+
+	return subprocess.New(ref.Name, ref.Desc, ref.Command, ref.Args, ref.Env, schema, risk, deps.Workspace), nil
 }
 
 func knownTool(name string) bool {

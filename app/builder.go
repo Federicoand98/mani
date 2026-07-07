@@ -31,7 +31,7 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 
 	// 1. Load tools
 	for _, name := range spec.Tools {
-		t, err := buildTool(name, deps)
+		t, err := buildToolRef(name, deps)
 		if err != nil {
 			return nil, fmt.Errorf("build: tool %q: %w", name, err)
 		}

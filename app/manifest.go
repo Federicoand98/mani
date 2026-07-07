@@ -5,10 +5,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/tool"
 	"gopkg.in/yaml.v3"
 )
 
-type RiskPolicy string
+type (
+	RiskPolicy string
+	RiskName   string
+)
 
 const (
 	RiskPolicyAllow RiskPolicy = "allow"
@@ -63,12 +68,22 @@ type SubagentSpec struct {
 	MaxIterations int      `json:"max_iterations"` // 0 = inherit
 }
 
+type ToolRef struct {
+	Name    string            `json:"name"`
+	Desc    string            `json:"desc"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	Schema  tool.InputSchema  `json:"schema"`
+	Risk    RiskName          `json:"risk"`
+}
+
 type RuntimeSpec struct {
 	Provider      string                `json:"provider"`
 	Model         string                `json:"model"`
 	SystemPrompt  string                `json:"system_prompt"`
 	Workspace     string                `json:"workspace"`
-	Tools         []string              `json:"tools"`
+	Tools         []ToolRef             `json:"tools"`
 	Features      Features              `json:"features"`
 	Permissions   map[string]RiskPolicy `json:"permissions"`
 	MCPServers    []MCPSpec             `json:"mcpservers"`
@@ -109,9 +124,25 @@ func LoadManifest(path string) (RuntimeSpec, error) {
 }
 
 func (s RuntimeSpec) Validate() error {
-	for _, name := range s.Tools {
-		if !knownTool(name) {
-			return fmt.Errorf("manifest: unknown tool %s", name)
+	declared := map[string]bool{}
+
+	for _, ref := range s.Tools {
+		if ref.Name == "" {
+			return fmt.Errorf("manifest: tool name required")
+		}
+
+		if declared[ref.Name] {
+			return fmt.Errorf("manifest: tool %s declared multiple times", ref.Name)
+		}
+
+		declared[ref.Name] = true
+
+		if ref.isSubprocess() {
+			if ref.Schema.Type == "" {
+				return fmt.Errorf("manifest: subprocess tool %s requires schema type", ref.Name)
+			}
+		} else if !knownTool(ref.Name) {
+			return fmt.Errorf("manifest: unknown tool %s", ref.Name)
 		}
 	}
 
@@ -136,7 +167,7 @@ func (s RuntimeSpec) Validate() error {
 		seen[sa.Name] = true
 
 		for _, t := range sa.Tools {
-			if !knownTool(t) {
+			if !knownTool(t) && !declared[t] {
 				return fmt.Errorf("manifest: unknown tool %s", t)
 			}
 		}
@@ -172,4 +203,34 @@ func (s RuntimeSpec) Validate() error {
 	}
 
 	return nil
+}
+
+func (t ToolRef) isSubprocess() bool {
+	return t.Command != ""
+}
+
+func (t *ToolRef) UnmarshallYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&t.Name)
+	}
+
+	type raw ToolRef
+	var r raw
+	if err := node.Decode(&r); err != nil {
+		return err
+	}
+
+	*t = ToolRef(r)
+	return nil
+}
+
+func (r RiskName) toCore() core.RiskLevel {
+	switch r {
+	case "write":
+		return core.RiskWrite
+	case "execute":
+		return core.RiskExecute
+	default:
+		return core.RiskNone
+	}
 }

@@ -1,0 +1,23 @@
+provider: ollama
+model: qwen3.5:9b
+
+system_prompt: |
+  Sei un agente generico e questo è il tuo system prompt
+
+tools:
+  - read_file
+  - edit_file
+  - bash
+  - name: fetch_stock
+    description: "fetch stock data"
+    command: ./.venv/bin/python
+    args: ["tools/stock.py"]
+    schema:
+        type: object
+        properties:
+            symbol: { type: string, description: "stock symbol to fetch" }
+        required: ["symbol"]
+
+permissions:
+    bash: deny
+    fetch_stock: allow
