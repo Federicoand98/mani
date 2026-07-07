@@ -5,12 +5,12 @@ system_prompt: |
   Sei un agente generico e questo è il tuo system prompt
 
 tools:
-  - read_file
-  - edit_file
+  - read
+  - edit
   - bash
   - name: fetch_stock
     description: "fetch stock data"
-    command: ./.venv/bin/python
+    command: ./tools/.venv/bin/python
     args: ["tools/stock.py"]
     schema:
         type: object

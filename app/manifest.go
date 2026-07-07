@@ -22,75 +22,75 @@ const (
 )
 
 type CompactionCfg struct {
-	Enabled bool `json:"enabled"`
-	Keep    int  `json:"keep"`
+	Enabled bool `yaml:"enabled"`
+	Keep    int  `yaml:"keep"`
 }
 
 type SubagentsCfg struct {
-	Enabled bool `json:"enabled"`
-	Depth   int  `json:"depth"`
+	Enabled bool `yaml:"enabled"`
+	Depth   int  `yaml:"depth"`
 }
 
 // Features: enabled/disabled middleware features
 // default: all features enabled
 type Features struct {
-	Planning         bool          `json:"planning"`
-	ContextInjection bool          `json:"context_injection"`
-	Tracing          bool          `json:"tracing"`
-	Compaction       CompactionCfg `json:"compaction"`
-	Subagents        SubagentsCfg  `json:"subagents"`
+	Planning         bool          `yaml:"planning"`
+	ContextInjection bool          `yaml:"context_injection"`
+	Tracing          bool          `yaml:"tracing"`
+	Compaction       CompactionCfg `yaml:"compaction"`
+	Subagents        SubagentsCfg  `yaml:"subagents"`
 }
 
 // MCPSpec: MCP server specification
 type MCPSpec struct {
-	Name    string   `json:"name"`
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-	URL     string   `json:"url"`
+	Name    string   `yaml:"name"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+	URL     string   `yaml:"url"`
 }
 
 // TriggerSpec: trigger specification. Trigger + prompt
 type TriggerSpec struct {
-	Type   string `json:"type"`  // trigger type: "every", "at", "every"
-	Every  string `json:"every"` // es 30m
-	At     string `json:"at"`    // es 09:00
-	Addr   string `json:"addr"`  // es :8787
-	Prompt string `json:"prompt"`
+	Type   string `yaml:"type"`  // trigger type: "every", "at", "every"
+	Every  string `yaml:"every"` // es 30m
+	At     string `yaml:"at"`    // es 09:00
+	Addr   string `yaml:"addr"`  // es :8787
+	Prompt string `yaml:"prompt"`
 }
 
 // SubagentSpec: Runtime spec for subagents. No trigger, no inner subagents. empty tool = inherit
 type SubagentSpec struct {
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	SystemPrompt  string   `json:"system_prompt"`
-	Model         string   `json:"model"` // "" = inherit
-	Tools         []string `json:"tools"`
-	MaxIterations int      `json:"max_iterations"` // 0 = inherit
+	Name          string   `yaml:"name"`
+	Description   string   `yaml:"description"`
+	SystemPrompt  string   `yaml:"system_prompt"`
+	Model         string   `yaml:"model"` // "" = inherit
+	Tools         []string `yaml:"tools"`
+	MaxIterations int      `yaml:"max_iterations"` // 0 = inherit
 }
 
 type ToolRef struct {
-	Name    string            `json:"name"`
-	Desc    string            `json:"desc"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	Schema  tool.InputSchema  `json:"schema"`
-	Risk    RiskName          `json:"risk"`
+	Name    string            `yaml:"name"`
+	Desc    string            `yaml:"description"`
+	Command string            `yaml:"command"`
+	Args    []string          `yaml:"args"`
+	Env     map[string]string `yaml:"env"`
+	Schema  tool.InputSchema  `yaml:"schema"`
+	Risk    RiskName          `yaml:"risk"`
 }
 
 type RuntimeSpec struct {
-	Provider      string                `json:"provider"`
-	Model         string                `json:"model"`
-	SystemPrompt  string                `json:"system_prompt"`
-	Workspace     string                `json:"workspace"`
-	Tools         []ToolRef             `json:"tools"`
-	Features      Features              `json:"features"`
-	Permissions   map[string]RiskPolicy `json:"permissions"`
-	MCPServers    []MCPSpec             `json:"mcpservers"`
-	Triggers      []TriggerSpec         `json:"triggers"`
-	Subagents     []SubagentSpec        `json:"subagents"`
-	ContextWindow int                   `json:"context_window"`
-	MaxIterations int                   `json:"max_iterations"`
+	Provider      string                `yaml:"provider"`
+	Model         string                `yaml:"model"`
+	SystemPrompt  string                `yaml:"system_prompt"`
+	Workspace     string                `yaml:"workspace"`
+	Tools         []ToolRef             `yaml:"tools"`
+	Features      Features              `yaml:"features"`
+	Permissions   map[string]RiskPolicy `yaml:"permissions"`
+	MCPServers    []MCPSpec             `yaml:"mcpservers"`
+	Triggers      []TriggerSpec         `yaml:"triggers"`
+	Subagents     []SubagentSpec        `yaml:"subagents"`
+	ContextWindow int                   `yaml:"context_window"`
+	MaxIterations int                   `yaml:"max_iterations"`
 }
 
 func DefaultSpec() RuntimeSpec {
@@ -209,7 +209,9 @@ func (t ToolRef) isSubprocess() bool {
 	return t.Command != ""
 }
 
-func (t *ToolRef) UnmarshallYAML(node *yaml.Node) error {
+var _ yaml.Unmarshaler = (*ToolRef)(nil)
+
+func (t *ToolRef) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind == yaml.ScalarNode {
 		return node.Decode(&t.Name)
 	}

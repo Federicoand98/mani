@@ -7,8 +7,8 @@ system_prompt: |
 
 # workspace: assente = os.Getwd() risolto nel Build
 tools:
-  - read_file
-  - edit_file
+  - read
+  - edit
   - bash
 
 # feature accese di default: qui spegniamo la compaction e cambiamo la depth come override

@@ -373,7 +373,7 @@ func (r *Runtime) LastResponse() string {
 	msg := r.current.Memory().Messages()
 
 	for i := len(msg) - 1; i >= 0; i-- {
-		if msg[i].Role == core.RoleAssistant {
+		if msg[i].Role != core.RoleAssistant {
 			continue
 		}
 
