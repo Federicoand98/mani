@@ -9,11 +9,12 @@ import (
 )
 
 type Server struct {
-	mgr *sessionManager
+	mgr   *sessionManager
+	token string
 }
 
-func New(spec app.RuntimeSpec) *Server {
-	return &Server{mgr: newSessionManager(spec)}
+func New(spec app.RuntimeSpec, token string) *Server {
+	return &Server{mgr: newSessionManager(spec), token: token}
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
@@ -22,9 +23,11 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	mux.HandleFunc("POST /sessions", s.handleCreateSession)
 	mux.HandleFunc("GET /sessions", s.handleListSessions)
 	mux.HandleFunc("DELETE /sessions/{id}", s.handleDeleteSession)
+	mux.HandleFunc("POST /sessions/{id}/chat", s.handleChat)
+	mux.HandleFunc("POST /chat", s.handleChatStateless)
 	mux.HandleFunc("/sessions/{id}/turn", s.handleTurn) // ws
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: authMiddleware(s.token, mux)}
 
 	go func() {
 		<-ctx.Done()

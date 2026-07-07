@@ -190,6 +190,18 @@ Note:
 
 ---
 
+## Macchina a stati WS
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: websocket.Accept
+    Idle --> Running: recv input (avvia turno)
+    Running --> Idle: turn done / error / cancelled
+    Running --> Running: permission_response → route a pending<br/>cancel → rt.Cancel()<br/>input → error \"turn già in corso\"
+    Idle --> [*]: disconnect
+    Running --> [*]: disconnect → cancel + drain pending=deny
+```
+
 ## Esempio completo
 
 ```bash

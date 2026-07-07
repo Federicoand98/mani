@@ -12,10 +12,13 @@ import (
 
 // due goroutine per connessione: la write pump drena il canale Event verso la WS, la read loop riceve permission_response / cancel
 
-type turnConn struct {
-	c       *websocket.Conn
-	mu      sync.Mutex
-	pending map[string]chan app.Decision
+type conn struct {
+	c        *websocket.Conn
+	rt       *app.Runtime
+	outbound chan serverMsg
+	mu       sync.Mutex
+	pending  map[string]chan app.Decision
+	running  bool
 }
 
 func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
@@ -31,48 +34,100 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.CloseNow()
 
-	ctx := r.Context()
-	conn := &turnConn{c: c, pending: make(map[string]chan app.Decision)}
-
-	// 1. primo frame: input del turno
-	var first clientMsg
-	if err := wsjson.Read(ctx, c, &first); err != nil {
-		return
-	}
-
-	if first.Type != "input" || first.Input == "" {
-		_ = wsjson.Write(ctx, c, serverMsg{Type: "error", Payload: errorDTO{Message: "first message must be: {type:input}"}})
-		return
-	}
-
-	turnCtx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// 2. read loop: risposte ai permessi - bloccato su <-Respond
-	go conn.readLoop(turnCtx, rt, cancel)
-
-	// 3. write pump: eventi -> ws
-	for ev := range rt.Execute(turnCtx, first.Input) {
-		if ev.Type == app.EventPermissionRequest {
-			conn.forwardPermission(ctx, ev)
-			continue
-		}
-		msg, ok := toServerMsg(ev)
-		if !ok {
-			continue
-		}
-
-		if err := wsjson.Write(ctx, c, msg); err != nil {
-			cancel()
-			return
-		}
+	cn := &conn{
+		c:        c,
+		rt:       rt,
+		outbound: make(chan serverMsg, 32),
+		pending:  make(map[string]chan app.Decision),
 	}
 
-	_ = c.Close(websocket.StatusNormalClosure, "")
+	go cn.writer(ctx) // unico writer
+	cn.reader(ctx)    // blocca finchè vive una connessione, ritorna la disconnect
+	cn.shutdown()     // drena i permessi
+}
+
+func (cn *conn) writer(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-cn.outbound:
+			if err := wsjson.Write(ctx, cn.c, msg); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// send: push non bloccante versio il writer
+func (cn *conn) send(ctx context.Context, m serverMsg) {
+	select {
+	case cn.outbound <- m:
+	case <-ctx.Done():
+	}
+}
+
+func (cn *conn) reader(ctx context.Context) {
+	for {
+		var msg clientMsg
+		if err := wsjson.Read(ctx, cn.c, &msg); err != nil {
+			return
+		}
+
+		switch msg.Type {
+		case "input":
+			cn.startTurn(ctx, msg.Input)
+		case "permission_response":
+			cn.routeDecision(msg.RequestID, msg.Decision)
+		case "cancel":
+			cn.rt.Cancel()
+		}
+	}
+}
+
+func (cn *conn) startTurn(ctx context.Context, input string) {
+	if input == "" {
+		cn.send(ctx, errMsg("input vuoto"))
+		return
+	}
+
+	cn.mu.Lock()
+
+	if cn.running {
+		cn.mu.Unlock()
+		cn.send(ctx, errMsg("turn in progress"))
+		return
+	}
+
+	cn.running = true
+	cn.mu.Unlock()
+
+	go cn.runTurn(ctx, input)
+}
+
+func (cn *conn) runTurn(ctx context.Context, input string) {
+	defer func() {
+		cn.mu.Lock()
+		cn.running = false
+		cn.mu.Unlock()
+	}()
+
+	for ev := range cn.rt.Execute(ctx, input) {
+		if ev.Type == app.EventPermissionRequest {
+			cn.forwardPermission(ctx, ev)
+			continue
+		}
+		if m, ok := toServerMsg(ev); ok {
+			cn.send(ctx, m)
+		}
+	}
 }
 
 // forwardPermission: salva il canale Respond sotto un req_id e manda req al client
-func (conn *turnConn) forwardPermission(ctx context.Context, ev app.Event) {
+func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 	p := ev.Payload.(app.PermissionRequestPayload)
 	reqID := newID()
 
@@ -80,47 +135,38 @@ func (conn *turnConn) forwardPermission(ctx context.Context, ev app.Event) {
 	conn.pending[reqID] = p.Respond
 	conn.mu.Unlock()
 
-	_ = wsjson.Write(ctx, conn.c, serverMsg{
-		Type: "permission_request",
-		Payload: permissionRequestDTO{
-			RequestID: reqID,
-			ToolName:  p.ToolName,
-			RiskLevel: p.RiskLevel,
-			Input:     p.Input,
-			Preview:   p.Preview,
-		},
-	})
+	conn.send(ctx, serverMsg{Type: "permission_request", Payload: permissionRequestDTO{
+		RequestID: reqID, ToolName: p.ToolName, RiskLevel: p.RiskLevel,
+		Input: p.Input, Preview: p.Preview,
+	}})
 }
 
-func (conn *turnConn) readLoop(ctx context.Context, rt *app.Runtime, cancel context.CancelFunc) {
-	for {
-		var msg clientMsg
-		if err := wsjson.Read(ctx, conn.c, &msg); err != nil {
-			conn.drainPending()
-			cancel()
-			return
-		}
-
-		switch msg.Type {
-		case "permission_response":
-			conn.mu.Lock()
-			ch, ok := conn.pending[msg.RequestID]
-			delete(conn.pending, msg.RequestID)
-			conn.mu.Unlock()
-			if ok {
-				ch <- parseDecision(msg.Decision)
-			}
-		case "cancel":
-			rt.Cancel()
-		}
+func (cn *conn) routeDecision(reqID, decision string) {
+	cn.mu.Lock()
+	ch, ok := cn.pending[reqID]
+	delete(cn.pending, reqID)
+	cn.mu.Unlock()
+	if ok {
+		ch <- parseDecision(decision)
 	}
 }
 
-func (conn *turnConn) drainPending() {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	for id, ch := range conn.pending {
-		ch <- app.Deny
-		delete(conn.pending, id)
+func (cn *conn) shutdown() {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+
+	for id, ch := range cn.pending {
+		select {
+		case ch <- app.Deny:
+		default:
+		}
+		delete(cn.pending, id)
+	}
+}
+
+func errMsg(s string) serverMsg {
+	return serverMsg{
+		Type:    "error",
+		Payload: errorDTO{Message: s},
 	}
 }
