@@ -10,14 +10,17 @@ import (
 	"github.com/Federicoand98/mani/config"
 )
 
-// SetupLogging imposta lo slog di default: livello da `level`, output su
-// ~/.config/mani/mani.log (così non sporca la TUI). Seguilo con `tail -f` su quel file.
-// Se il file non è apribile, ricade su stderr.
-func SetupLogging(level string) {
+// SetupLogging imposta lo slog di default al livello `level`. Con toStderr=true scrive su
+// stderr (comandi headless run/serve: i log si vedono nel terminale, l'output vero resta su
+// stdout). Con toStderr=false scrive su ~/.config/mani/mani.log (TUI: non sporca lo schermo;
+// seguilo con `tail -f`). Se il file non è apribile, ricade su stderr.
+func SetupLogging(level string, toStderr bool) {
 	var w io.Writer = os.Stderr
-	path := filepath.Join(config.ConfigDir(), "mani.log")
-	if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-		w = f
+	if !toStderr {
+		path := filepath.Join(config.ConfigDir(), "mani.log")
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			w = f
+		}
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: parseLevel(level)})))
 }

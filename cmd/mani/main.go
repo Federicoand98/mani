@@ -16,7 +16,9 @@ func main() {
 		fail("config load", err)
 	}
 
-	app.SetupLogging(cfg.LogLevel)
+	// headless (run/serve): log su stderr → visibili nel terminale. TUI: log su file.
+	headless := len(os.Args) > 1 && (os.Args[1] == "run" || os.Args[1] == "serve")
+	app.SetupLogging(cfg.LogLevel, headless)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

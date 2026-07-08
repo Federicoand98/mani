@@ -27,7 +27,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	mux.HandleFunc("POST /chat", s.handleChatStateless)
 	mux.HandleFunc("/sessions/{id}/turn", s.handleTurn) // ws
 
-	srv := &http.Server{Addr: addr, Handler: authMiddleware(s.token, mux)}
+	srv := &http.Server{Addr: addr, Handler: loggingMiddleware(authMiddleware(s.token, mux))}
 
 	go func() {
 		<-ctx.Done()
@@ -40,4 +40,14 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	}
 
 	return nil
+}
+
+// loggingMiddleware: logga ogni richiesta HTTP in arrivo, incluso l'upgrade WebSocket
+// (una GET con header Upgrade: websocket). Sta fuori da authMiddleware → vedi anche i 401.
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws := r.Header.Get("Upgrade") == "websocket"
+		slog.Info("http request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr, "ws", ws)
+		next.ServeHTTP(w, r)
+	})
 }
