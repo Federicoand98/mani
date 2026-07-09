@@ -387,6 +387,19 @@ func (r *Runtime) LastResponse() string {
 	return ""
 }
 
+// StructuredResult returns always an object matching the schema if in structured mode, otherwise returns
+// the text wrapped in {"response": ...}
+func (r *Runtime) StructuredResult() map[string]any {
+	if res := r.agent.FinalResult(); res != nil {
+		return res
+	}
+
+	return map[string]any{"response": r.LastResponse()}
+}
+
+// HasStructure returns true if the agent has a structured result (i.e. it has a final result)
+func (r *Runtime) HasStructure() bool { return r.agent.FinalResult() != nil }
+
 // --------------- Commands ----------------
 
 func (r *Runtime) Login(provider string, cred config.Credential) error {

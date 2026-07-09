@@ -8,6 +8,7 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/mcp"
 )
 
@@ -42,10 +43,27 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	rt.permission = NewPermissionManager()
 	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions, rt.permission))
 
+	sysPrompt := spec.SystemPrompt
+	if spec.OutputSchema.Type != "" {
+		schema := tool.ToolSchema{
+			Name:        "respond",
+			Description: "Return the final result according to the schema. Use this tool once, only at the end.",
+			InputSchema: spec.OutputSchema,
+		}
+
+		rt.WithTool(tool.New(schema, core.RiskNone, func(ctx context.Context, m map[string]any) (string, error) {
+			return "", nil
+		}))
+
+		rt.agent.SetFinalTool("respond")
+
+		sysPrompt += "\n\nThis agent has an output schema: finish ALWAYS using the `respond` tool with an object matching the schema. Do not respond with plain text."
+	}
+
 	// 3. Features
 	f := spec.Features
 	if f.ContextInjection {
-		registerContextInjectionWith(rt, spec.SystemPrompt, ws)
+		registerContextInjectionWith(rt, sysPrompt, ws)
 	}
 	if f.Compaction.Enabled {
 		RegisterTrimCompaction(rt, f.Compaction.Keep)

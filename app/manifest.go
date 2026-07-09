@@ -89,6 +89,7 @@ type RuntimeSpec struct {
 	MCPServers    []MCPSpec             `yaml:"mcpservers"`
 	Triggers      []TriggerSpec         `yaml:"triggers"`
 	Subagents     []SubagentSpec        `yaml:"subagents"`
+	OutputSchema  tool.InputSchema      `yaml:"output_schema"`
 	ContextWindow int                   `yaml:"context_window"`
 	MaxIterations int                   `yaml:"max_iterations"`
 }
@@ -152,6 +153,10 @@ func (s RuntimeSpec) Validate() error {
 		default:
 			return fmt.Errorf("manifest: unknown permission %s", name)
 		}
+	}
+
+	if s.OutputSchema.Type != "" && s.OutputSchema.Type != "object" {
+		return fmt.Errorf("manifest: output schema type must be 'object' or empty, got %s", s.OutputSchema.Type)
 	}
 
 	seen := map[string]bool{}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -50,7 +51,12 @@ func runFromManifest(ctx context.Context, args []string) error {
 		case app.EventPermissionRequest:
 			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny // fail-closed
 		case app.EventDone:
-			fmt.Println(rt.LastResponse())
+			if rt.HasStructure() {
+				b, _ := json.MarshalIndent(rt.StructuredResult(), "", "	")
+				fmt.Println(string(b))
+			} else {
+				fmt.Println(rt.LastResponse())
+			}
 		case app.EventError:
 			if p, ok := ev.Payload.(app.ErrorPayload); ok {
 				return p.Err

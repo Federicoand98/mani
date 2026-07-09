@@ -18,6 +18,8 @@ type Agent struct {
 	hooks           *HookManager
 	contextLimit    int // 0: unlimited
 	maxIterations   int
+	finalTool       string         // "" = nessuno
+	finalResult     map[string]any // popolato quando finalTool ha valore
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -32,6 +34,8 @@ func NewAgent(client LLMClient) *Agent {
 }
 
 func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error {
+	a.finalResult = nil // reset
+
 	memory.Add(Message{Role: RoleUser, Content: []ContentBlock{TextBlock{Text: userInput}}})
 
 	onToken := func(token string, isThinking bool) {
@@ -78,8 +82,24 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 
 		switch resp.StopReason {
 		case StopReasonEndTurn:
+			// guard: se c'e' uno schema ma il modello ha risposto in testo lo forzo
+			if a.finalTool != "" && a.finalResult == nil {
+				memory.Add(Message{Role: RoleUser, Content: []ContentBlock{
+					TextBlock{Text: "You must return the result ONLY by calling the tool " + a.finalTool + " with the requested schema. Do not reply in free text."},
+				}})
+				continue
+			}
 			return nil
 		case StopReasonToolUse:
+			// intercetto il termine prima di executeTools
+			if a.finalTool != "" {
+				if call, input, ok := findTollCall(resp.Content, a.finalTool); ok {
+					if verr := validateAgainstSchema(input, a.schemaFor(a.finalTool)); verr != nil {
+						memory.Add(*toolResult(call.ID, "output not valid: "+verr.Error()+" - call "+a.finalTool+"with the correct schema", true))
+					}
+				}
+			}
+
 			if err := a.executeTools(ctx, memory, resp.Content); err != nil {
 				return fmt.Errorf("agent: execute tools: %w", err)
 			}
@@ -116,6 +136,14 @@ func (a *Agent) SetMaxIterations(iterations int) {
 	if iterations > 0 {
 		a.maxIterations = iterations
 	}
+}
+
+func (a *Agent) SetFinalTool(tool string) {
+	a.finalTool = tool
+}
+
+func (a *Agent) FinalResult() map[string]any {
+	return a.finalResult
 }
 
 func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
@@ -266,6 +294,15 @@ func (a *Agent) riskFor(toolName string) RiskLevel {
 	return RiskNone
 }
 
+func (a *Agent) schemaFor(toolName string) ToolInputSchema {
+	for _, t := range a.tools {
+		if t.Name == toolName {
+			return t.InputSchema
+		}
+	}
+	return ToolInputSchema{}
+}
+
 func blockedResult(id, msg string) Message {
 	return Message{Role: RoleTool, Content: []ContentBlock{
 		ToolResultBlock{ToolUseID: id, Content: "[blocked: " + msg + "]", IsError: true},
@@ -282,4 +319,13 @@ func toolResult(id, content string, isError bool) *Message {
 	return &Message{Role: RoleTool, Content: []ContentBlock{
 		ToolResultBlock{ToolUseID: id, Content: content, IsError: isError},
 	}}
+}
+
+func findTollCall(blocks []ContentBlock, toolName string) (ToolUseBlock, map[string]any, bool) {
+	for _, b := range blocks {
+		if call, ok := b.(ToolUseBlock); ok && call.Name == toolName {
+			return call, call.Input, true
+		}
+	}
+	return ToolUseBlock{}, nil, false
 }

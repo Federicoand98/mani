@@ -120,6 +120,11 @@ func (cn *conn) runTurn(ctx context.Context, input string) {
 			cn.forwardPermission(ctx, ev)
 			continue
 		}
+
+		if ev.Type == app.EventDone && cn.rt.HasStructure() {
+			cn.send(ctx, serverMsg{Type: "structured", Payload: cn.rt.StructuredResult()})
+		}
+
 		if m, ok := toServerMsg(ev); ok {
 			cn.send(ctx, m)
 		}

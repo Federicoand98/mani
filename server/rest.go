@@ -8,10 +8,10 @@ import (
 )
 
 type chatResponse struct {
-	Response string    `json:"response,omitempty"`
-	Usage    *usageDTO `json:"usage,omitempty"`
-	Error    string    `json:"error,omitempty"`
-	IsError  bool      `json:"is_error,omitempty"`
+	Output  map[string]any `json:"output,omitempty"`
+	Usage   *usageDTO      `json:"usage,omitempty"`
+	Error   string         `json:"error,omitempty"`
+	IsError bool           `json:"is_error,omitempty"`
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +83,8 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 	}
 
 	writeJSON(w, http.StatusOK, chatResponse{
-		Response: rt.LastResponse(),
-		Usage:    &usageDTO{Input: usage.Input, Output: usage.Output},
+		Output: rt.StructuredResult(),
+		Usage:  &usageDTO{Input: usage.Input, Output: usage.Output},
 	})
 }
 
