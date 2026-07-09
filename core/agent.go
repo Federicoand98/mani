@@ -91,12 +91,18 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 			}
 			return nil
 		case StopReasonToolUse:
-			// intercetto il termine prima di executeTools
+			// intercetto il tool terminale prima di executeTools
 			if a.finalTool != "" {
 				if call, input, ok := findTollCall(resp.Content, a.finalTool); ok {
 					if verr := validateAgainstSchema(input, a.schemaFor(a.finalTool)); verr != nil {
-						memory.Add(*toolResult(call.ID, "output not valid: "+verr.Error()+" - call "+a.finalTool+"with the correct schema", true))
+						// output non valido: feedback → il modello ritenta
+						memory.Add(*toolResult(call.ID, "output not valid: "+verr.Error()+" - call "+a.finalTool+" with the correct schema", true))
+						continue
 					}
+					// output valido: cattura il risultato e termina il turno
+					a.finalResult = input
+					memory.Add(*toolResult(call.ID, "ok", false))
+					return nil
 				}
 			}
 

@@ -14,6 +14,8 @@ func runFromManifest(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path al manifest YAML")
 	task := fs.String("task", "", "task headless; se assente avvia i trigger del manifest")
+	_ = fs.Bool("verbose", false, "mostra i log sul terminale (default: silenzioso)")
+	_ = fs.Bool("debug", false, "alias di --verbose")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {

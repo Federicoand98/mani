@@ -17,6 +17,8 @@ func runServer(ctx context.Context, args []string) error {
 	addr := fs.String("addr", ":9000", "indirizzo di ascolto")
 	tokenFlag := fs.String("token", "", "bearer token")
 	insecure := fs.Bool("insecure", false, "run without auth (dev-only)")
+	_ = fs.Bool("verbose", false, "mostra i log (serve li mostra comunque)")
+	_ = fs.Bool("debug", false, "alias di --verbose")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {

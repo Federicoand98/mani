@@ -1,0 +1,10 @@
+provider: ollama
+model: qwen3.5:9b
+system_prompt: "Classifica il sentiment del testo dato dall'utente."
+tools: []
+output_schema:
+  type: object
+  properties:
+    sentiment: { type: string, enum: [positive, negative, neutral] }
+    score:     { type: number }
+  required: [sentiment, score]
