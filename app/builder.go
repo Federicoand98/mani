@@ -31,11 +31,22 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	rt := NewFromConfig(cfg)
 
 	// 1. Load tools
+
+	var perToolTimeout time.Duration
+	if spec.Budget.PerToolTimeout != "" {
+		perToolTimeout, _ = time.ParseDuration(spec.Budget.PerToolTimeout)
+	}
+
 	for _, name := range spec.Tools {
 		t, err := buildToolRef(name, deps)
 		if err != nil {
 			return nil, fmt.Errorf("build: tool %q: %w", name, err)
 		}
+
+		if perToolTimeout > 0 {
+			t = withToolTimeout(t, perToolTimeout)
+		}
+
 		rt.WithTool(t)
 	}
 
@@ -76,6 +87,15 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	}
 	if f.Tracing {
 		RegisterTracing(rt)
+	}
+	if len(spec.Guardrails.Deny) > 0 || len(spec.Guardrails.Mask) > 0 {
+		RegisterGuardrails(rt, spec.Guardrails)
+	}
+	if spec.Budget.MaxTokens > 0 || spec.Budget.MaxToolCalls > 0 {
+		RegisterBudget(rt, spec.Budget)
+	}
+	if spec.Budget.MaxDuration != "" {
+		rt.maxDuration, _ = time.ParseDuration(spec.Budget.MaxDuration)
 	}
 
 	// 4. MCP

@@ -1,0 +1,18 @@
+provider: ollama
+model: qwen3.5:9b
+system_prompt: "Sei un assistente di sistema."
+tools: [read, bash]
+permissions: { bash: allow, read: allow }
+
+guardrails:
+  deny:
+    - { tool: bash, pattern: 'rm\s+-rf', label: "rm ricorsivo" }
+    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', label: "pipe-to-shell" }
+  mask:
+    - { pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }
+
+budget:
+  max_tokens: 50000
+  max_tool_calls: 20
+  max_duration: 2m
+  per_tool_timeout: 15s

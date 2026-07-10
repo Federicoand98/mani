@@ -27,6 +27,7 @@ type Runtime struct {
 	store           session.Store    // prima era core.Memory
 	current         *session.Session // sessione attiva
 	tools           []tool.Tool
+	maxDuration     time.Duration // 0 = no timeout
 	mcpSessions     []*mcp.Session
 	subagents       map[string]SubagentSpec
 	cancel          context.CancelFunc
@@ -314,8 +315,17 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	// cosa succede se la CLI renderizza piu lentamente di quanto l'agent produce i token?
 	ch := make(chan Event, 32)
 
-	runCtx, cancel := context.WithCancel(ctx)
+	var runCtx context.Context
+	var cancel context.CancelFunc
+	if r.maxDuration > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, r.maxDuration)
+	} else {
+		runCtx, cancel = context.WithCancel(ctx)
+	}
+
 	runCtx = context.WithValue(runCtx, runIDKey{}, newRunID())
+	runCtx = context.WithValue(runCtx, budgetKey{}, &budgetState{})
+
 	r.mu.Lock()
 	r.cancel = cancel
 	r.mu.Unlock()
