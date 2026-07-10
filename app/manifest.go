@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/Federicoand98/mani/core"
@@ -78,6 +79,29 @@ type ToolRef struct {
 	Risk    RiskName          `yaml:"risk"`
 }
 
+type DenyRule struct {
+	Tool    string `yaml:"tool"`
+	Pattern string `yaml:"pattern"`
+	Label   string `yaml:"label"`
+}
+
+type MaskRule struct {
+	Pattern string `yaml:"pattern"`
+	With    string `yaml:"with"`
+}
+
+type GuardrailSpec struct {
+	Deny []DenyRule `yaml:"deny"`
+	Mask []MaskRule `yaml:"mask"`
+}
+
+type BudgetSpec struct {
+	MaxTokens      int    `yaml:"max_tokens"`
+	MaxToolCalls   int    `yaml:"max_tool_calls"`
+	MaxDuration    string `yaml:"max_duration"`
+	PerToolTimeout string `yaml:"per_tool_timeout"`
+}
+
 type RuntimeSpec struct {
 	Provider      string                `yaml:"provider"`
 	Model         string                `yaml:"model"`
@@ -90,6 +114,8 @@ type RuntimeSpec struct {
 	Triggers      []TriggerSpec         `yaml:"triggers"`
 	Subagents     []SubagentSpec        `yaml:"subagents"`
 	OutputSchema  tool.InputSchema      `yaml:"output_schema"`
+	Guardrails    GuardrailSpec         `yaml:"guardrails"`
+	Budget        BudgetSpec            `yaml:"budget"`
 	ContextWindow int                   `yaml:"context_window"`
 	MaxIterations int                   `yaml:"max_iterations"`
 }
@@ -204,6 +230,34 @@ func (s RuntimeSpec) Validate() error {
 			// prompt opzionale (template)
 		default:
 			return fmt.Errorf("trigger type sconosciuto: %q", t.Type)
+		}
+	}
+
+	for _, d := range s.Guardrails.Deny {
+		if d.Tool == "" || d.Pattern == "" {
+			return fmt.Errorf("guardrail deny: 'tool' e 'pattern' must be specified")
+		}
+
+		if _, err := regexp.Compile(d.Pattern); err != nil {
+			return fmt.Errorf("guardrail deny: pattern %q: %w", d.Pattern, err)
+		}
+	}
+
+	for _, d := range s.Guardrails.Mask {
+		if d.Pattern == "" {
+			return fmt.Errorf("guardrail mask: 'pattern' required")
+		}
+
+		if _, err := regexp.Compile(d.Pattern); err != nil {
+			return fmt.Errorf("guardrail mask: pattern %q: %w", d.Pattern, err)
+		}
+	}
+
+	for _, dur := range []string{s.Budget.MaxDuration, s.Budget.PerToolTimeout} {
+		if dur != "" {
+			if _, err := time.ParseDuration(dur); err != nil {
+				return fmt.Errorf("budget: invalid duration %q: %w", dur, err)
+			}
 		}
 	}
 
