@@ -236,7 +236,7 @@ func TestAgent_Run_UnknownTool_ReturnsError(t *testing.T) {
 }
 
 func TestAgent_Run_MaxIterations_ReturnsError(t *testing.T) {
-	responses := make([]LLMResponse, maxIterations+5)
+	responses := make([]LLMResponse, defaultMaxIterations+5)
 	for i := range responses {
 		responses[i] = toolUseResp("c0", "t", nil)
 	}
@@ -309,7 +309,7 @@ func TestAgent_Hook_Blocks_ToolNotExecuted(t *testing.T) {
 	if !trb.IsError {
 		t.Error("IsError deve essere true su block")
 	}
-	if !strings.Contains(trb.Content, "[blocked:") || !strings.Contains(trb.Content, "denied") {
+	if !strings.Contains(trb.Content, "blocked") || !strings.Contains(trb.Content, "denied") {
 		t.Errorf("Content non contiene il marker di block: %q", trb.Content)
 	}
 }

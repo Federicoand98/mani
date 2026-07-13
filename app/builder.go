@@ -40,7 +40,7 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	for _, name := range spec.Tools {
 		t, err := buildToolRef(name, deps)
 		if err != nil {
-			return nil, fmt.Errorf("build: tool %q: %w", name, err)
+			return nil, fmt.Errorf("build: tool %q: %w", name.Name, err)
 		}
 
 		if perToolTimeout > 0 {
