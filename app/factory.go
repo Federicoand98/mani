@@ -6,6 +6,7 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/llm/anthropic"
 	"github.com/Federicoand98/mani/llm/copilot"
 	"github.com/Federicoand98/mani/llm/ollama"
 	"github.com/Federicoand98/mani/llm/openai"
@@ -43,6 +44,14 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 		}
 
 		client = openrouter.New(base, model, cred.Key)
+
+	case "anthropic":
+		cred, ok := auth.Get("anthropic")
+		if !ok || cred.Key == "" {
+			return nil, fmt.Errorf("provider anthropic: no creds, use /login anthropic before")
+		}
+
+		client = anthropic.New(anthropic.Config{BaseURL: base, Model: model, APIKey: cred.Key})
 
 	default:
 		// return nil, fmt.Errorf("provider %s: unknown", provider)
