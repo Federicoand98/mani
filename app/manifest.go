@@ -116,8 +116,19 @@ type RuntimeSpec struct {
 	OutputSchema  tool.InputSchema      `yaml:"output_schema"`
 	Guardrails    GuardrailSpec         `yaml:"guardrails"`
 	Budget        BudgetSpec            `yaml:"budget"`
+	Observability ObservabilitySpec     `yaml:"observability"`
 	ContextWindow int                   `yaml:"context_window"`
 	MaxIterations int                   `yaml:"max_iterations"`
+}
+
+type ObservabilitySpec struct {
+	Journal JournalSpec `yaml:"journal"`
+}
+
+type JournalSpec struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	Retention int    `yaml:"retention"` // ring buffer
 }
 
 func DefaultSpec() RuntimeSpec {

@@ -107,7 +107,7 @@ func (d *Daemon) worker(ctx context.Context) {
 func (d *Daemon) execute(ctx context.Context, t Task) {
 	slog.Info("trigger run", "source", t.Source, "prompt", t.Prompt)
 
-	ch := d.rt.Execute(ctx, t.Prompt)
+	ch := d.rt.Execute(WithSource(ctx, t.Source), t.Prompt)
 	for ev := range ch {
 		switch ev.Type {
 		case EventPermissionRequest:

@@ -1,0 +1,27 @@
+provider: anthropic
+model: claude-sonnet-5
+system_prompt: "Sei un agente di manutenzione notturna."
+
+tools:
+  - read_file
+  - bash
+
+guardrails:
+  deny:
+    - tool: bash
+      pattern: "rm\\s+-rf"
+      label: "distruttivo"
+  mask:
+    - pattern: "sk-[a-zA-Z0-9]{20,}"
+      with: "***REDACTED***"
+
+observability:
+  journal:
+    enabled: true
+    path: ./runs
+    retention: 200    # ultimi 200 run in RAM
+
+triggers:
+  - type: daily
+    at: "02:00"
+    prompt: "Controlla i log e riassumi le anomalie."

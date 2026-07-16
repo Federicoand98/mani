@@ -66,7 +66,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 	}
 
 	var usage app.UsagePayload
-	for ev := range rt.Execute(r.Context(), body.Input) {
+	for ev := range rt.Execute(app.WithSource(r.Context(), "server"), body.Input) {
 		switch ev.Type {
 		case app.EventPermissionRequest:
 			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny

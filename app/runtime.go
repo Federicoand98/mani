@@ -30,6 +30,7 @@ type Runtime struct {
 	maxDuration     time.Duration // 0 = no timeout
 	mcpSessions     []*mcp.Session
 	subagents       map[string]SubagentSpec
+	journal         Journal
 	cancel          context.CancelFunc
 	mu              sync.Mutex // protege l'accesso a cancel
 }
@@ -166,6 +167,10 @@ func (r *Runtime) spawnChild() *core.Agent {
 		child.AddPreToolUseHook(r.permission.Hook())
 	}
 
+	if r.journal != nil {
+		attachJournalHooks(child.Hooks(), r.journal)
+	}
+
 	return child
 }
 
@@ -207,6 +212,10 @@ func (r *Runtime) spawnNamed(name string) (*core.Agent, SubagentSpec, error) {
 
 	if r.permission != nil {
 		child.AddPreToolUseHook(r.permission.Hook())
+	}
+
+	if r.journal != nil {
+		attachJournalHooks(child.Hooks(), r.journal)
 	}
 
 	return child, spec, nil
@@ -323,8 +332,10 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 		runCtx, cancel = context.WithCancel(ctx)
 	}
 
-	runCtx = context.WithValue(runCtx, runIDKey{}, newRunID())
+	runID := newRunID()
+	runCtx = context.WithValue(runCtx, runIDKey{}, runID)
 	runCtx = context.WithValue(runCtx, budgetKey{}, &budgetState{})
+	source := sourceFrom(ctx)
 
 	r.mu.Lock()
 	r.cancel = cancel
@@ -338,6 +349,13 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 		})
 	}
 
+	if r.journal != nil {
+		_ = r.journal.Start(RunRecord{
+			ID: runID, SessionID: r.current.ID, Source: source,
+			StartedAt: time.Now(), Status: "running",
+		})
+	}
+
 	go func() {
 		defer close(ch)
 		defer cancel()
@@ -347,16 +365,25 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 		switch {
 		case errors.Is(err, context.Canceled):
 			_ = r.store.Save(r.current) // memoria coerente marcata
+			r.finishRun(runID, "cancelled")
 			ch <- Event{Type: EventCancelled}
 		case err != nil:
+			r.finishRun(runID, "error")
 			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
 		default:
 			_ = r.store.Save(r.current)
+			r.finishRun(runID, "ok")
 			ch <- Event{Type: EventDone}
 		}
 	}()
 
 	return ch
+}
+
+func (r *Runtime) finishRun(runID string, status string) {
+	if r.journal != nil {
+		_ = r.journal.Finish(runID, status)
+	}
 }
 
 // Cancel cancels the current turn. Safe to call concurrently.

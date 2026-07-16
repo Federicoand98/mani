@@ -98,6 +98,14 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 		rt.maxDuration, _ = time.ParseDuration(spec.Budget.MaxDuration)
 	}
 
+	if spec.Observability.Journal.Enabled {
+		if j, err := buildJournal(spec.Observability.Journal); err == nil {
+			return nil, fmt.Errorf("build: journal: %w", err)
+		} else {
+			RegisterJournal(rt, j)
+		}
+	}
+
 	// 4. MCP
 	for _, m := range spec.MCPServers {
 		if err := rt.AddMCPServer(ctx, mcp.ServerSpec{
@@ -173,4 +181,23 @@ func resolvePolicy(policy map[string]RiskPolicy, name string) RiskPolicy {
 		return d
 	}
 	return RiskPolicyAllow
+}
+
+func buildJournal(spec JournalSpec) (Journal, error) {
+	retention := spec.Retention
+	if retention <= 0 {
+		retention = 100
+	}
+	mem := NewInMemoryJournal(retention)
+
+	if spec.Path == "" {
+		return mem, nil // solo RAM
+	}
+
+	disk, err := NewJSONLJournal(spec.Path)
+	if err != nil {
+		return nil, err
+	}
+	// InMemory primo → Get/List del daemon/CLI leggono dalla RAM.
+	return NewMultiJournal(mem, disk), nil
 }

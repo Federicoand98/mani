@@ -115,7 +115,7 @@ func (cn *conn) runTurn(ctx context.Context, input string) {
 		cn.mu.Unlock()
 	}()
 
-	for ev := range cn.rt.Execute(ctx, input) {
+	for ev := range cn.rt.Execute(app.WithSource(ctx, "server"), input) {
 		if ev.Type == app.EventPermissionRequest {
 			cn.forwardPermission(ctx, ev)
 			continue
