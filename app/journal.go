@@ -517,3 +517,15 @@ func RegisterJournal(rt *Runtime, j Journal) {
 	rt.journal = j
 	attachJournalHooks(rt.agent.Hooks(), j)
 }
+
+func OpenJournalReader(spec RuntimeSpec) (Journal, bool) {
+	js := spec.Observability.Journal
+	if !js.Enabled || js.Path == "" {
+		return nil, false
+	}
+	j, err := NewJSONLJournal(js.Path)
+	if err != nil {
+		return nil, false
+	}
+	return j, true
+}

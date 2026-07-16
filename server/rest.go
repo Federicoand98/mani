@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/Federicoand98/mani/app"
 )
@@ -86,6 +87,38 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 		Output: rt.StructuredResult(),
 		Usage:  &usageDTO{Input: usage.Input, Output: usage.Output},
 	})
+}
+
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	if s.journal == nil {
+		http.Error(w, "journal not enabled (set observability.journal.path)", http.StatusNotImplemented)
+		return
+	}
+	f := app.ListFilter{SessionID: r.URL.Query().Get("session")}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			f.Limit = n
+		}
+	}
+	runs, err := s.journal.List(f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
+	if s.journal == nil {
+		http.Error(w, "journal not enabled", http.StatusNotImplemented)
+		return
+	}
+	rec, err := s.journal.Get(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
