@@ -3,7 +3,7 @@ model: claude-sonnet-5
 system_prompt: "Sei un agente di manutenzione notturna."
 
 tools:
-  - read_file
+  - read
   - bash
 
 guardrails:

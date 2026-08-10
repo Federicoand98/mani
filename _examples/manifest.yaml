@@ -23,7 +23,7 @@ permissions:
   bash: deny
   default: allow
 
-mcp:
+mcpservers:
   - name: deepwiki
     url: https://mcp.deepwiki.com/sse
 
@@ -31,12 +31,12 @@ subagents:
   - name: researcher
     description: "esplora il codice in sola lettura, riporta con file:riga"
     system_prompt: "Sei un ricercatore. Non modifichi nulla. Rispondi con riferimenti file:riga."
-    tools: [read_file]         # subset ristretto
+    tools: [read]              # subset ristretto
     model: ""                  # eredita il modello del padre
   - name: coder
     description: "implementa modifiche una volta deciso cosa fare"
     system_prompt: "Sei un implementatore. Applichi modifiche minime e mirate."
-    tools: [read_file, edit_file, write_file, bash]
+    tools: [read, edit, write, bash]
 
 context_window: 0    # 0 = eredita
 max_iterations: 15
