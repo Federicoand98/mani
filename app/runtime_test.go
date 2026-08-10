@@ -21,16 +21,27 @@ func TestLastResponse_ReturnsAssistantText(t *testing.T) {
 	}
 }
 
-// StructuredResult senza schema avvolge il testo in {"response": ...}.
-func TestStructuredResult_FallbackWrapsText(t *testing.T) {
+// Senza output_schema, EventDone porta Result nil e il testo in Text.
+// (il fallback {"response": ...} vive ora nei consumatori, es. server/rest.go)
+func TestExecute_DonePayload_NoSchema(t *testing.T) {
 	client := core.NewMock(core.RespText("ciao"))
 	rt := testRuntime(t, client)
 
-	for range rt.Execute(context.Background(), "x") {
+	var done DonePayload
+	var seen bool
+	for ev := range rt.Execute(context.Background(), "x") {
+		if ev.Type == EventDone {
+			done, seen = ev.Payload.(DonePayload), true
+		}
 	}
 
-	res := rt.StructuredResult()
-	if res["response"] != "ciao" {
-		t.Errorf("StructuredResult fallback atteso {response:ciao}, ottenuto %v", res)
+	if !seen {
+		t.Fatal("EventDone non ricevuto")
+	}
+	if done.Result != nil {
+		t.Errorf("senza schema Result deve essere nil, ottenuto %v", done.Result)
+	}
+	if done.Text != "ciao" {
+		t.Errorf("Text = %q, atteso 'ciao'", done.Text)
 	}
 }

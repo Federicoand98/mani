@@ -95,7 +95,7 @@ func TestAgent_Run_SimpleText_TwoMessages(t *testing.T) {
 	agent := NewAgent(client)
 	memory := NewInMemory()
 
-	if err := agent.Run(context.Background(), memory, "ciao"); err != nil {
+	if _, err := agent.Run(context.Background(), memory, "ciao", nil); err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestAgent_Run_SingleToolLoop_FourMessages(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "read_file"}, &mockToolExecutor{result: "package main"})
 
 	memory := NewInMemory()
-	if err := agent.Run(context.Background(), memory, "leggi"); err != nil {
+	if _, err := agent.Run(context.Background(), memory, "leggi", nil); err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestAgent_Run_ToolResultBlock_Populated(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "read_file"}, &mockToolExecutor{result: "module x"})
 
 	memory := NewInMemory()
-	agent.Run(context.Background(), memory, "test")
+	agent.Run(context.Background(), memory, "test", nil)
 
 	trb, ok := memory.Messages()[2].Content[0].(ToolResultBlock)
 	if !ok {
@@ -170,7 +170,7 @@ func TestAgent_Run_ToolDefinitions_SentToLLM(t *testing.T) {
 	}
 	agent := NewAgent(client)
 	agent.AddTool(ToolDefinition{Name: "read_file"}, &mockToolExecutor{})
-	agent.Run(context.Background(), NewInMemory(), "test")
+	agent.Run(context.Background(), NewInMemory(), "test", nil)
 
 	if len(captured) != 1 || captured[0].Name != "read_file" {
 		t.Errorf("tool 'read_file' non passato all'LLM: %+v", captured)
@@ -197,7 +197,7 @@ func TestAgent_Run_MultipleToolCalls_BothExecuted(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "tool_a"}, execA)
 	agent.AddTool(ToolDefinition{Name: "tool_b"}, execB)
 
-	agent.Run(context.Background(), NewInMemory(), "usa entrambi")
+	agent.Run(context.Background(), NewInMemory(), "usa entrambi", nil)
 	if execA.calls != 1 || execB.calls != 1 {
 		t.Errorf("entrambi i tool devono essere chiamati: a=%d, b=%d", execA.calls, execB.calls)
 	}
@@ -216,7 +216,7 @@ func TestAgent_Run_ToolError_NotFatal(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "read_file"}, &mockToolExecutor{err: errors.New("nope")})
 
 	memory := NewInMemory()
-	if err := agent.Run(context.Background(), memory, "leggi"); err != nil {
+	if _, err := agent.Run(context.Background(), memory, "leggi", nil); err != nil {
 		t.Fatalf("errore tool non deve propagarsi: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestAgent_Run_UnknownTool_ReturnsError(t *testing.T) {
 		responses: []LLMResponse{toolUseResp("c0", "sconosciuto", nil)},
 	}
 	agent := NewAgent(client)
-	if err := agent.Run(context.Background(), NewInMemory(), "x"); err == nil {
+	if _, err := agent.Run(context.Background(), NewInMemory(), "x", nil); err == nil {
 		t.Fatal("atteso errore per tool sconosciuto")
 	}
 }
@@ -246,7 +246,7 @@ func TestAgent_Run_MaxIterations_ReturnsError(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "t"}, &mockToolExecutor{result: "ok"})
 
 	// dopo maxIterations senza completare, l'agent ritorna errore (non più nil)
-	if err := agent.Run(context.Background(), NewInMemory(), "loop"); err == nil {
+	if _, err := agent.Run(context.Background(), NewInMemory(), "loop", nil); err == nil {
 		t.Error("atteso errore al raggiungimento del limite iterazioni")
 	}
 }
@@ -254,7 +254,7 @@ func TestAgent_Run_MaxIterations_ReturnsError(t *testing.T) {
 func TestAgent_Run_LLMError_Wrapped(t *testing.T) {
 	client := &mockLLMClient{err: errors.New("network")}
 	agent := NewAgent(client)
-	err := agent.Run(context.Background(), NewInMemory(), "x")
+	_, err := agent.Run(context.Background(), NewInMemory(), "x", nil)
 	if err == nil || !strings.Contains(err.Error(), "agent:") {
 		t.Errorf("errore deve essere wrappato con 'agent:', ottenuto %v", err)
 	}
@@ -267,7 +267,7 @@ func TestAgent_Run_MaxTokens_ReturnsError(t *testing.T) {
 		},
 	}
 	agent := NewAgent(client)
-	if err := agent.Run(context.Background(), NewInMemory(), "x"); err == nil {
+	if _, err := agent.Run(context.Background(), NewInMemory(), "x", nil); err == nil {
 		t.Fatal("atteso errore per max_tokens")
 	}
 }
@@ -277,7 +277,7 @@ func TestAgent_Run_ContextCancelled_ReturnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	agent := NewAgent(client)
-	if err := agent.Run(ctx, NewInMemory(), "x"); err == nil {
+	if _, err := agent.Run(ctx, NewInMemory(), "x", nil); err == nil {
 		t.Fatal("atteso errore per context cancellato")
 	}
 }
@@ -294,12 +294,12 @@ func TestAgent_Hook_Blocks_ToolNotExecuted(t *testing.T) {
 	exec := &mockToolExecutor{result: "should not run"}
 	agent := NewAgent(client)
 	agent.AddTool(ToolDefinition{Name: "bash", RiskLevel: RiskExecute}, exec)
-	agent.AddPreToolUseHook(func(_ string, _ RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, _ RiskLevel, _ map[string]any) error {
 		return errors.New("denied")
 	})
 
 	memory := NewInMemory()
-	if err := agent.Run(context.Background(), memory, "x"); err != nil {
+	if _, err := agent.Run(context.Background(), memory, "x", nil); err != nil {
 		t.Fatalf("hook block non deve propagare errore: %v", err)
 	}
 	if exec.calls != 0 {
@@ -327,20 +327,20 @@ func TestAgent_Hook_ChainStopsAtFirstError(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "t", RiskLevel: RiskWrite}, exec)
 
 	firstCalled, secondCalled, thirdCalled := 0, 0, 0
-	agent.AddPreToolUseHook(func(_ string, _ RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, _ RiskLevel, _ map[string]any) error {
 		firstCalled++
 		return nil
 	})
-	agent.AddPreToolUseHook(func(_ string, _ RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, _ RiskLevel, _ map[string]any) error {
 		secondCalled++
 		return errors.New("nope")
 	})
-	agent.AddPreToolUseHook(func(_ string, _ RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, _ RiskLevel, _ map[string]any) error {
 		thirdCalled++
 		return nil
 	})
 
-	agent.Run(context.Background(), NewInMemory(), "x")
+	agent.Run(context.Background(), NewInMemory(), "x", nil)
 
 	if firstCalled != 1 || secondCalled != 1 {
 		t.Errorf("primi due hook attesi 1/1, ottenuti %d/%d", firstCalled, secondCalled)
@@ -364,12 +364,12 @@ func TestAgent_Hook_ReceivesCorrectRiskLevel(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "bash", RiskLevel: RiskExecute}, &mockToolExecutor{})
 
 	var seen RiskLevel
-	agent.AddPreToolUseHook(func(_ string, level RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, level RiskLevel, _ map[string]any) error {
 		seen = level
 		return nil
 	})
 
-	agent.Run(context.Background(), NewInMemory(), "x")
+	agent.Run(context.Background(), NewInMemory(), "x", nil)
 	if seen != RiskExecute {
 		t.Errorf("livello atteso RiskExecute, ottenuto %v", seen)
 	}
@@ -384,13 +384,13 @@ func TestAgent_ToolEvent_NotEmittedOnBlock(t *testing.T) {
 	}
 	agent := NewAgent(client)
 	agent.AddTool(ToolDefinition{Name: "t", RiskLevel: RiskWrite}, &mockToolExecutor{})
-	agent.AddPreToolUseHook(func(_ string, _ RiskLevel, _ map[string]any) error {
+	agent.AddPreToolUseHook(func(_ context.Context, _ string, _ RiskLevel, _ map[string]any) error {
 		return errors.New("denied")
 	})
 
 	cap := &captureEmitter{}
 
-	agent.Run(context.Background(), NewInMemory(), "x")
+	agent.Run(context.Background(), NewInMemory(), "x", cap)
 	if cap.toolCalls != 0 || cap.toolResults != 0 {
 		t.Errorf("emitter non doveva emettere tool events su block: calls=%d results=%d", cap.toolCalls, cap.toolResults)
 	}
@@ -408,7 +408,7 @@ func TestAgent_ToolEvent_EmittedOnSuccess(t *testing.T) {
 
 	cap := &captureEmitter{}
 
-	agent.Run(context.Background(), NewInMemory(), "x")
+	agent.Run(context.Background(), NewInMemory(), "x", cap)
 	if cap.lastName != "t" || cap.lastResult != "done" || cap.lastIsError {
 		t.Errorf("emitter args inattesi: name=%q result=%q isError=%v", cap.lastName, cap.lastResult, cap.lastIsError)
 	}

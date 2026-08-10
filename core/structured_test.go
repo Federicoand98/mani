@@ -28,12 +28,12 @@ func TestAgent_FinalTool_TerminatesOnValidRespond(t *testing.T) {
 	client := NewMock(RespToolCall("1", "respond", map[string]any{"sentiment": "positive", "score": 1.0}))
 	a := newStructuredAgent(client, &mockToolExecutor{name: "respond"})
 
-	if err := a.Run(context.Background(), NewInMemory(), "adoro"); err != nil {
+	res, err := a.Run(context.Background(), NewInMemory(), "adoro", nil)
+	if err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
-	got := a.FinalResult()
-	if got == nil || got["sentiment"] != "positive" {
-		t.Fatalf("finalResult atteso {sentiment:positive}, ottenuto %v", got)
+	if res.FinalResult == nil || res.FinalResult["sentiment"] != "positive" {
+		t.Fatalf("FinalResult atteso {sentiment:positive}, ottenuto %v", res.FinalResult)
 	}
 }
 
@@ -45,11 +45,12 @@ func TestAgent_FinalTool_RetriesOnInvalid(t *testing.T) {
 	)
 	a := newStructuredAgent(client, &mockToolExecutor{name: "respond"})
 
-	if err := a.Run(context.Background(), NewInMemory(), "x"); err != nil {
+	res, err := a.Run(context.Background(), NewInMemory(), "x", nil)
+	if err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
-	if a.FinalResult()["score"] != 0.9 {
-		t.Fatalf("atteso retry con score valido, ottenuto %v", a.FinalResult())
+	if res.FinalResult["score"] != 0.9 {
+		t.Fatalf("atteso retry con score valido, ottenuto %v", res.FinalResult)
 	}
 }
 
@@ -61,11 +62,12 @@ func TestAgent_FinalTool_GuardRepromptsOnText(t *testing.T) {
 	)
 	a := newStructuredAgent(client, &mockToolExecutor{name: "respond"})
 
-	if err := a.Run(context.Background(), NewInMemory(), "x"); err != nil {
+	res, err := a.Run(context.Background(), NewInMemory(), "x", nil)
+	if err != nil {
 		t.Fatalf("errore inatteso: %v", err)
 	}
-	if a.FinalResult() == nil {
-		t.Fatal("il guard doveva forzare respond, finalResult nil")
+	if res.FinalResult == nil {
+		t.Fatal("il guard doveva forzare respond, FinalResult nil")
 	}
 }
 
@@ -75,7 +77,7 @@ func TestAgent_FinalTool_NotExecuted(t *testing.T) {
 	client := NewMock(RespToolCall("1", "respond", map[string]any{"sentiment": "neutral", "score": 0.5}))
 	a := newStructuredAgent(client, exec)
 
-	a.Run(context.Background(), NewInMemory(), "x")
+	a.Run(context.Background(), NewInMemory(), "x", nil)
 	if exec.calls != 0 {
 		t.Errorf("il final tool non deve essere eseguito, calls=%d", exec.calls)
 	}
