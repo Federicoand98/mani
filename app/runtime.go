@@ -319,9 +319,7 @@ func (r *Runtime) OnSessionEnd(fn func(context.Context, *SessionEventPayload) er
 
 // ----------------------------------
 
-func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
-	// TODO: per ora il canale lo faccio buffered ma devo tener presente questo:
-	// cosa succede se la CLI renderizza piu lentamente di quanto l'agent produce i token?
+func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input string) (<-chan Event, context.CancelFunc) {
 	ch := make(chan Event, 32)
 
 	var runCtx context.Context
@@ -337,22 +335,14 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 	runCtx = context.WithValue(runCtx, budgetKey{}, &budgetState{})
 	source := sourceFrom(ctx)
 
-	r.mu.Lock()
-	r.cancel = cancel
-	r.mu.Unlock()
-
-	r.agent.SetEmitter(&channelEmitter{ch: ch, thinking: r.thinkingEnabled})
-
-	if r.permission != nil {
-		r.permission.setEmit(func(p PermissionRequestPayload) {
-			ch <- Event{Type: EventPermissionRequest, Payload: p}
-		})
-	}
+	em := &channelEmitter{ch: ch, thinking: r.thinkingEnabled}
+	runCtx = WithPermissionEmit(runCtx, func(prp PermissionRequestPayload) {
+		ch <- Event{Type: EventPermissionRequest, Payload: prp}
+	})
 
 	if r.journal != nil {
 		_ = r.journal.Start(RunRecord{
-			ID: runID, SessionID: r.current.ID, Source: source,
-			StartedAt: time.Now(), Status: "running",
+			ID: runID, SessionID: sess.ID, Source: source, StartedAt: time.Now(), Status: "running",
 		})
 	}
 
@@ -360,22 +350,35 @@ func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
 		defer close(ch)
 		defer cancel()
 
-		err := r.agent.Run(runCtx, r.current.Memory(), input)
+		res, err := r.agent.Run(runCtx, sess.Memory(), input, em)
 
 		switch {
 		case errors.Is(err, context.Canceled):
-			_ = r.store.Save(r.current) // memoria coerente marcata
+			_ = r.store.Save(sess)
 			r.finishRun(runID, "cancelled")
 			ch <- Event{Type: EventCancelled}
 		case err != nil:
 			r.finishRun(runID, "error")
 			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
 		default:
-			_ = r.store.Save(r.current)
+			_ = r.store.Save(sess)
 			r.finishRun(runID, "ok")
-			ch <- Event{Type: EventDone}
+			ch <- Event{Type: EventDone, Payload: DonePayload{
+				Result: res.FinalResult,
+				Text:   res.Text,
+			}}
 		}
 	}()
+
+	return ch, cancel
+}
+
+func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
+	ch, cancel := r.ExecuteIn(ctx, r.current, input)
+
+	r.mu.Lock()
+	r.cancel = cancel
+	r.mu.Unlock()
 
 	return ch
 }
@@ -423,19 +426,6 @@ func (r *Runtime) LastResponse() string {
 
 	return ""
 }
-
-// StructuredResult returns always an object matching the schema if in structured mode, otherwise returns
-// the text wrapped in {"response": ...}
-func (r *Runtime) StructuredResult() map[string]any {
-	if res := r.agent.FinalResult(); res != nil {
-		return res
-	}
-
-	return map[string]any{"response": r.LastResponse()}
-}
-
-// HasStructure returns true if the agent has a structured result (i.e. it has a final result)
-func (r *Runtime) HasStructure() bool { return r.agent.FinalResult() != nil }
 
 // --------------- Commands ----------------
 

@@ -53,11 +53,12 @@ func runFromManifest(ctx context.Context, args []string) error {
 		case app.EventPermissionRequest:
 			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny // fail-closed
 		case app.EventDone:
-			if rt.HasStructure() {
-				b, _ := json.MarshalIndent(rt.StructuredResult(), "", "	")
+			p := ev.Payload.(app.DonePayload)
+			if p.Result != nil {
+				b, _ := json.MarshalIndent(p.Result, "", "\t")
 				fmt.Println(string(b))
 			} else {
-				fmt.Println(rt.LastResponse())
+				fmt.Println(p.Text)
 			}
 		case app.EventError:
 			if p, ok := ev.Payload.(app.ErrorPayload); ok {

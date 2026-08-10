@@ -13,13 +13,16 @@ type Agent struct {
 	Client          LLMClient
 	tools           []ToolDefinition
 	executors       map[string]ToolExecutor
-	emitter         Emitter
 	preToolUseHooks []PreToolUseHook // gate permesso
 	hooks           *HookManager
 	contextLimit    int // 0: unlimited
 	maxIterations   int
-	finalTool       string         // "" = nessuno
-	finalResult     map[string]any // popolato quando finalTool ha valore
+	finalTool       string // "" = nessuno
+}
+
+type RunResult struct {
+	FinalResult map[string]any // nil = nessuno
+	Text        string
 }
 
 func NewAgent(client LLMClient) *Agent {
@@ -27,22 +30,25 @@ func NewAgent(client LLMClient) *Agent {
 		Client:        client,
 		tools:         []ToolDefinition{},
 		executors:     make(map[string]ToolExecutor),
-		emitter:       nopEmitter{},
 		hooks:         NewHookManager(),
 		maxIterations: defaultMaxIterations,
 	}
 }
 
-func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error {
-	a.finalResult = nil // reset
+func (a *Agent) Run(ctx context.Context, memory Memory, userInput string, em Emitter) (RunResult, error) {
+	if em == nil {
+		em = nopEmitter{}
+	}
+
+	var finalResult map[string]any
 
 	memory.Add(Message{Role: RoleUser, Content: []ContentBlock{TextBlock{Text: userInput}}})
 
 	onToken := func(token string, isThinking bool) {
 		if isThinking {
-			a.emitter.Thinking(token)
+			em.Thinking(token)
 		} else {
-			a.emitter.Token(token)
+			em.Token(token)
 		}
 	}
 
@@ -50,7 +56,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 		// HOOK: pre llm call
 		pre := &PreLLMCallPayload{Messages: cloneMessages(memory.Messages()), Tools: a.tools}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPreLLMCall, Payload: pre}); err != nil {
-			return fmt.Errorf("agent: pre llm call hook: %w", err)
+			return RunResult{}, fmt.Errorf("agent: pre llm call hook: %w", err)
 		}
 
 		// context window tracking
@@ -59,7 +65,7 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 			if tokens > a.contextLimit*8/10 { // soglia 80%
 				cf := &ContextFullPayload{Messages: pre.Messages, Tokens: tokens, Limit: a.contextLimit}
 				if err := a.hooks.Fire(ctx, HookEvent{Type: HookContextFull, Payload: cf}); err != nil {
-					return fmt.Errorf("agent: context full hook: %w", err)
+					return RunResult{}, fmt.Errorf("agent: context full hook: %w", err)
 				}
 				pre.Messages = cf.Messages
 			}
@@ -67,29 +73,29 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 
 		resp, err := a.Client.Send(ctx, pre.Messages, a.tools, onToken)
 		if err != nil {
-			return fmt.Errorf("agent: %w", err)
+			return RunResult{}, fmt.Errorf("agent: %w", err)
 		}
 
 		// HOOK: post llm call
 		post := &PostLLMCallPayload{Response: &resp}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostLLMCall, Payload: post}); err != nil {
-			return fmt.Errorf("agent: post llm call hook: %w", err)
+			return RunResult{}, fmt.Errorf("agent: post llm call hook: %w", err)
 		}
 
-		a.emitter.Usage(resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		em.Usage(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 
 		memory.Add(Message{Role: RoleAssistant, Content: resp.Content})
 
 		switch resp.StopReason {
 		case StopReasonEndTurn:
 			// guard: se c'e' uno schema ma il modello ha risposto in testo lo forzo
-			if a.finalTool != "" && a.finalResult == nil {
+			if a.finalTool != "" && finalResult == nil {
 				memory.Add(Message{Role: RoleUser, Content: []ContentBlock{
 					TextBlock{Text: "You must return the result ONLY by calling the tool " + a.finalTool + " with the requested schema. Do not reply in free text."},
 				}})
 				continue
 			}
-			return nil
+			return RunResult{FinalResult: finalResult, Text: lastAssistantText(memory)}, nil
 		case StopReasonToolUse:
 			// intercetto il tool terminale prima di executeTools
 			if a.finalTool != "" {
@@ -100,21 +106,21 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string) error 
 						continue
 					}
 					// output valido: cattura il risultato e termina il turno
-					a.finalResult = input
+					finalResult = input
 					memory.Add(*toolResult(call.ID, "ok", false))
-					return nil
+					return RunResult{FinalResult: finalResult, Text: lastAssistantText(memory)}, nil
 				}
 			}
 
-			if err := a.executeTools(ctx, memory, resp.Content); err != nil {
-				return fmt.Errorf("agent: execute tools: %w", err)
+			if err := a.executeTools(ctx, memory, resp.Content, em); err != nil {
+				return RunResult{}, fmt.Errorf("agent: execute tools: %w", err)
 			}
 		case StopReasonMaxTokens:
-			return fmt.Errorf("agent: max_token reached")
+			return RunResult{}, fmt.Errorf("agent: max_token reached")
 		}
 	}
 
-	return fmt.Errorf("agent: reached max iterations without completing the task (%d)", a.maxIterations)
+	return RunResult{}, fmt.Errorf("agent: reached max iterations without completing the task (%d)", a.maxIterations)
 }
 
 func (a *Agent) Hooks() *HookManager {
@@ -128,10 +134,6 @@ func (a *Agent) AddTool(def ToolDefinition, exec ToolExecutor) {
 
 func (a *Agent) AddPreToolUseHook(hook PreToolUseHook) {
 	a.preToolUseHooks = append(a.preToolUseHooks, hook)
-}
-
-func (a *Agent) SetEmitter(emitter Emitter) {
-	a.emitter = emitter
 }
 
 func (a *Agent) SetContextLimit(limit int) {
@@ -148,11 +150,7 @@ func (a *Agent) SetFinalTool(tool string) {
 	a.finalTool = tool
 }
 
-func (a *Agent) FinalResult() map[string]any {
-	return a.finalResult
-}
-
-func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock) error {
+func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []ContentBlock, em Emitter) error {
 	type task struct {
 		idx      int
 		call     ToolUseBlock
@@ -192,7 +190,7 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 
 		// fase 2: gate permesso (risk level check)
 		riskLevel := a.riskFor(call.Name)
-		if err := a.runPreToolUseHooks(call.Name, riskLevel, input); err != nil {
+		if err := a.runPreToolUseHooks(ctx, call.Name, riskLevel, input); err != nil {
 			results[i] = toolResult(call.ID, "hook blocked: "+err.Error(), true)
 			continue
 		}
@@ -212,7 +210,7 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 
 			go func(t task) {
 				defer wg.Done()
-				results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input)
+				results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input, em)
 			}(t)
 		}
 		wg.Wait()
@@ -226,7 +224,7 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 		if ctx.Err() != nil {
 			break
 		}
-		results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input)
+		results[t.idx] = a.runTool(ctx, t.call, t.executor, t.input, em)
 	}
 
 	for i, block := range blocks {
@@ -245,8 +243,8 @@ func (a *Agent) executeTools(ctx context.Context, memory Memory, blocks []Conten
 	return ctx.Err()
 }
 
-func (a *Agent) runTool(ctx context.Context, call ToolUseBlock, executor ToolExecutor, input map[string]any) *Message {
-	a.emitter.ToolCall(call.Name, input)
+func (a *Agent) runTool(ctx context.Context, call ToolUseBlock, executor ToolExecutor, input map[string]any, em Emitter) *Message {
+	em.ToolCall(call.Name, input)
 	result, execErr := executor.Execute(ctx, input)
 
 	if errors.Is(execErr, context.Canceled) {
@@ -267,7 +265,7 @@ func (a *Agent) runTool(ctx context.Context, call ToolUseBlock, executor ToolExe
 	result, isError = pp.Result, pp.IsError
 
 	if !isError {
-		a.emitter.ToolResult(call.Name, result, false)
+		em.ToolResult(call.Name, result, false)
 	}
 
 	return toolResult(call.ID, result, isError)
@@ -282,9 +280,9 @@ func (a *Agent) cancelPending(memory Memory, remaining []ContentBlock) {
 	}
 }
 
-func (a *Agent) runPreToolUseHooks(toolName string, level RiskLevel, input map[string]any) error {
+func (a *Agent) runPreToolUseHooks(ctx context.Context, toolName string, level RiskLevel, input map[string]any) error {
 	for _, hook := range a.preToolUseHooks {
-		if err := hook(toolName, level, input); err != nil {
+		if err := hook(ctx, toolName, level, input); err != nil {
 			return err
 		}
 	}

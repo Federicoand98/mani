@@ -121,8 +121,10 @@ func (cn *conn) runTurn(ctx context.Context, input string) {
 			continue
 		}
 
-		if ev.Type == app.EventDone && cn.rt.HasStructure() {
-			cn.send(ctx, serverMsg{Type: "structured", Payload: cn.rt.StructuredResult()})
+		if ev.Type == app.EventDone {
+			if p, ok := ev.Payload.(app.DonePayload); ok && p.Result != nil {
+				cn.send(ctx, serverMsg{Type: "structured", Payload: p.Result})
+			}
 		}
 
 		if m, ok := toServerMsg(ev); ok {

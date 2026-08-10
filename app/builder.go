@@ -52,7 +52,7 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 
 	// 2. Load permissions. default allow, override with spec
 	rt.permission = NewPermissionManager()
-	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions, rt.permission))
+	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions, rt.permission, rt))
 
 	sysPrompt := spec.SystemPrompt
 	if spec.OutputSchema.Type != "" {
@@ -99,11 +99,11 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	}
 
 	if spec.Observability.Journal.Enabled {
-		if j, err := buildJournal(spec.Observability.Journal); err == nil {
+		j, err := buildJournal(spec.Observability.Journal)
+		if err != nil {
 			return nil, fmt.Errorf("build: journal: %w", err)
-		} else {
-			RegisterJournal(rt, j)
 		}
+		RegisterJournal(rt, j)
 	}
 
 	// 4. MCP
@@ -160,13 +160,14 @@ func mergeConfig(base config.Config, spec RuntimeSpec) config.Config {
 	return c
 }
 
-func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager) core.PreToolUseHook {
-	return func(toolName string, level core.RiskLevel, input map[string]any) error {
+func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager, rt *Runtime) core.PreToolUseHook {
+	return func(ctx context.Context, toolName string, level core.RiskLevel, input map[string]any) error {
 		switch resolvePolicy(policy, toolName) {
 		case RiskPolicyDeny:
+			rt.recordGovernance(ctx, "denied", toolName, "permission")
 			return fmt.Errorf("permission: tool %q denied", toolName)
 		case RiskPolicyAsk:
-			return mgr.check(toolName, level, input)
+			return mgr.check(ctx, toolName, level, input)
 		default:
 			return nil
 		}

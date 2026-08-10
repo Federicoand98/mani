@@ -50,3 +50,8 @@ type UsagePayload struct {
 	Input  int
 	Output int
 }
+
+type DonePayload struct {
+	Result map[string]any
+	Text   string
+}

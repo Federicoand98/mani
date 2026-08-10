@@ -66,7 +66,9 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 		return
 	}
 
+	var done app.DonePayload
 	var usage app.UsagePayload
+
 	for ev := range rt.Execute(app.WithSource(r.Context(), "server"), body.Input) {
 		switch ev.Type {
 		case app.EventPermissionRequest:
@@ -75,6 +77,8 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 			u := ev.Payload.(app.UsagePayload)
 			usage.Input += u.Input
 			usage.Output += u.Output
+		case app.EventDone:
+			done = ev.Payload.(app.DonePayload)
 		case app.EventError:
 			if p, ok := ev.Payload.(app.ErrorPayload); ok {
 				writeJSON(w, http.StatusOK, chatResponse{Error: p.Err.Error(), IsError: true})
@@ -83,8 +87,13 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 		}
 	}
 
+	out := done.Result
+	if out == nil {
+		out = map[string]any{"response": done.Text}
+	}
+
 	writeJSON(w, http.StatusOK, chatResponse{
-		Output: rt.StructuredResult(),
+		Output: out,
 		Usage:  &usageDTO{Input: usage.Input, Output: usage.Output},
 	})
 }

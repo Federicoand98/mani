@@ -65,6 +65,7 @@ func (c *captureEmitter) ToolCall(name string, _ map[string]any) {
 	c.toolCalls++
 	c.lastName = name
 }
+
 func (c *captureEmitter) ToolResult(name, result string, isError bool) {
 	c.toolResults++
 	c.lastName = name
@@ -388,7 +389,6 @@ func TestAgent_ToolEvent_NotEmittedOnBlock(t *testing.T) {
 	})
 
 	cap := &captureEmitter{}
-	agent.SetEmitter(cap)
 
 	agent.Run(context.Background(), NewInMemory(), "x")
 	if cap.toolCalls != 0 || cap.toolResults != 0 {
@@ -407,7 +407,6 @@ func TestAgent_ToolEvent_EmittedOnSuccess(t *testing.T) {
 	agent.AddTool(ToolDefinition{Name: "t"}, &mockToolExecutor{result: "done"})
 
 	cap := &captureEmitter{}
-	agent.SetEmitter(cap)
 
 	agent.Run(context.Background(), NewInMemory(), "x")
 	if cap.lastName != "t" || cap.lastResult != "done" || cap.lastIsError {

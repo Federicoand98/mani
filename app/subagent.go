@@ -82,11 +82,12 @@ func newDelegateTool(rt *Runtime, maxDepth int) tool.Tool {
 
 		childCtx := withDepth(ctx, depth+1)
 
-		if err := child.Run(childCtx, mem, task); err != nil {
+		res, err := child.Run(childCtx, mem, task, nil)
+		if err != nil {
 			return "", fmt.Errorf("delegate: sub-agent error: %w", err)
 		}
 
-		return lastAssistantText(mem), nil
+		return res.Text, nil
 	})
 
 	return tool
@@ -138,11 +139,12 @@ func newNamedDelegateTool(rt *Runtime, maxDepth int, names []string) tool.Tool {
 
 		childCtx := withDepth(ctx, depth+1)
 
-		if err := child.Run(childCtx, mem, task); err != nil {
+		res, err := child.Run(childCtx, mem, task, nil)
+		if err != nil {
 			return "", fmt.Errorf("delegate: sub-agent error: %w", err)
 		}
 
-		return lastAssistantText(mem), nil
+		return res.Text, nil
 	})
 
 	return tool

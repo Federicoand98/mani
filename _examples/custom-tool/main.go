@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/ollama"
@@ -25,7 +24,6 @@ func main() {
 	client := ollama.NewOllamaClient("http://localhost:11434", "qwen3.5:9b")
 
 	agent := core.NewAgent(client)
-	agent.SetEmitter(core.NewWriterEmitter(os.Stdout))
 	memory := core.NewInMemory()
 
 	sumTool := tool.MustDefine(

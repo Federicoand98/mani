@@ -133,4 +133,4 @@ func (r RiskLevel) String() string {
 	}
 }
 
-type PreToolUseHook func(toolName string, level RiskLevel, input map[string]any) error
+type PreToolUseHook func(ctx context.Context, toolName string, level RiskLevel, input map[string]any) error

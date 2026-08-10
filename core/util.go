@@ -13,3 +13,18 @@ func TextFrom(blocks []ContentBlock) string {
 
 	return sb.String()
 }
+
+func lastAssistantText(memory Memory) string {
+	msgs := memory.Messages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != RoleAssistant {
+			continue
+		}
+		for _, b := range msgs[i].Content {
+			if tb, ok := b.(TextBlock); ok {
+				return tb.Text
+			}
+		}
+	}
+	return ""
+}
