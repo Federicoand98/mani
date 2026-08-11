@@ -1,0 +1,36 @@
+provider: anthropic
+model: claude-sonnet-5
+system_prompt: "You are a night maintenance agent."
+
+tools: [read, bash]
+
+permissions:
+  bash: allow       # headless: use allow/deny, NEVER ask (fail-closed)
+
+guardrails:
+  deny: [{ tool: bash, pattern: 'rm\s+-rf', label: "distruttivo" }]
+
+budget:
+  max_tokens: 50000
+  max_duration: 10m
+
+queue:
+  path: ./queue          # ⇒ persistent queue
+  concurrency: 2
+  max_pending: 128
+  retry: { max_attempts: 3, backoff: 30s }
+
+observability:
+  journal: { enabled: true, path: ./runs, retention: 200 }
+
+triggers:
+  - type: daily
+    at: "02:00"
+    name: nightly-report        # identity
+    catch_up: true              # se ero giù alle 02:00, eseguo all'avvio (una sola volta)
+    prompt: "Controlla i log e riassumi le anomalie."
+  - type: every
+    every: 30m
+    name: queue-poller
+    memory: persistent          # questo ricorda cosa ha già segnalato
+    prompt: "Controlla la coda e processa gli elementi pendenti."
