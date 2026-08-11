@@ -2,12 +2,19 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Federicoand98/mani/session"
 )
 
 // Policy: how the deamon should respond to permission prompts
@@ -18,57 +25,79 @@ const (
 	PolicyAllow
 )
 
-type Task struct {
-	Source string // "cron" | "webhook
-	Prompt string
-}
+// type Task struct {
+// 	Source string // "cron" | "webhook
+// 	Prompt string
+// }
 
 type cronSpec struct {
+	id       string
 	interval time.Duration
 	prompt   string
+	memory   string
 }
 
 type dailySpec struct {
-	hour   int
-	minute int
-	prompt string
+	id      string
+	hour    int
+	minute  int
+	prompt  string
+	memory  string
+	catchUp bool
 }
 
 type Daemon struct {
 	rt            *Runtime
-	queue         chan Task
+	queue         TaskQueue
 	crons         []cronSpec
 	dailies       []dailySpec
 	addr          string
 	webhookPrompt string
+	webhookMemory string
 	policy        Policy
+	concurrency   int
+	maxAttempts   int           // tentativi massimi per task
+	backoff       time.Duration // backoff base (esponenziale sui tentativi)
+	state         *triggerState
 }
 
-func NewTrigger(rt *Runtime) *Daemon {
-	return &Daemon{rt: rt, queue: make(chan Task, 64), policy: PolicyDeny}
+func NewTrigger(rt *Runtime, q TaskQueue) *Daemon {
+	return &Daemon{
+		rt:          rt,
+		queue:       q,
+		policy:      PolicyDeny,
+		maxAttempts: 3,
+		backoff:     30 * time.Second,
+		// stato in RAM: BuildDaemon lo sostituisce con quello persistente se c'e' un path.
+		// Inizializzarlo qui evita il nil-panic per chi usa NewTrigger come libreria.
+		state: loadTriggerState(""),
+	}
 }
 
 // Every schedules a cron job that will prompt the agent at the specified interval
-func (d *Daemon) Every(interval time.Duration, prompt string) *Daemon {
-	d.crons = append(d.crons, cronSpec{interval: interval, prompt: prompt})
+func (d *Daemon) Every(id string, interval time.Duration, prompt, memory string) *Daemon {
+	d.crons = append(d.crons, cronSpec{id: id, interval: interval, prompt: prompt, memory: memory})
 	return d
 }
 
 // Daily schedules a daily job that will prompt the agent at the specified time
-func (d *Daemon) Daily(clock string, prompt string) *Daemon {
+func (d *Daemon) Daily(id, clock, prompt, memory string, catchUp bool) *Daemon {
 	h, m, err := parseClock(clock)
 	if err != nil {
 		slog.Warn("trigger: DailyAt orario invalido", "clock", clock)
 		return d
 	}
 
-	d.dailies = append(d.dailies, dailySpec{hour: h, minute: m, prompt: prompt})
+	d.dailies = append(d.dailies, dailySpec{
+		id: id, hour: h, minute: m, prompt: prompt, memory: memory, catchUp: catchUp,
+	})
 	return d
 }
 
-func (d *Daemon) Webhook(addr string, promptTemplate string) *Daemon {
+func (d *Daemon) Webhook(addr, promptTemplate, memory string) *Daemon {
 	d.addr = addr
 	d.webhookPrompt = promptTemplate
+	d.webhookMemory = memory
 	return d
 }
 
@@ -78,6 +107,14 @@ func (d *Daemon) AllowAll() *Daemon {
 }
 
 func (d *Daemon) Run(ctx context.Context) {
+	if n, err := d.queue.Recover(); err != nil {
+		slog.Warn("[daemon]: queue recover failed", "n", n, "err", err)
+	} else if n > 0 {
+		slog.Info("[daemon]: queue recovered", "n", n)
+	}
+
+	d.catchUp(ctx)
+
 	for _, c := range d.crons {
 		go d.runCron(ctx, c)
 	}
@@ -90,24 +127,45 @@ func (d *Daemon) Run(ctx context.Context) {
 		go d.runWebhook(ctx)
 	}
 
-	d.worker(ctx)
+	n := d.concurrency
+	if n < 1 {
+		n = 1
+	}
+
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			d.worker(ctx, worker)
+		}(i)
+	}
+	wg.Wait()
 }
 
-func (d *Daemon) worker(ctx context.Context) {
+func (d *Daemon) worker(ctx context.Context, id int) {
 	for {
-		select {
-		case <-ctx.Done():
+		t, err := d.queue.Claim(ctx)
+		if err != nil {
 			return
-		case task := <-d.queue:
-			d.execute(ctx, task)
 		}
+		d.execute(ctx, t, id)
 	}
 }
 
-func (d *Daemon) execute(ctx context.Context, t Task) {
-	slog.Info("trigger run", "source", t.Source, "prompt", t.Prompt)
+func (d *Daemon) execute(ctx context.Context, t Task, worker int) {
+	slog.Info("[daemon]: task start", "id", t.ID, "trigger", t.Trigger, "attempt", t.Attempt, "worker", worker)
 
-	ch := d.rt.Execute(WithSource(ctx, t.Source), t.Prompt)
+	sess := session.New(d.rt.ModelName())
+	if t.Memory == "persistent" {
+		sess = d.rt.CurrentSession()
+	}
+
+	ch, cancel := d.rt.ExecuteIn(WithSource(ctx, t.Source), sess, t.Prompt)
+	defer cancel()
+
+	var runErr error
+	var cancelled bool
 	for ev := range ch {
 		switch ev.Type {
 		case EventPermissionRequest:
@@ -117,12 +175,41 @@ func (d *Daemon) execute(ctx context.Context, t Task) {
 			} else {
 				p.Respond <- Deny
 			}
+		case EventCancelled:
+			cancelled = true
 		case EventError:
-			slog.Error("trigger run error", "source", t.Source, "err", ev.Payload)
+			if p, ok := ev.Payload.(ErrorPayload); ok {
+				runErr = p.Err
+			}
 		}
 	}
 
-	slog.Info("trigger done", "source", t.Source)
+	// Uno shutdown NON e' un fallimento del task e nemmeno un successo: il task
+	// torna in coda senza consumare un tentativo, e riparte al prossimo avvio.
+	if cancelled {
+		_ = d.queue.Retry(t, time.Now())
+		slog.Info("[daemon]: task interrotto, rimesso in coda", "id", t.ID, "trigger", t.Trigger)
+		return
+	}
+
+	if runErr == nil {
+		_ = d.queue.Ack(t)
+		slog.Info("[daemon]: task done", "id", t.ID, "trigger", t.Trigger, "attempt", t.Attempt, "worker", worker)
+		return
+	}
+
+	t.Attempt++
+	if t.Attempt >= d.maxAttempts {
+		_ = d.queue.Fail(t, runErr.Error())
+		slog.Error("[daemon]: task failed", "id", t.ID, "trigger", t.Trigger, "attempt", t.Attempt, "worker", worker, "err", runErr)
+		return
+	}
+
+	// backoff esponenziale: base, base*2, base*4…
+	backoff := d.backoff * time.Duration(1<<(t.Attempt-1))
+
+	_ = d.queue.Retry(t, time.Now().Add(backoff))
+	slog.Warn("[daemon] task retry scheduled", "id", t.ID, "attempt", t.Attempt, "in", backoff, "err", runErr)
 }
 
 func (d *Daemon) runCron(ctx context.Context, c cronSpec) {
@@ -133,7 +220,8 @@ func (d *Daemon) runCron(ctx context.Context, c cronSpec) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			d.enqueue(Task{Source: "cron", Prompt: c.prompt})
+			d.enqueue(Task{Source: "cron", Trigger: c.id, Prompt: c.prompt, Memory: c.memory})
+			d.state.mark(c.id, time.Now())
 		}
 	}
 }
@@ -147,7 +235,8 @@ func (d *Daemon) runDaily(ctx context.Context, dl dailySpec) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			d.enqueue(Task{Source: "daily", Prompt: dl.prompt})
+			d.enqueue(Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
+			d.state.mark(dl.id, time.Now())
 		}
 	}
 }
@@ -170,7 +259,7 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 			return
 		}
 
-		if d.enqueue(Task{Source: "webhook", Prompt: prompt}) {
+		if d.enqueue(Task{Source: "webhook", Trigger: "webhook", Prompt: prompt, Memory: d.webhookMemory}) {
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte("accepted\n"))
 		} else {
@@ -191,12 +280,32 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 }
 
 func (d *Daemon) enqueue(t Task) bool {
-	select {
-	case d.queue <- t:
-		return true
-	default:
-		slog.Warn("trigger queue full, discarding", "source", t.Source, "prompt", t.Prompt)
+	if t.ID == "" {
+		t.ID = newRunID()
+	}
+
+	if err := d.queue.Enqueue(t); err != nil {
+		slog.Warn("[daemon] enqueue failed", "trigger", t.Trigger, "err", err)
 		return false
+	}
+
+	return true
+}
+
+func (d *Daemon) catchUp(ctx context.Context) {
+	for _, dl := range d.dailies {
+		if !dl.catchUp {
+			continue
+		}
+		// ultima occorrenza attesa PRIMA di adesso
+		prev := nextOccurrence(time.Now(), dl.hour, dl.minute).Add(-24 * time.Hour)
+		last, ok := d.state.lastRun(dl.id)
+		if ok && !last.Before(prev) {
+			continue // già eseguito dopo l'ultima occorrenza attesa
+		}
+		slog.Info("catch-up: trigger perso, accodo", "trigger", dl.id, "expected", prev)
+		d.enqueue(Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
+		d.state.mark(dl.id, time.Now())
 	}
 }
 
@@ -230,4 +339,52 @@ func renderWebhookPrompt(template, body string) string {
 		return template
 	}
 	return template + "\n\n" + body
+}
+
+func triggerID(spec TriggerSpec) string {
+	if spec.Name != "" {
+		return spec.Name
+	}
+	h := sha256.Sum256([]byte(spec.Type + "|" + spec.Every + "|" + spec.At + "|" + spec.Prompt))
+	return hex.EncodeToString(h[:6])
+}
+
+type triggerState struct {
+	path string
+	mu   sync.Mutex
+	Last map[string]time.Time
+}
+
+func loadTriggerState(path string) *triggerState {
+	ts := &triggerState{path: path, Last: map[string]time.Time{}}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &ts.Last)
+	}
+	return ts
+}
+
+func (s *triggerState) mark(id string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Last[id] = at
+
+	// path vuoto = stato solo in RAM (queue.path assente): niente persistenza,
+	// altrimenti scriveremmo un ".tmp" spurio nella working dir a ogni trigger.
+	if s.path == "" {
+		return
+	}
+
+	if b, err := json.MarshalIndent(s.Last, "", "  "); err == nil {
+		tmp := s.path + ".tmp"
+		if os.WriteFile(tmp, b, 0o644) == nil {
+			_ = os.Rename(tmp, s.path)
+		}
+	}
+}
+
+func (s *triggerState) lastRun(id string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.Last[id]
+	return t, ok
 }

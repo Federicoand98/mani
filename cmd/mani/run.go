@@ -38,7 +38,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 		if len(spec.Triggers) == 0 {
 			return fmt.Errorf("run: nessun --task e nessun trigger nel manifest")
 		}
-		d, err := app.BuildDaemon(rt, spec.Triggers)
+		d, err := app.BuildDaemon(rt, spec)
 		if err != nil {
 			return err
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Federicoand98/mani/config"
@@ -121,25 +122,64 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	return rt, nil
 }
 
-func BuildDaemon(rt *Runtime, specs []TriggerSpec) (*Daemon, error) {
-	d := NewTrigger(rt)
-	for _, t := range specs {
+func BuildDaemon(rt *Runtime, spec RuntimeSpec) (*Daemon, error) {
+	q, err := buildQueue(spec.Queue)
+	if err != nil {
+		return nil, fmt.Errorf("build: queue: %w", err)
+	}
+
+	d := NewTrigger(rt, q)
+	d.concurrency = spec.Queue.Concurrency
+
+	// il backoff arriva dal YAML come stringa: qui lo parsiamo una volta sola
+	r := resolveRetry(spec.Queue.Retry)
+	backoff, err := time.ParseDuration(r.Backoff)
+	if err != nil {
+		return nil, fmt.Errorf("build: queue.retry.backoff %q: %w", r.Backoff, err)
+	}
+	d.maxAttempts = r.MaxAttempts
+	d.backoff = backoff
+	if spec.Queue.Path != "" {
+		d.state = loadTriggerState(filepath.Join(spec.Queue.Path, "triggers.json"))
+	} else {
+		d.state = loadTriggerState("") // in RAM: nessun catch-up tra riavvii
+	}
+
+	for _, t := range spec.Triggers {
+		id := triggerID(t)
 		switch t.Type {
 		case "every":
 			dur, err := time.ParseDuration(t.Every)
 			if err != nil {
 				return nil, fmt.Errorf("build: invalid duration %q: %w", t.Every, err)
 			}
-			d.Every(dur, t.Prompt)
+			d.Every(id, dur, t.Prompt, t.Memory)
 		case "daily":
-			d.Daily(t.At, t.Prompt)
+			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
 		case "webhook":
-			d.Webhook(t.Addr, t.Prompt)
+			d.Webhook(t.Addr, t.Prompt, t.Memory)
 		default:
 			return nil, fmt.Errorf("build: invalid trigger type %q", t.Type)
 		}
 	}
 	return d, nil
+}
+
+func buildQueue(spec QueueSpec) (TaskQueue, error) {
+	if spec.Path == "" {
+		return NewInMemoryQueue(spec.MaxPending), nil
+	}
+	return NewFileQueue(spec.Path, spec.MaxPending)
+}
+
+func resolveRetry(r RetrySpec) RetrySpec {
+	if r.MaxAttempts <= 0 {
+		r.MaxAttempts = 3
+	}
+	if r.Backoff == "" {
+		r.Backoff = "30s"
+	}
+	return r
 }
 
 // mergeConfig merges spec > base config.

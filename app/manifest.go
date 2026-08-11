@@ -50,15 +50,6 @@ type MCPSpec struct {
 	URL     string   `yaml:"url"`
 }
 
-// TriggerSpec: trigger specification. Trigger + prompt
-type TriggerSpec struct {
-	Type   string `yaml:"type"`  // trigger type: "every", "at", "every"
-	Every  string `yaml:"every"` // es 30m
-	At     string `yaml:"at"`    // es 09:00
-	Addr   string `yaml:"addr"`  // es :8787
-	Prompt string `yaml:"prompt"`
-}
-
 // SubagentSpec: Runtime spec for subagents. No trigger, no inner subagents. empty tool = inherit
 type SubagentSpec struct {
 	Name          string   `yaml:"name"`
@@ -112,6 +103,7 @@ type RuntimeSpec struct {
 	Permissions   map[string]RiskPolicy `yaml:"permissions"`
 	MCPServers    []MCPSpec             `yaml:"mcpservers"`
 	Triggers      []TriggerSpec         `yaml:"triggers"`
+	Queue         QueueSpec             `yaml:"queue"`
 	Subagents     []SubagentSpec        `yaml:"subagents"`
 	OutputSchema  tool.InputSchema      `yaml:"output_schema"`
 	Guardrails    GuardrailSpec         `yaml:"guardrails"`
@@ -129,6 +121,29 @@ type JournalSpec struct {
 	Enabled   bool   `yaml:"enabled"`
 	Path      string `yaml:"path"`
 	Retention int    `yaml:"retention"` // ring buffer
+}
+
+type RetrySpec struct {
+	MaxAttempts int    `yaml:"max_attempts"` // default 3
+	Backoff     string `yaml:"backoff"`      // default "30s"
+}
+
+type QueueSpec struct {
+	Path        string    `yaml:"path"`        // assente = coda in RAM (come oggi)
+	Concurrency int       `yaml:"concurrency"` // default 1
+	MaxPending  int       `yaml:"max_pending"` // default 64
+	Retry       RetrySpec `yaml:"retry"`
+}
+
+type TriggerSpec struct {
+	Type    string `yaml:"type"`
+	Every   string `yaml:"every"`
+	At      string `yaml:"at"`
+	Addr    string `yaml:"addr"`
+	Prompt  string `yaml:"prompt"`
+	Name    string `yaml:"name"`     // ← identità stabile (opzionale)
+	Memory  string `yaml:"memory"`   // ← "" = fresh (default) | "persistent"
+	CatchUp bool   `yaml:"catch_up"` // ← default false
 }
 
 func DefaultSpec() RuntimeSpec {
@@ -269,6 +284,27 @@ func (s RuntimeSpec) Validate() error {
 			if _, err := time.ParseDuration(dur); err != nil {
 				return fmt.Errorf("budget: invalid duration %q: %w", dur, err)
 			}
+		}
+	}
+
+	if s.Queue.Concurrency < 0 {
+		return fmt.Errorf("manifest: queue.concurrency must be >= 0")
+	}
+	if s.Queue.Retry.Backoff != "" {
+		if _, err := time.ParseDuration(s.Queue.Retry.Backoff); err != nil {
+			return fmt.Errorf("manifest: queue.retry.backoff: %w", err)
+		}
+	}
+	seenTrigger := map[string]bool{}
+	for _, t := range s.Triggers {
+		if t.Memory != "" && t.Memory != "fresh" && t.Memory != "persistent" {
+			return fmt.Errorf("manifest: trigger memory must be 'fresh' or 'persistent', got %q", t.Memory)
+		}
+		if t.Name != "" {
+			if seenTrigger[t.Name] {
+				return fmt.Errorf("manifest: duplicate trigger name %q", t.Name)
+			}
+			seenTrigger[t.Name] = true
 		}
 	}
 
