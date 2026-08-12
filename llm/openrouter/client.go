@@ -1,3 +1,6 @@
+// Package openrouter is the LLM adapter for OpenRouter.
+//
+// It uses the OpenAI wire format against OpenRouters endpoint.
 package openrouter
 
 import "github.com/Federicoand98/mani/llm/openai"

@@ -1,3 +1,12 @@
+// Package core is the domain of mani: the agent loop and the ports it depends on.
+//
+// It holds Agent (given a Memory and an input, calls the LLM and executes tools until
+// the model ends the turn), the LLMClient, Memory, ToolExecutor and Emitter ports, the
+// hook system, and the shared message types.
+//
+// The single invariant of the project: core has zero external dependencies. It knows
+// nothing about HTTP, providers, the filesystem or the UI — everything else is an
+// adapter at the edges.
 package core
 
 import (

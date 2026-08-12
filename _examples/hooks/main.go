@@ -22,11 +22,12 @@ type EchoIn struct {
 }
 
 func main() {
+	// Each provider carries its own base URL and model: the active model is the
+	// one belonging to the active provider.
 	cfg := config.Config{
 		Provider: "ollama",
-		Model:    "qwen3.5:9b",
 		Providers: map[string]config.ProviderConfig{
-			"ollama": {BaseURL: "http://localhost:11434"},
+			"ollama": {BaseURL: "http://localhost:11434", Model: "qwen3.5:9b"},
 		},
 		ContextWindow: 8192,
 		Thinking:      false,
@@ -61,12 +62,15 @@ func main() {
 	for ev := range ch {
 		switch ev.Type {
 		case app.EventToken:
-			fmt.Printf(ev.Payload.(app.TokenPayload).Text)
+			fmt.Print(ev.Payload.(app.TokenPayload).Text)
+
+		case app.EventDone:
+			// The turn's result travels on the final event, not on a getter.
+			p := ev.Payload.(app.DonePayload)
+			fmt.Printf("\n\n[DONE] %s\n", p.Text)
 
 		case app.EventError:
 			fmt.Printf("\nError: %v\n", ev.Payload)
 		}
 	}
-
-	fmt.Println()
 }

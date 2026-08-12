@@ -1,3 +1,8 @@
+// Package tool defines what a capability of an agent looks like.
+//
+// A Tool declares a name, a JSON schema and a RiskLevel, and knows how to execute
+// itself. Define infers the schema from a typed Go struct via reflection, so custom
+// tools stay type-safe without hand-written schemas.
 package tool
 
 import (

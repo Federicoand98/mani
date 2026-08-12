@@ -1,3 +1,9 @@
+// Package server exposes an agent over the network.
+//
+// A REST control plane manages sessions and serves the run journal; a WebSocket data
+// plane streams a multi-turn conversation and carries the permission back-channel, so
+// a remote human can approve a tool call while the turn is running. All routes sit
+// behind bearer authentication.
 package server
 
 import (
@@ -19,7 +25,9 @@ func New(spec app.RuntimeSpec, token string) *Server {
 	return &Server{mgr: newSessionManager(spec), token: token, journal: j}
 }
 
-func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+// routes builds the fully wired handler: routing table, auth and request logging.
+// Kept separate from ListenAndServe so it can be exercised without binding a port.
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /sessions", s.handleCreateSession)
@@ -31,7 +39,11 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	mux.HandleFunc("GET /runs/{id}", s.handleGetRun)
 	mux.HandleFunc("/sessions/{id}/turn", s.handleTurn) // ws
 
-	srv := &http.Server{Addr: addr, Handler: loggingMiddleware(authMiddleware(s.token, mux))}
+	return loggingMiddleware(authMiddleware(s.token, mux))
+}
+
+func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	srv := &http.Server{Addr: addr, Handler: s.routes()}
 
 	go func() {
 		<-ctx.Done()

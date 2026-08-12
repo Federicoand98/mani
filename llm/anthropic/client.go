@@ -1,3 +1,7 @@
+// Package anthropic is the LLM adapter for the Anthropic Messages wire format.
+//
+// It streams server-sent events, mapping text, thinking and tool-use blocks onto the
+// core content types.
 package anthropic
 
 import (

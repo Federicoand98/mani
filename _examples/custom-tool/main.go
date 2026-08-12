@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/ollama"
@@ -28,7 +29,7 @@ func main() {
 
 	sumTool := tool.MustDefine(
 		"add",
-		"Somma due numeri interi",
+		"Adds two integers",
 		core.RiskNone,
 		func(ctx context.Context, in AddIn) (string, error) {
 			return fmt.Sprintf("%d", in.A+in.B), nil
@@ -37,9 +38,14 @@ func main() {
 
 	agent.AddTool(tool.ToDefinition(sumTool), sumTool)
 
-	prompt := "Quanto fa 5 + 3? utilizza i tool a tua disposizione"
+	prompt := "What is 5 + 3? Use the tools available to you."
 
-	if err := agent.Run(context.Background(), memory, prompt); err != nil {
+	// Run takes an Emitter (streaming sink) and returns the turn's result.
+	// core.NewWriterEmitter(os.Stdout) streams tokens; nil would stay silent.
+	res, err := agent.Run(context.Background(), memory, prompt, core.NewWriterEmitter(os.Stdout))
+	if err != nil {
 		log.Fatal(err)
 	}
+
+	fmt.Printf("\n\nfinal answer: %s\n", res.Text)
 }

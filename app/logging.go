@@ -11,9 +11,10 @@ import (
 )
 
 // SetupLogging imposta lo slog di default al livello `level`. `dest` decide dove finiscono i log:
-//   "stderr"  → terminale (serve, o run --verbose)
-//   "discard" → nessun log (run silenzioso di default: l'output vero resta su stdout)
-//   "file"    → ~/.config/mani/mani.log (TUI: non sporca lo schermo; seguilo con `tail -f`)
+//
+//	"stderr"  → terminale (serve, o run --verbose)
+//	"discard" → nessun log (run silenzioso di default: l'output vero resta su stdout)
+//	"file"    → ~/.config/mani/mani.log (TUI: non sporca lo schermo; seguilo con `tail -f`)
 func SetupLogging(level, dest string) {
 	var w io.Writer
 	switch dest {

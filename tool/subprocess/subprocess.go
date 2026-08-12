@@ -1,3 +1,8 @@
+// Package subprocess turns any executable into a tool.
+//
+// The tool input is written as JSON on stdin and the result is read from stdout; a
+// non-zero exit turns stderr into the error the model sees. It is the lightweight
+// tier next to MCP: a five-line script becomes a governed tool.
 package subprocess
 
 import (

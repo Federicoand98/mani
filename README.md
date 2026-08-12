@@ -455,6 +455,17 @@ go test ./...
 Feature filter: does it deepen manifest expressiveness, safe autonomy, or operability as a service?
 If not, it's out of scope.
 
+## Status & stability
+
+**This is a learning project.** It works, it's tested, and it's honest about what it isn't:
+the public API is **unstable until 1.0** — packages, manifest keys and tool names may change
+between minor versions (the manifest grammar was reorganised wholesale in 0.1.0). Pin a version
+if you depend on it.
+
+Credentials never live in a manifest: they're stored separately in `auth.json`
+(`$XDG_DATA_HOME/mani/auth.json`, mode 0600) and managed with `/login`. Keep manifests
+committable — they are meant to be.
+
 ## License
 
-See [LICENSE](LICENSE).
+[Apache License 2.0](LICENSE).

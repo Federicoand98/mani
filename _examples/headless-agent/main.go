@@ -37,22 +37,18 @@ func main() {
 
 	prompt := "What is the current date and time? use the now tool"
 
-	if err := agent.Run(context.Background(), memory, prompt); err != nil {
+	// Headless: pass a nil Emitter to stay silent, and read the answer from the
+	// returned RunResult instead of digging through memory.
+	res, err := agent.Run(context.Background(), memory, prompt, nil)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	// extract the last output from the agent's memory
-	msgs := memory.Messages()
-	if len(msgs) == 0 {
-		log.Fatal("no messages in memory")
-	}
+	log.Println("final answer:", res.Text)
 
-	last := msgs[len(msgs)-1]
-	log.Println("last output:", last)
-
-	for _, block := range last.Content {
-		if tb, ok := block.(core.TextBlock); ok {
-			log.Println("text block:", tb.Text)
-		}
+	// RunResult.FinalResult is non-nil only when a final tool (structured output)
+	// is configured with agent.SetFinalTool.
+	if res.FinalResult != nil {
+		log.Println("structured result:", res.FinalResult)
 	}
 }

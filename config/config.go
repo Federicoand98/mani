@@ -1,3 +1,8 @@
+// Package config loads mani configuration and credentials.
+//
+// Settings live in config.json and may be overridden by MANI_* environment variables;
+// each provider carries its own base URL and model. Credentials are kept apart in
+// auth.json (mode 0600) and are never written to config.json.
 package config
 
 import (

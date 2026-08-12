@@ -1,24 +1,24 @@
 # Agentic loop & hook lifecycle
 
-Mappa del ciclo dell'agente di `mani`, con i punti esatti in cui scattano gli **hook**,
-dove agisce il **gate permesso** e dove vengono emessi gli **eventi** verso la UI.
+A map of `mani`'s agent loop, with the exact points where **hooks** fire, where the
+**permission gate** acts, and where **events** are emitted towards the UI.
 
-## Legenda
+## Legend
 
-| Simbolo | Significato |
+| Symbol | Meaning |
 |---|---|
-| **Hook** (giallo) | punto di middleware. Può osservare, **mutare** il payload, o abortire (`error`) |
-| **Gate** (rosso) | NON è un hook: meccanismo a sé, decide sull'input *finale* (post-mutazione) |
-| **Evento** (azzurro) | emesso dall'`Emitter` verso la UI (REPL/TUI). Non interrompe il loop |
-| grigio | Passo interno dell'Agent |
+| **Hook** (yellow) | a middleware point. It can observe, **mutate** the payload, or abort (`error`) |
+| **Gate** (red) | NOT a hook: a mechanism of its own, deciding on the *final* input (post-mutation) |
+| **Event** (blue) | emitted by the `Emitter` towards the UI. It does not interrupt the loop |
+| grey | an internal step of the Agent |
 
-Due layer: gli hook di **loop** (`PreLLMCall`, `ContextFull`, `PostLLMCall`, `PreToolUse`,
-`PostToolUse`) li spara il **core** dentro `Run`. Gli hook di **sessione** (`SessionStart`,
-`SessionEnd`) li spara l'orchestratore (**app/Runtime**) ai confini della sessione.
+Two layers: the **loop** hooks (`PreLLMCall`, `ContextFull`, `PostLLMCall`, `PreToolUse`,
+`PostToolUse`) are fired by the **core** inside `Run`. The **session** hooks (`SessionStart`,
+`SessionEnd`) are fired by the orchestrator (**app/Runtime**) at the session boundaries.
 
 ---
 
-## 1. Ciclo di vita della sessione (app)
+## 1. Session lifecycle (app)
 
 ```mermaid
 flowchart LR
@@ -27,8 +27,8 @@ flowchart LR
 
     A["startup · NewSession · SwitchSession"]:::step
     SS["HOOK SessionStart"]:::hook
-    T1["Execute (turno 1)"]:::step
-    T2["Execute (turno 2)"]:::step
+    T1["Execute (turn 1)"]:::step
+    T2["Execute (turn 2)"]:::step
     DOTS["…"]:::step
     Q["switch away · /quit"]:::step
     SE["HOOK SessionEnd"]:::hook
@@ -36,11 +36,11 @@ flowchart LR
     A --> SS --> T1 --> T2 --> DOTS --> Q --> SE
 ```
 
-Ogni `Execute` espande il loop del diagramma 2.
+Each `Execute` expands into the loop of diagram 2.
 
 ---
 
-## 2. Il loop dell'agente (core) — dentro un `Execute`
+## 2. The agent loop (core) — inside one `Execute`
 
 ```mermaid
 flowchart TD
@@ -51,72 +51,75 @@ flowchart TD
 
     IN(["User input"]):::step
     ADD["memory.Add(user)"]:::step
-    LOOP{{"Loop · max 10 iterazioni"}}
-    PRE["HOOK PreLLMCall<br/>muta i messaggi da inviare"]:::hook
-    EST["EstimateTokens(messaggi)"]:::step
-    CHK{"stima &gt; 80% del limite?"}
-    CF["HOOK ContextFull<br/>compaction · muta i messaggi"]:::hook
+    LOOP{{"Loop · max iterations"}}
+    PRE["HOOK PreLLMCall<br/>mutates the outgoing messages"]:::hook
+    EST["EstimateTokens(messages)"]:::step
+    CHK{"estimate &gt; 80% of the limit?"}
+    CF["HOOK ContextFull<br/>compaction · mutates the messages"]:::hook
     SEND["Client.Send → streaming"]:::step
     SEV["EventThinking · EventToken"]:::event
-    POST["HOOK PostLLMCall<br/>osserva/muta la risposta"]:::hook
+    POST["HOOK PostLLMCall<br/>observes/mutates the response"]:::hook
     ADDA["memory.Add(assistant)"]:::step
     SR{"StopReason?"}
     DONE["EventDone"]:::event
     EERR["EventError"]:::event
-    RET(["fine turno"]):::step
+    RET(["end of turn"]):::step
 
-    TPRE["HOOK PreToolUse<br/>muta Input · può abortire"]:::hook
-    GATE["GATE Permission gate<br/>decide sull'Input finale"]:::gate
+    TPRE["HOOK PreToolUse<br/>mutates Input · may abort"]:::hook
+    GATE["GATE Permission gate<br/>decides on the final Input"]:::gate
     PREQ["EventPermissionRequest"]:::event
     TBLK["memory.Add(blocked result)"]:::step
     TCALL["EventToolCall"]:::event
     TEXEC["executor.Execute(Input)"]:::step
-    TPOST["HOOK PostToolUse<br/>osserva/muta result"]:::hook
+    TPOST["HOOK PostToolUse<br/>observes/mutates result"]:::hook
     TRES["EventToolResult"]:::event
     TADD["memory.Add(tool result)"]:::step
 
     IN --> ADD --> LOOP --> PRE --> EST --> CHK
-    CHK -- "sì" --> CF --> SEND
+    CHK -- "yes" --> CF --> SEND
     CHK -- "no" --> SEND
     SEND -. "stream" .-> SEV
     SEND --> POST --> ADDA --> SR
     SR -- "end_turn" --> DONE --> RET
     SR -- "max_tokens" --> EERR --> RET
     SR -- "tool_use" --> TPRE --> GATE
-    GATE -. "se a rischio" .-> PREQ
-    GATE -- "negato" --> TBLK --> LOOP
-    GATE -- "permesso" --> TCALL --> TEXEC --> TPOST --> TRES --> TADD --> LOOP
+    GATE -. "if risky" .-> PREQ
+    GATE -- "denied" --> TBLK --> LOOP
+    GATE -- "allowed" --> TCALL --> TEXEC --> TPOST --> TRES --> TADD --> LOOP
 ```
 
-**Ordini che contano:**
-- *Injection prima della stima*: `PreLLMCall` antepone il system prompt, poi `EstimateTokens` conta — così il system entra nel conteggio.
-- *Compaction dopo la stima, prima del Send*: `ContextFull` taglia il contesto reale che stai per inviare.
-- *Muta poi gatekeeper*: `PreToolUse` può riscrivere `Input`, **poi** il permesso decide su quell'input finale → niente TOCTOU.
+**Orderings that matter:**
+- *Injection before estimation*: `PreLLMCall` prepends the system prompt, then `EstimateTokens`
+  counts — so the system prompt is part of the count.
+- *Compaction after estimation, before Send*: `ContextFull` trims the actual context you are
+  about to send.
+- *Mutate, then gatekeep*: `PreToolUse` may rewrite `Input`, and **then** the permission gate
+  decides on that final input → no TOCTOU.
 
 ---
 
-## 3. Tabella di riferimento degli hook
+## 3. Hook reference table
 
-| Hook | Quando scatta | Layer | Può mutare | Su `error` | Payload |
+| Hook | When it fires | Layer | Can mutate | On `error` | Payload |
 |---|---|---|---|---|---|
-| **SessionStart** | creazione/switch sessione | app | — | best-effort (ignorato) | `*SessionEventPayload` |
-| **PreLLMCall** | prima di ogni `Send` | core | `Messages` | abort del Run | `*core.PreLLMCallPayload` |
-| **ContextFull** | stima > 80% del limite (dopo injection) | core | `Messages` | abort del Run | `*core.ContextFullPayload` |
-| **PostLLMCall** | dopo la risposta, prima di salvarla | core | `Response` | abort del Run | `*core.PostLLMCallPayload` |
-| **PreToolUse** | prima di ogni tool (fase 1) | core | `Input` | blocca *quel* tool (`continue`) | `*core.PreToolUsePayload` |
-| **PostToolUse** | dopo l'esecuzione del tool | core | `Result`, `IsError` | abort del Run | `*core.PostToolUsePayload` |
-| **SessionEnd** | switch away / quit | app | — | best-effort (ignorato) | `*SessionEventPayload` |
+| **SessionStart** | session created/switched | app | — | best-effort (ignored) | `*SessionEventPayload` |
+| **PreLLMCall** | before every `Send` | core | `Messages` | aborts the Run | `*core.PreLLMCallPayload` |
+| **ContextFull** | estimate > 80% of the limit (after injection) | core | `Messages` | aborts the Run | `*core.ContextFullPayload` |
+| **PostLLMCall** | after the response, before storing it | core | `Response` | aborts the Run | `*core.PostLLMCallPayload` |
+| **PreToolUse** | before every tool (phase 1) | core | `Input` | blocks *that* tool (`continue`) | `*core.PreToolUsePayload` |
+| **PostToolUse** | after the tool executed | core | `Result`, `IsError` | aborts the Run | `*core.PostToolUsePayload` |
+| **SessionEnd** | switch away / quit | app | — | best-effort (ignored) | `*SessionEventPayload` |
 
-> Il **Permission gate** non è in tabella perché non è un hook: è invocato dall'Agent
-> *dopo* `PreToolUse`, su input finale. Un hook osservativo (logging) deve sempre
-> ritornare `nil` — `error` significa "ferma".
+> The **permission gate** is not in the table because it is not a hook: it is invoked by the
+> Agent *after* `PreToolUse`, on the final input. An observational hook (logging) must always
+> return `nil` — an `error` means "stop".
 
 ---
 
-## 4. Eventi emessi (verso la UI)
+## 4. Emitted events (towards the UI)
 
-Distinti dagli hook: gli **eventi** fluiscono dall'`Emitter` → canale → REPL/TUI per il
-rendering, e non alterano il loop.
+Distinct from hooks: **events** flow from the `Emitter` → channel → TUI for rendering, and do
+not alter the loop.
 
 `EventThinking` · `EventToken` · `EventToolCall` · `EventToolResult` ·
-`EventPermissionRequest` · `EventDone` · `EventError`
+`EventPermissionRequest` · `EventUsage` · `EventDone` · `EventError` · `EventCancelled`

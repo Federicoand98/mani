@@ -1,3 +1,7 @@
+// Package openai is the LLM adapter for the OpenAI Chat Completions wire format.
+//
+// Any OpenAI-compatible endpoint works by pointing BaseURL at it and supplying an
+// AuthFn, which is why copilot and openrouter build on this format too.
 package openai
 
 import (

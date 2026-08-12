@@ -1,3 +1,12 @@
+// Package app is the application service that wires a runnable agent together.
+//
+// It owns the Runtime (agent, provider, tools, permissions, exposed as a stream of
+// Event), the declarative manifest (RuntimeSpec and its eight blocks), and the
+// middleware composed on top of the core hooks: policy rules, limits, planning,
+// compaction, subagents, tracing and the run journal. It also holds the trigger
+// Daemon and the durable task queue.
+//
+// Library users can skip app entirely and wire core with the adapters they need.
 package app
 
 import (

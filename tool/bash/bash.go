@@ -1,3 +1,6 @@
+// Package bash provides the bash tool: runs a shell command in the workspace.
+//
+// It declares RiskExecute, so the permission layer gates it before execution.
 package bash
 
 import (

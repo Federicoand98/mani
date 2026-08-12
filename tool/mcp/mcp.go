@@ -1,3 +1,7 @@
+// Package mcp makes mani a Model Context Protocol client.
+//
+// It connects to an MCP server (stdio or HTTP/SSE), lists its tools and adapts them
+// to tool.Tool, so tools written in any language become available to the agent.
 package mcp
 
 import (

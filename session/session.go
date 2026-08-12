@@ -1,3 +1,8 @@
+// Package session holds a conversation and its persistence.
+//
+// A Session bundles a Memory, a Plan and metadata (id, title, timestamps, model).
+// Store is the persistence port, with in-memory and on-disk adapters; serialization
+// of messages lives entirely in the adapter, so core stays unaware of it.
 package session
 
 import (

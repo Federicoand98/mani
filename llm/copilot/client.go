@@ -1,3 +1,7 @@
+// Package copilot is the LLM adapter for GitHub Copilot.
+//
+// It uses the OpenAI wire format with Copilot specific endpoints and an OAuth token
+// that is refreshed on demand.
 package copilot
 
 import (

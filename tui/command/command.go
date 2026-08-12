@@ -1,3 +1,7 @@
+// Package command implements the slash commands of the TUI.
+//
+// A Command parses its arguments, acts on the Runtime and returns a Result: either
+// synchronous output, or an Action asking the TUI to enter a mode such as a picker.
 package command
 
 import (

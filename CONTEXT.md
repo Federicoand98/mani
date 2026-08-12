@@ -1,265 +1,265 @@
 # mani
 
-Framework micro-agent in Go per costruire agenti LLM. Architettura esagonale:
-il dominio (`core`) non sa nulla di provider, trasporto, filesystem o UI.
+A micro-agent framework in Go for building LLM agents. Hexagonal architecture:
+the domain (`core`) knows nothing about providers, transport, the filesystem or the UI.
 
 ## Language
 
 **Agent**:
-Il ciclo di dominio che, data una memoria e un input, chiama l'LLM ed esegue tool
-finché il modello non chiude il turno. Vive in `core`, non conosce adapter concreti.
+The domain loop that, given a memory and an input, calls the LLM and executes tools until
+the model ends the turn. Lives in `core`, knows no concrete adapter.
 
 **Runtime**:
-La radice di composizione della CLI: cabla Agent, provider, tool e permessi, ed espone
-l'esecuzione come stream di `Event`. È un adapter applicativo, non dominio. Un utente
-libreria lo salta e cabla `core` da sé.
+The composition root of the CLI: wires Agent, provider, tools and permissions, and exposes
+execution as a stream of `Event`. It is an application adapter, not domain. A library user
+skips it and wires `core` directly.
 _Avoid_: Engine, Orchestrator, App.
 
 **Manifest**:
-Il file YAML che *dichiara* un agente. È il prodotto: la tesi è "agenti come configurazione".
-Ha **8 blocchi di primo livello**, ognuno dei quali risponde a **una sola domanda** (vedi
-§ Grammatica del manifest). Si carica in `RuntimeSpec` con `KnownFields(true)`: una chiave
-sconosciuta è un **errore**, mai un silenzio. _Avoid_: Config (è la config globale in
-`config/`, un'altra cosa), Spec (è il tipo Go, non il documento), Definition.
+The YAML file that *declares* an agent. It is the product: the thesis is "agents as
+configuration". It has **8 top-level blocks**, each answering **exactly one question**
+(see § Manifest grammar). It is loaded into a `RuntimeSpec` with `KnownFields(true)`: an
+unknown key is an **error**, never a silent no-op. _Avoid_: Config (that's the global config
+in `config/`, a different thing), Spec (that's the Go type, not the document), Definition.
 
 **Block**:
-Una delle 8 sezioni di primo livello del Manifest. Un blocco = una domanda; se una chiave ne
-risponde a due va spezzata, se a nessuna non è una chiave di manifest.
+One of the 8 top-level sections of the Manifest. One block = one question; if a key answers
+two, it must be split; if it answers none, it is not a manifest key.
 _Avoid_: Section, Group, Namespace.
 
 **Policy**:
-Il blocco che risponde a "cosa gli è permesso", su **tre grane**: `tools` (se un tool è
-utilizzabile: allow/ask/deny), `rules` (se la **singola invocazione** passa, guardando
-l'input), `redact` (mascheratura dell'**output**). Meccanismi interni diversi — la prima è
-un gate, le altre due sono hook — ma un'unica domanda, quindi un unico blocco.
-_Avoid_: Permissions (è solo la prima grana), Guardrails (era il nome delle altre due).
+The block answering "what is it allowed to do", at **three levels of granularity**: `tools`
+(whether a tool may be used at all: allow/ask/deny), `rules` (whether **this invocation**
+passes, by inspecting the input), `redact` (masking of the **output**). The mechanisms differ
+— the first is a gate, the other two are hooks — but they answer a single question, so they
+live in a single block.
+_Avoid_: Permissions (that's only the first level), Guardrails (the former name of the others).
 
 **Limits**:
-Il blocco dei **tetti numerici** su un run: token, tool call, durata, iterazioni, timeout per
-tool, profondità dei subagent. Prima erano sparsi in quattro posti.
-_Avoid_: Budget (era il nome parziale), Quota, Constraints.
+The block of **numeric ceilings** on a run: tokens, tool calls, duration, iterations, per-tool
+timeout, subagent depth. They used to be scattered across four places.
+_Avoid_: Budget (the former, partial name), Quota, Constraints.
 
 **Capability**:
-Un'abilità dell'agente dichiarata in `capabilities`: un Tool (built-in, subprocess o MCP), un
-Subagent, il workspace. `planning` e `delegate` **sono tool**, non flag: si dichiarano come
-gli altri. Chiave di manifest e `tool.Name()` a runtime devono coincidere — se divergono, la
-`Policy` non blocca e i Subagent non risolvono, entrambi in silenzio.
-_Avoid_: Feature (era il cassetto senza criterio), Plugin, Skill.
+An ability of the agent declared under `capabilities`: a Tool (built-in, subprocess or MCP),
+a Subagent, the workspace. `planning` and `delegate` **are tools**, not flags: they are
+declared like any other. A tool's manifest key and its runtime `tool.Name()` must be
+identical — if they diverge, `Policy` stops blocking and Subagents fail to resolve, both
+silently.
+_Avoid_: Feature (the former catch-all with no criterion), Plugin, Skill.
 
 **Trace**:
-La sequenza strutturata di step di un run (llm call, tool call/result, con `run_id` di
-correlazione), emessa come log `slog` a livelli (error/warn/info/debug). Non è nel `core`:
-è un osservatore trasversale costruito **sugli hook** esistenti (`RegisterTracing` in `app`).
-Il `run_id` viaggia nel `context`. _Avoid_: Log (è il mezzo), Span (non è OpenTelemetry).
+The structured sequence of steps in a run (llm call, tool call/result, correlated by `run_id`),
+emitted as levelled `slog` output (error/warn/info/debug). Not in `core`: it is a cross-cutting
+observer built **on the existing hooks** (`RegisterTracing` in `app`). The `run_id` travels in
+the `context`. _Avoid_: Log (that's the medium), Span (this is not OpenTelemetry).
 
 **MCP**:
-Model Context Protocol: standard per esporre tool come processi/server esterni. mani è un
-**MCP client** (`tool/mcp`): collega un server (stdio o HTTP/SSE) via l'SDK ufficiale, elenca
-i suoi tool e li adatta a `tool.Tool`. Rende i tool scrivibili in qualsiasi linguaggio. È un
-adapter sorgente-di-tool, come `tool/fs`. _Avoid_: Plugin, Extension.
+Model Context Protocol: a standard for exposing tools as external processes/servers. mani is an
+**MCP client** (`tool/mcp`): it connects to a server (stdio or HTTP/SSE) through the official
+SDK, lists its tools and adapts them to `tool.Tool`. It makes tools writable in any language.
+It is a tool-source adapter, like `tool/fs`. _Avoid_: Plugin, Extension.
 
 **Trigger**:
-Una sorgente di eventi (`every` a intervallo, `daily` a orario, `webhook` HTTP) che, allo
-scatto, accoda un `Task`. È un **driving adapter** (il `Daemon` in `app`) che guida il
-`Runtime` da eventi invece che dall'umano. Ha un'identità stabile (`name`, o un hash di
-tipo+schedule+prompt) che permette il **catch-up** degli scatti persi mentre il processo era
-spento. Non essendoci umano, i prompt di permesso seguono una **Policy** (deny di default,
-allow opt-in). _Avoid_: Hook (è middleware del loop), Cron (è solo uno dei tipi).
+A source of events (`every` at an interval, `daily` at a wall-clock time, `webhook` over HTTP)
+that, when it fires, enqueues a `Task`. It is a **driving adapter** (the `Daemon` in `app`)
+that drives the `Runtime` from events instead of from a human. It has a stable identity
+(`name`, or a hash of type+schedule+prompt) that enables **catch-up** of firings missed while
+the process was down. With no human present, permission prompts follow a **Policy** (deny by
+default, allow opt-in). _Avoid_: Hook (that's loop middleware), Cron (only one of the types).
 
 **Task**:
-Una singola esecuzione dell'agente generata dallo scatto di un Trigger: porta il prompt, il
-trigger d'origine, la modalità di memoria e lo stato dei tentativi (`attempt`, `next_at`).
-È **durevole**: sopravvive al riavvio, quindi tutto ciò che serve a rieseguirlo sta nel Task
-stesso. Non esiste (per ora) un modo esterno di accodarne.
-_Avoid_: Job, Run (il Run è l'esecuzione, il Task è la richiesta).
+A single execution of the agent produced by a Trigger firing: it carries the prompt, the
+originating trigger, the memory mode and the retry state (`attempt`, `next_at`). It is
+**durable**: it survives a restart, so everything needed to re-run it lives in the Task itself.
+There is (for now) no external way to enqueue one.
+_Avoid_: Job, Run (the Run is the execution, the Task is the request).
 
 **Task Queue**:
-La porta che accoda, consegna e archivia i `Task`. Due adapter: in memoria (default) e su
-filesystem in stile **maildir** — lo stato di un task *è la directory in cui si trova*
-(`pending/`, `running/`, `done/`, `failed/`) e la transizione è un `os.Rename` atomico. Si
-ispeziona con `ls`, si ripara con `mv`. Scelta opposta al `Journal` e per un motivo preciso:
-il journal è un record storico (append-only), la coda è **stato mutabile**.
+The port that enqueues, delivers and archives `Task`s. Two adapters: in-memory (the default)
+and on the filesystem in **maildir** style — a task's state *is the directory it sits in*
+(`pending/`, `running/`, `done/`, `failed/`) and a transition is an atomic `os.Rename`. You
+inspect it with `ls` and repair it with `mv`. The opposite choice from the `Journal`, for a
+precise reason: the journal is a historical record (append-only), the queue is **mutable state**.
 _Avoid_: Broker, Bus, Mailbox.
 
 **Scheduler**:
-Il blocco `run.scheduler` del manifest e i worker che ne discendono: governa **come** i Task
-vengono eseguiti (quanti in parallelo, quanti accumularne, quante volte ritentare, se
-sopravvivono al riavvio). **Non contiene task**: quelli nascono a runtime dai Trigger. I suoi
-worker partono da soli — non si dichiara nulla per consumarli.
-_Avoid_: Queue (come nome del blocco: descrive il contenitore, non il comportamento), Pool.
+The `run.scheduler` manifest block and the workers that follow from it: it governs **how** Tasks
+are executed (how many in parallel, how many may pile up, how many times to retry, whether they
+survive a restart). It **contains no tasks**: those are born at runtime from Triggers. Its
+workers start on their own — nothing is declared to consume the queue.
+_Avoid_: Queue (as a block name: it describes the container, not the behaviour), Pool.
 
 **Emitter**:
-La porta (in `core`) attraverso cui l'Agent comunica verso l'esterno ciò che produce
-mentre gira: token, reasoning, chiamate ed esiti dei tool. Parla solo stringhe e
-`map[string]any` — non sa di canali, eventi o UI. L'adapter a canale vive in `app`.
-_Avoid_: Handler, Listener, Sink, Callback.
+The port (in `core`) through which the Agent communicates outward what it produces while it
+runs: tokens, reasoning, tool calls and their results. It speaks only strings and
+`map[string]any` — it knows nothing of channels, events or UI. The channel adapter lives in
+`app`. _Avoid_: Handler, Listener, Sink, Callback.
 
 **Tool**:
-Una capacità che l'Agent può invocare (leggere file, eseguire bash). Dichiara nome,
-schema e un `Risk Level`. Definito nel package `tool`, consumato dagli adapter.
+A capability the Agent can invoke (read a file, run bash). It declares a name, a schema and a
+`Risk Level`. Defined in package `tool`, consumed by the adapters.
 
 **Risk Level**:
-La pericolosità dichiarata da un Tool: `none`, `write`, `execute`. Determina se serve
-un permesso prima dell'esecuzione. Vive in `core`.
+The danger a Tool declares about itself: `none`, `write`, `execute`. Determines whether a
+permission is required before execution. Lives in `core`.
 _Avoid_: Danger, Severity, Permission level.
 
 **Hook**:
-Un middleware registrato sull'Agent, invocato a punti precisi del ciclo di vita
-(pre/post tool, pre/post chiamata LLM nel core; session start/end lato orchestratore).
-Riceve un `HookEvent` (`Type` + payload a puntatore) e può osservare, **mutare** i dati
-in place, o abortire ritornando `error`. Uniforme: ogni hook riceve tutti gli eventi e
-filtra sul `Type`. Il payload è valido solo per la durata della chiamata.
+Middleware registered on the Agent, invoked at precise points of the lifecycle (pre/post tool,
+pre/post LLM call in the core; session start/end on the orchestrator side). It receives a
+`HookEvent` (`Type` + pointer payload) and may observe, **mutate** the data in place, or abort
+by returning an `error`. Uniform: every hook receives every event and filters on `Type`. The
+payload is valid only for the duration of the call.
 _Avoid_: Filter, Interceptor, Listener.
 
 **HookEvent**:
-Ciò che un Hook riceve: un `Type` (stringa aperta — il core dichiara gli eventi di loop,
-l'orchestratore può aggiungere i suoi, es. session) e un `Payload` a puntatore tipizzato
-mutabile in place.
+What a Hook receives: a `Type` (an open string — the core declares the loop events, the
+orchestrator may add its own, e.g. session) and a typed pointer `Payload`, mutable in place.
 _Avoid_: Signal, Message.
 
 **Compaction**:
-La riduzione della storia dei messaggi quando la stima dei token supera una soglia della
-finestra di contesto. Non è incorporata nell'Agent: è una *strategia* implementata da un
-hook `ContextFull` (che muta i messaggi in place). L'Agent si limita a stimare i token e
-sparare l'evento.
-_Avoid_: Truncation, Summarization (sono strategie specifiche di compaction).
+The reduction of message history when the token estimate crosses a fraction of the context
+window. It is not built into the Agent: it is a *strategy* implemented by a `ContextFull` hook
+(which mutates the messages in place). The Agent merely estimates the tokens and fires the event.
+_Avoid_: Truncation, Summarization (those are specific compaction strategies).
 
 **Permission Manager**:
-Il gate che, prima di eseguire un tool, traduce un `Risk Level` in una richiesta
-all'utente e ne attende la `Decision`. **Non è un Hook generico**: è un meccanismo a sé,
-invocato dall'Agent *dopo* gli hook `PreToolUse` (che possono aver mutato l'input), così
-decide sull'input finale (niente TOCTOU). Tiene lo stato di sessione di ciò che è
-"sempre permesso". Vive in `app`, non è dominio.
+The gate that, before executing a tool, turns a `Risk Level` into a request to the user and
+waits for the `Decision`. **It is not a generic Hook**: it is a mechanism of its own, invoked by
+the Agent *after* the `PreToolUse` hooks (which may have mutated the input), so it decides on the
+final input (no TOCTOU). It keeps the session state of what is "always allowed". Lives in `app`,
+it is not domain.
 
 **Decision**:
-La risposta dell'utente a una richiesta di permesso: `Deny`, `AllowOnce`, `AllowAlways`.
-Concetto applicativo (`app`), mai esposto al `core`.
+The user's answer to a permission request: `Deny`, `AllowOnce`, `AllowAlways`. An application
+concept (`app`), never exposed to `core`.
 _Avoid_: Permission, Choice, Answer.
 
 **Diff Preview**:
-La rappresentazione `+`/`-` di una modifica che un tool di scrittura sta per applicare,
-derivata dall'`input` (es. `old_content`/`new_content` di `edit`) **prima** di eseguire
-il tool. Viaggia nel campo `Preview` della richiesta di permesso e la TUI la colora, così
-l'utente approva/rifiuta vedendo il cambiamento. Non è un meccanismo a sé: è un
-arricchimento del gate permesso. _Avoid_: Patch, Hunk.
+The `+`/`-` rendering of a change a write tool is about to apply, derived from the `input`
+(e.g. `old_content`/`new_content` of `edit`) **before** executing the tool. It travels in the
+`Preview` field of the permission request and the TUI colours it, so the user approves or
+rejects while seeing the change. Not a mechanism of its own: an enrichment of the permission
+gate. _Avoid_: Patch, Hunk.
 
 **Tool Output Truncation**:
-Il taglio dell'output di un tool oltre un limite in byte (testa+coda con marker) prima che
-finisca in `Memory`, per non saturare il contesto. Non è nel `core`: è un hook `PostToolUse`
-di default registrato da `app` (muta `Result` in place). _Avoid_: Trim, Clip (Trim è già la
-strategia di Compaction).
+The clipping of a tool's output beyond a byte limit (head+tail with a marker) before it reaches
+`Memory`, to avoid saturating the context. Not in `core`: it is a default `PostToolUse` hook
+registered by `app` (mutating `Result` in place). _Avoid_: Trim, Clip (Trim is already the
+Compaction strategy).
 
 **Event**:
-Un'unità del flusso asincrono `Runtime → UI`: token, reasoning, chiamata/esito tool,
-richiesta di permesso, fine, errore. Concetto applicativo. La UI lo consuma per
-renderizzare. Distinto dall'`Emitter`, che è la porta lato dominio.
+A unit of the asynchronous `Runtime → UI` stream: token, reasoning, tool call/result, permission
+request, done, error. An application concept. The UI consumes it to render. Distinct from the
+`Emitter`, which is the port on the domain side.
 
 **Memory**:
-La sequenza di messaggi del turno corrente passata all'LLM. Porta in `core`;
-l'implementazione di default è in-memory.
+The sequence of messages of the current turn passed to the LLM. A port in `core`; the default
+implementation is in-memory.
 _Avoid_: History, Context, Conversation.
 
 **Session**:
-Una conversazione distinta, con la sua `Memory`, un `Plan` (todo) e dei metadati (id,
-titolo, timestamp, modello), switchabile durante un'esecuzione e ripristinabile da disco.
-Concetto di orchestrazione: vive nel package `session/`, il `core` non la conosce.
+A distinct conversation, with its `Memory`, a `Plan` (todo) and metadata (id, title, timestamps,
+model), switchable during execution and restorable from disk. An orchestration concept: it lives
+in package `session/`, `core` does not know it.
 _Avoid_: Conversation, Chat, Thread.
 
 **Subagent**:
-Un `core.Agent` figlio spawnato dal tool `delegate` per un sotto-task: memoria fresca,
-stessi tool del padre (incluso `delegate`), gate permesso ereditato, output silenzioso
-(`nopEmitter`). Ritorna al padre solo la risposta finale (un `tool_result`) → isola il
-contesto. La profondità di annidamento viaggia nel `context` ed è limitata da un depth-cap.
-Non è un tipo nuovo: è composizione del `core.Agent` esistente, orchestrata in `app`.
-_Avoid_: Worker, Child agent (in codice "child" ok), Actor.
+A child `core.Agent` spawned by the `delegate` tool for a sub-task: fresh memory, the parent's
+tools (including `delegate`), inherited permission gate, silent output (nil Emitter). It returns
+only its final answer to the parent (a `tool_result`) → it isolates the context. The nesting
+depth travels in the `context` and is bounded by a depth cap. Not a new type: composition of the
+existing `core.Agent`, orchestrated in `app`.
+_Avoid_: Worker, Child agent ("child" is fine in code), Actor.
 
 **Plan**:
-La todo list del task corrente: una sequenza di `PlanStep` (`description` + `status`:
-pending/in_progress/done). È **model-owned** — il modello la scrive/aggiorna via il tool
-`planning` — e **advisory**: il loop non la impone, guida soltanto. Vive nella `Session`
-(persiste), viene re-iniettata come reminder a ogni chiamata LLM. Il `core` non la conosce:
-è orchestrazione (tool + hook in `app`). _Avoid_: Tasks, Steps (sono le voci), Workflow.
+The todo list of the current task: a sequence of `PlanStep` (`description` + `status`:
+pending/in_progress/done). It is **model-owned** — the model writes and updates it through the
+`planning` tool — and **advisory**: the loop does not enforce it, it only guides. It lives in the
+`Session` (so it persists) and is re-injected as a reminder on every LLM call. `core` does not
+know it: it is orchestration (tool + hook in `app`).
+_Avoid_: Tasks, Steps (those are the entries), Workflow.
 
 **Session Store**:
-La porta che salva, carica, elenca ed elimina le `Session`. Vive in `session/`;
-ha un adapter in memoria e uno su file (un JSON per sessione). Il `core` non lo
-conosce: la serializzazione dei `Message` è interamente nell'adapter (via DTO).
+The port that saves, loads, lists and deletes `Session`s. Lives in `session/`; it has an
+in-memory adapter and a file one (one JSON per session). `core` does not know it: serialization
+of `Message` lives entirely in the adapter (through DTOs).
 _Avoid_: Repository, Persistence, DAO.
 
 **Provider**:
-Un servizio LLM concreto (ollama, openai, anthropic, copilot, openrouter, o un endpoint
-OpenAI-compatible custom). È una *scelta di configurazione*, non un tipo: il `provider`
-attivo nella config seleziona quale adapter cablare. La sua config (`base_url` + `model`)
-vive nella mappa `providers`, quindi **ogni Provider ricorda il proprio modello**; il
-modello attivo è quello del Provider attivo. Più Provider possono condividere lo stesso
-`Wire Format`. _Avoid_: Backend, Vendor, Engine.
+A concrete LLM service (ollama, openai, anthropic, copilot, openrouter, or a custom
+OpenAI-compatible endpoint). It is a *configuration choice*, not a type: the active `provider`
+in the config selects which adapter to wire. Its config (`base_url` + `model`) lives in the
+`providers` map, so **every Provider remembers its own model**; the active model is the one of
+the active Provider. Several Providers may share the same `Wire Format`.
+_Avoid_: Backend, Vendor, Engine.
 
 **Wire Format**:
-Il protocollo concreto con cui un adapter parla all'LLM (OpenAI Chat Completions vs
-Anthropic Messages). Determina mappatura di messaggi/tool e parsing dello streaming.
-Copilot e Openrouter usano il Wire Format di OpenAI con endpoint/auth diversi.
+The concrete protocol an adapter uses to talk to the LLM (OpenAI Chat Completions vs Anthropic
+Messages). It determines message/tool mapping and stream parsing. Copilot and Openrouter use
+OpenAI's Wire Format with different endpoints and auth.
 _Avoid_: Protocol, API style.
 
 **Credential**:
-Il segreto per autenticarsi a un Provider: una API key (tipo `api`) o un token OAuth
-con refresh ed expiry (tipo `oauth`, es. Copilot). Vive **solo** in `auth.json`
-(`$XDG_DATA_HOME/mani/auth.json`, 0600), mai in `config.json`. Gestita nel package
-`config/`; `auth.json` è autoritativo.
-_Avoid_: Secret, Token, Key (sono casi specifici).
+The secret used to authenticate against a Provider: an API key (type `api`) or an OAuth token
+with refresh and expiry (type `oauth`, e.g. Copilot). It lives **only** in `auth.json`
+(`$XDG_DATA_HOME/mani/auth.json`, mode 0600), never in `config.json`. Managed in package
+`config/`; `auth.json` is authoritative.
+_Avoid_: Secret, Token, Key (those are specific cases).
 
 **Command**:
-Un comando slash della TUI (`/model`, `/clear`, `/login`, …): parsa gli argomenti,
-agisce sul `Runtime` e ritorna un `Result` — output sincrono, oppure un `Action` che
-chiede alla TUI di entrare in una modalità (picker, login). Vive in `tui/command`,
-consumato **solo** dalla TUI (il REPL è stato deprecato). _Avoid_: Action (è un campo
-del Result), Handler, Verb.
+A slash command of the TUI (`/model`, `/clear`, `/login`, …): it parses its arguments, acts on
+the `Runtime` and returns a `Result` — synchronous output, or an `Action` asking the TUI to enter
+a mode (picker, login). Lives in `tui/command`, consumed **only** by the TUI (the REPL was
+deprecated). _Avoid_: Action (that's a field of Result), Handler, Verb.
 
 **Model Lister**:
-Capability *opzionale* di un adapter: elencare i modelli disponibili per il Provider.
-Interfaccia separata in `core` (`ModelLister`), non parte del port `LLMClient`. Il
-comando `/model` fa type-assert: se l'adapter la implementa mostra il picker, altrimenti
-degrada a testo libero.
+An *optional* capability of an adapter: listing the models available for the Provider. A
+separate interface in `core` (`ModelLister`), not part of the `LLMClient` port. The `/model`
+command type-asserts it: if the adapter implements it, a picker is shown, otherwise it degrades
+to free text.
 _Avoid_: ModelRegistry, Catalog.
 
 ---
 
-## Grammatica del manifest
+## Manifest grammar
 
-**La regola:** ogni blocco di primo livello risponde a **esattamente una domanda**.
+**The rule:** every top-level block answers **exactly one question**.
 
-| Blocco | Domanda |
+| Block | Question |
 |---|---|
-| `identity` | chi PENSA? |
-| `capabilities` | cosa SA FARE? |
-| `context` | cosa VEDE e RICORDA? |
-| `output` | cosa RESTITUISCE? |
-| `policy` | cosa GLI È PERMESSO? |
-| `limits` | QUANTO può consumare? |
-| `run` | QUANDO parte e COME viene eseguito? |
-| `observability` | cosa LASCIA DIETRO DI SÉ? |
+| `identity` | who THINKS? |
+| `capabilities` | what can it DO? |
+| `context` | what does it SEE and REMEMBER? |
+| `output` | what does it RETURN? |
+| `policy` | what is it ALLOWED to do? |
+| `limits` | HOW MUCH may it consume? |
+| `run` | WHEN does it start and HOW is it executed? |
+| `observability` | what does it LEAVE BEHIND? |
 
-**Dove va una chiave nuova.** Si pongono queste domande *in quest'ordine*; la prima che
-risponde "sì" vince. L'ordine va dal meno invasivo (osserva soltanto) al più fondante
-(definisce l'agente), così la decisione è deterministica.
+**Where a new key goes.** Ask these questions *in this order*; the first "yes" wins. The order
+runs from the least invasive (only observes) to the most fundamental (defines the agent), so the
+decision is deterministic.
 
 ```
-1. Registra soltanto, senza cambiare il comportamento?   → observability
-2. Decide QUANDO parte un run, o QUANTI ne girano?       → run
-3. È un tetto numerico su un consumo?                    → limits
-4. Può BLOCCARE o MODIFICARE un'azione?                  → policy
-5. Vincola la FORMA della risposta finale?               → output
-6. Cambia cosa finisce nel CONTESTO del modello?         → context
-7. Aggiunge un'ABILITÀ all'agente?                       → capabilities
-8. Cambia CHI o COSA ragiona?                            → identity
+1. Does it only record, without changing behaviour?      → observability
+2. Does it decide WHEN a run starts, or HOW MANY run?    → run
+3. Is it a numeric ceiling on some consumption?          → limits
+4. Can it BLOCK or MODIFY an action?                     → policy
+5. Does it constrain the SHAPE of the final answer?      → output
+6. Does it change what ends up in the model's CONTEXT?   → context
+7. Does it add an ABILITY to the agent?                  → capabilities
+8. Does it change WHO or WHAT reasons?                   → identity
 ```
 
-L'albero decide **dove** va una cosa; il filtro-feature decide **se** deve esistere
-(manifest expressiveness / safe autonomy / operability, altrimenti è terreno LangChain).
-Sono due controlli distinti, entrambi necessari.
+The tree decides **where** something goes; the feature filter decides **whether** it should exist
+at all (manifest expressiveness / safe autonomy / operability — otherwise it is LangChain turf).
+Two distinct checks, both necessary.
 
-**Nomi ritirati** (fase 31, rottura netta — `KnownFields(true)` li rifiuta esplicitamente):
-`features` · `permissions` · `guardrails` · `budget` · `queue` · `mcpservers` ·
-`system_prompt` · `output_schema` · `context_window` · `max_iterations` · `triggers` ·
-`tools` e `provider`/`model` di primo livello. Il tool `todo_write` è diventato `planning`;
-i tool `read_file`/`edit_file`/`write_file` sono diventati `read`/`edit`/`write` per far
-coincidere chiave di manifest e nome a runtime.
+**Retired names** (phase 31, clean break — `KnownFields(true)` rejects them explicitly):
+`features` · `permissions` · `guardrails` · `budget` · `queue` · `mcpservers` · `system_prompt` ·
+`output_schema` · `context_window` · `max_iterations` · `triggers` · top-level `tools`,
+`provider` and `model`. The `todo_write` tool became `planning`; the `read_file`/`edit_file`/
+`write_file` tools became `read`/`edit`/`write` so that a manifest key and a runtime tool name
+are the same string.

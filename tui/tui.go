@@ -1,3 +1,7 @@
+// Package tui is the terminal user interface, built on Bubble Tea.
+//
+// It consumes the Event stream produced by app.Runtime and renders it: streaming
+// tokens, tool calls, permission prompts with a diff preview, and slash commands.
 package tui
 
 import (

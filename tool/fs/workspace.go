@@ -1,3 +1,7 @@
+// Package fs provides the filesystem tools: read, edit, write and delete.
+//
+// Every path is resolved against a workspace root and rejected if it escapes it,
+// so an agent cannot touch files outside the directory it was given.
 package fs
 
 import (

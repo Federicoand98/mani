@@ -1,3 +1,7 @@
+// Package ollama is the LLM adapter for a local Ollama server.
+//
+// It speaks Ollamas native chat API and implements core.LLMClient, plus the optional
+// core.ModelLister capability.
 package ollama
 
 import (
