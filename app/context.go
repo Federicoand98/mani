@@ -46,6 +46,7 @@ func buildSystemPrompt(customBase, workspace string) string {
 }
 
 // Simple compaction
+// TODO: real compaction with LLM in the loop
 func RegisterTrimCompaction(rt *Runtime, keepRecent int) {
 	rt.OnPreLLMCall(func(ctx context.Context, p *core.PreLLMCallPayload) error {
 		if len(p.Messages) <= keepRecent+1 {
