@@ -22,83 +22,89 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 
 	cfg := mergeConfig(base, spec)
 
-	ws := spec.Workspace
+	ws := spec.Capabilities.Workspace
 	if ws == "" {
 		ws, _ = os.Getwd()
 	}
 
-	deps := ToolDeps{Workspace: ws}
-
 	rt := NewFromConfig(cfg)
 
-	// 1. Load tools
-
-	var perToolTimeout time.Duration
-	if spec.Budget.PerToolTimeout != "" {
-		perToolTimeout, _ = time.ParseDuration(spec.Budget.PerToolTimeout)
+	// i subagent vanno noti PRIMA di costruire il tool delegate (gli servono i nomi per l'enum)
+	if len(spec.Capabilities.Subagents) > 0 {
+		rt.subagents = make(map[string]SubagentSpec, len(spec.Capabilities.Subagents))
+		for _, sa := range spec.Capabilities.Subagents {
+			rt.subagents[sa.Name] = sa
+		}
 	}
 
-	for _, name := range spec.Tools {
-		t, err := buildToolRef(name, deps)
+	deps := ToolDeps{
+		Workspace: ws,
+		Runtime:   rt,
+		Subagents: spec.Capabilities.Subagents,
+		Depth:     spec.Limits.SubagentDepth,
+	}
+
+	// 1. tool
+	var toolTimeout time.Duration
+	if spec.Limits.ToolTimeout != "" {
+		toolTimeout, _ = time.ParseDuration(spec.Limits.ToolTimeout)
+	}
+
+	for _, ref := range spec.Capabilities.Tools {
+		t, err := buildToolRef(ref, deps)
 		if err != nil {
-			return nil, fmt.Errorf("build: tool %q: %w", name.Name, err)
+			return nil, fmt.Errorf("build: tool %q: %w", ref.Name, err)
 		}
-
-		if perToolTimeout > 0 {
-			t = withToolTimeout(t, perToolTimeout)
+		if toolTimeout > 0 {
+			t = withToolTimeout(t, toolTimeout)
 		}
-
 		rt.WithTool(t)
 	}
 
-	// 2. Load permissions. default allow, override with spec
+	// 2. policy
 	rt.permission = NewPermissionManager()
-	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Permissions, rt.permission, rt))
+	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Policy.Tools, rt.permission, rt))
 
-	sysPrompt := spec.SystemPrompt
-	if spec.OutputSchema.Type != "" {
+	// 3. output schema (terminal tool `respond`)
+	sysPrompt := spec.Identity.Prompt
+	if spec.Output.Schema.Type != "" {
 		schema := tool.ToolSchema{
 			Name:        "respond",
 			Description: "Return the final result according to the schema. Use this tool once, only at the end.",
-			InputSchema: spec.OutputSchema,
+			InputSchema: spec.Output.Schema,
 		}
-
-		rt.WithTool(tool.New(schema, core.RiskNone, func(ctx context.Context, m map[string]any) (string, error) {
+		rt.WithTool(tool.New(schema, core.RiskNone, func(context.Context, map[string]any) (string, error) {
 			return "", nil
 		}))
-
 		rt.agent.SetFinalTool("respond")
-
 		sysPrompt += "\n\nThis agent has an output schema: finish ALWAYS using the `respond` tool with an object matching the schema. Do not respond with plain text."
 	}
 
-	// 3. Features
-	f := spec.Features
-	if f.ContextInjection {
+	// 4. context
+	if spec.Context.Inject {
 		registerContextInjectionWith(rt, sysPrompt, ws)
 	}
-	if f.Compaction.Enabled {
-		RegisterTrimCompaction(rt, f.Compaction.Keep)
-	}
-	if f.Planning {
-		RegisterPlanning(rt)
-	}
-	if f.Subagents.Enabled {
-		registerSubagentsFromSpec(rt, spec.Subagents, f.Subagents.Depth, deps)
-	}
-	if f.Tracing {
-		RegisterTracing(rt)
-	}
-	if len(spec.Guardrails.Deny) > 0 || len(spec.Guardrails.Mask) > 0 {
-		RegisterGuardrails(rt, spec.Guardrails)
-	}
-	if spec.Budget.MaxTokens > 0 || spec.Budget.MaxToolCalls > 0 {
-		RegisterBudget(rt, spec.Budget)
-	}
-	if spec.Budget.MaxDuration != "" {
-		rt.maxDuration, _ = time.ParseDuration(spec.Budget.MaxDuration)
+	if spec.Context.Compaction.Enabled {
+		RegisterTrimCompaction(rt, spec.Context.Compaction.Keep)
 	}
 
+	// 5. policy
+	if len(spec.Policy.Rules) > 0 || len(spec.Policy.Redact) > 0 {
+		RegisterPolicyRules(rt, spec.Policy)
+	}
+
+	// 6. limits
+	if spec.Limits.MaxTokens > 0 || spec.Limits.MaxToolCalls > 0 {
+		RegisterBudget(rt, spec.Limits)
+	}
+	if spec.Limits.MaxDuration != "" {
+		rt.maxDuration, _ = time.ParseDuration(spec.Limits.MaxDuration)
+	}
+
+	// 7. observability
+	if spec.Observability.Tracing {
+		RegisterTracing(rt)
+	}
 	if spec.Observability.Journal.Enabled {
 		j, err := buildJournal(spec.Observability.Journal)
 		if err != nil {
@@ -107,13 +113,10 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 		RegisterJournal(rt, j)
 	}
 
-	// 4. MCP
-	for _, m := range spec.MCPServers {
+	// 8. MCP
+	for _, m := range spec.Capabilities.MCP {
 		if err := rt.AddMCPServer(ctx, mcp.ServerSpec{
-			Name:    m.Name,
-			Command: m.Command,
-			Args:    m.Args,
-			URL:     m.URL,
+			Name: m.Name, Command: m.Command, Args: m.Args, URL: m.URL,
 		}); err != nil {
 			return nil, fmt.Errorf("build: mcp %q: %w", m.Name, err)
 		}
@@ -123,29 +126,29 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 }
 
 func BuildDaemon(rt *Runtime, spec RuntimeSpec) (*Daemon, error) {
-	q, err := buildQueue(spec.Queue)
+	q, err := buildQueue(spec.Run.Scheduler)
 	if err != nil {
 		return nil, fmt.Errorf("build: queue: %w", err)
 	}
 
 	d := NewTrigger(rt, q)
-	d.concurrency = spec.Queue.Concurrency
+	d.concurrency = spec.Run.Scheduler.Concurrency
 
 	// il backoff arriva dal YAML come stringa: qui lo parsiamo una volta sola
-	r := resolveRetry(spec.Queue.Retry)
+	r := resolveRetry(spec.Run.Scheduler.Retry)
 	backoff, err := time.ParseDuration(r.Backoff)
 	if err != nil {
 		return nil, fmt.Errorf("build: queue.retry.backoff %q: %w", r.Backoff, err)
 	}
 	d.maxAttempts = r.MaxAttempts
 	d.backoff = backoff
-	if spec.Queue.Path != "" {
-		d.state = loadTriggerState(filepath.Join(spec.Queue.Path, "triggers.json"))
+	if spec.Run.Scheduler.Path != "" {
+		d.state = loadTriggerState(filepath.Join(spec.Run.Scheduler.Path, "triggers.json"))
 	} else {
 		d.state = loadTriggerState("") // in RAM: nessun catch-up tra riavvii
 	}
 
-	for _, t := range spec.Triggers {
+	for _, t := range spec.Run.Triggers {
 		id := triggerID(t)
 		switch t.Type {
 		case "every":
@@ -165,7 +168,7 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec) (*Daemon, error) {
 	return d, nil
 }
 
-func buildQueue(spec QueueSpec) (TaskQueue, error) {
+func buildQueue(spec SchedulerSpec) (TaskQueue, error) {
 	if spec.Path == "" {
 		return NewInMemoryQueue(spec.MaxPending), nil
 	}
@@ -185,17 +188,17 @@ func resolveRetry(r RetrySpec) RetrySpec {
 // mergeConfig merges spec > base config.
 func mergeConfig(base config.Config, spec RuntimeSpec) config.Config {
 	c := base
-	if spec.Provider != "" {
-		c.Provider = spec.Provider
+	if spec.Identity.Provider != "" {
+		c.Provider = spec.Identity.Provider
 	}
-	if spec.Model != "" {
-		c.SetActiveModel(spec.Model)
+	if spec.Identity.Model != "" {
+		c.SetActiveModel(spec.Identity.Model)
 	}
-	if spec.ContextWindow != 0 {
-		c.ContextWindow = spec.ContextWindow
+	if spec.Context.Window != 0 {
+		c.ContextWindow = spec.Context.Window
 	}
-	if spec.MaxIterations != 0 {
-		c.MaxIterations = spec.MaxIterations
+	if spec.Limits.MaxIterations != 0 {
+		c.MaxIterations = spec.Limits.MaxIterations
 	}
 	return c
 }

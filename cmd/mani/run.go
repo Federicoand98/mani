@@ -35,14 +35,14 @@ func runFromManifest(ctx context.Context, args []string) error {
 
 	// nessun task → daemon dei trigger
 	if *task == "" {
-		if len(spec.Triggers) == 0 {
+		if len(spec.Run.Triggers) == 0 {
 			return fmt.Errorf("run: nessun --task e nessun trigger nel manifest")
 		}
 		d, err := app.BuildDaemon(rt, spec)
 		if err != nil {
 			return err
 		}
-		slog.Info("avvio trigger daemon", "triggers", len(spec.Triggers))
+		slog.Info("avvio trigger daemon", "triggers", len(spec.Run.Triggers))
 		d.Run(ctx) // bloccante finché ctx non è cancellato
 		return nil
 	}

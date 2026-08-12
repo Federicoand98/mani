@@ -1,18 +1,29 @@
-provider: ollama
-model: qwen3.5:9b
-system_prompt: "Sei un assistente di sistema."
-tools: [read, bash]
-permissions: { bash: allow, read: allow }
+# Governance: the three levels of `policy` and the ceilings in `limits`.
 
-guardrails:
-  deny:
-    - { tool: bash, pattern: 'rm\s+-rf', label: "rm ricorsivo" }
-    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', label: "pipe-to-shell" }
-  mask:
+identity:
+  name: system-assistant
+  provider: ollama
+  model: qwen3.5:9b
+  prompt: "You are a system assistant."
+
+capabilities:
+  tools: [read, bash]
+
+policy:
+  # level 1 — THE TOOL: may it be used at all (allow | ask | deny)
+  tools:
+    bash: allow
+    read: allow
+  # level 2 — THE CALL: inspect the input, block this single invocation
+  rules:
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "recursive delete" }
+    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', action: deny, label: "pipe-to-shell" }
+  # level 3 — THE OUTPUT: redact before the result goes back to the model
+  redact:
     - { pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }
 
-budget:
+limits:
   max_tokens: 50000
   max_tool_calls: 20
   max_duration: 2m
-  per_tool_timeout: 15s
+  tool_timeout: 15s

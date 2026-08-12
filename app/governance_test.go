@@ -45,7 +45,7 @@ func fakeTool(name string, risk core.RiskLevel, ran *bool) tool.Tool {
 }
 
 // deny: un pattern che matcha l'input deve bloccare il tool (executor mai chiamato).
-func TestGuardrails_DenyBlocksTool(t *testing.T) {
+func TestPolicyRules_DenyBlocksTool(t *testing.T) {
 	ran := false
 	client := core.NewMock(
 		core.RespToolCall("1", "bash", map[string]any{"command": "rm -rf /tmp"}),
@@ -53,8 +53,8 @@ func TestGuardrails_DenyBlocksTool(t *testing.T) {
 	)
 	rt := testRuntime(t, client)
 	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
-	RegisterGuardrails(rt, GuardrailSpec{
-		Deny: []DenyRule{{Tool: "bash", Pattern: `rm\s+-rf`, Label: "rm ricorsivo"}},
+	RegisterPolicyRules(rt, PolicySpec{
+		Rules: []RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`, Label: "rm ricorsivo"}},
 	})
 
 	drain(rt.Execute(context.Background(), "cancella /tmp"))
@@ -65,7 +65,7 @@ func TestGuardrails_DenyBlocksTool(t *testing.T) {
 }
 
 // deny: un pattern che NON matcha lascia passare il tool.
-func TestGuardrails_DenyAllowsUnmatched(t *testing.T) {
+func TestPolicyRules_DenyAllowsUnmatched(t *testing.T) {
 	ran := false
 	client := core.NewMock(
 		core.RespToolCall("1", "bash", map[string]any{"command": "ls -la"}),
@@ -73,8 +73,8 @@ func TestGuardrails_DenyAllowsUnmatched(t *testing.T) {
 	)
 	rt := testRuntime(t, client)
 	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
-	RegisterGuardrails(rt, GuardrailSpec{
-		Deny: []DenyRule{{Tool: "bash", Pattern: `rm\s+-rf`}},
+	RegisterPolicyRules(rt, PolicySpec{
+		Rules: []RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`}},
 	})
 
 	drain(rt.Execute(context.Background(), "elenca"))
@@ -88,7 +88,7 @@ func TestGuardrails_DenyAllowsUnmatched(t *testing.T) {
 func TestBudget_MaxTokensAborts(t *testing.T) {
 	client := core.NewMock(core.WithUsage(core.RespText("done"), 120000, 0))
 	rt := testRuntime(t, client)
-	RegisterBudget(rt, BudgetSpec{MaxTokens: 100000})
+	RegisterBudget(rt, LimitsSpec{MaxTokens: 100000})
 
 	if !drain(rt.Execute(context.Background(), "x")) {
 		t.Error("atteso EventError per max_tokens superato")
@@ -101,7 +101,7 @@ func TestBudget_PerRunReset(t *testing.T) {
 		return core.WithUsage(core.RespText("done"), 60000, 0)
 	})
 	rt := testRuntime(t, client)
-	RegisterBudget(rt, BudgetSpec{MaxTokens: 100000})
+	RegisterBudget(rt, LimitsSpec{MaxTokens: 100000})
 
 	for i := 0; i < 2; i++ {
 		if drain(rt.Execute(context.Background(), "x")) {

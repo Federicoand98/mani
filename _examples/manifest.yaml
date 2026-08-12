@@ -1,42 +1,46 @@
-provider: ollama
-model: qwen3.5:9b
+# Full manifest: all eight blocks in use, with subagents and MCP.
 
-system_prompt: |
-  Sei un agente di manutenzione del repo. Conciso, preciso.
-  Non modifichi file senza aver prima letto il contesto.
+identity:
+  name: repo-maintainer
+  description: "Repository maintenance"
+  provider: ollama
+  model: qwen3.5:9b
+  prompt: |
+    You are a repo maintenance agent. Concise, precise.
+    You never edit a file before reading its context.
 
-# workspace: assente = os.Getwd() risolto nel Build
-tools:
-  - read
-  - edit
-  - bash
-
-# feature accese di default: qui spegniamo la compaction e cambiamo la depth come override
-features:
-  compaction:
-    enabled: false
+capabilities:
+  # workspace omitted = os.Getwd(), resolved in Build
+  tools:
+    - read
+    - edit
+    - bash
+    - delegate                    # enables delegation to the subagents below
+  mcp:
+    - name: deepwiki
+      url: https://mcp.deepwiki.com/sse
   subagents:
-    depth: 2
+    - name: researcher
+      description: "explores the code read-only, reports with file:line"
+      prompt: "You are a researcher. You change nothing. Answer with file:line references."
+      tools: [read]               # restricted subset
+      model: ""                   # "" = inherit the parent's model
+    - name: coder
+      description: "implements changes once the plan is settled"
+      prompt: "You are an implementer. You apply minimal, targeted changes."
+      tools: [read, edit, write, bash]
 
-# tool nel manifest = allow, override per cambiarle
-permissions:
-  bash: deny
-  default: allow
+context:
+  window: 0                       # 0 = inherit from config
+  compaction:
+    enabled: false                # on by default: here we turn it off
 
-mcpservers:
-  - name: deepwiki
-    url: https://mcp.deepwiki.com/sse
+policy:
+  # declared tools are allowed unless overridden
+  tools:
+    bash: deny
+    default: allow
 
-subagents:
-  - name: researcher
-    description: "esplora il codice in sola lettura, riporta con file:riga"
-    system_prompt: "Sei un ricercatore. Non modifichi nulla. Rispondi con riferimenti file:riga."
-    tools: [read]              # subset ristretto
-    model: ""                  # eredita il modello del padre
-  - name: coder
-    description: "implementa modifiche una volta deciso cosa fare"
-    system_prompt: "Sei un implementatore. Applichi modifiche minime e mirate."
-    tools: [read, edit, write, bash]
-
-context_window: 0    # 0 = eredita
-max_iterations: 15
+limits:
+  max_iterations: 15
+  subagent_depth: 2

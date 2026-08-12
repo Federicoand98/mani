@@ -24,7 +24,7 @@ func budgetFrom(ctx context.Context) *budgetState {
 	return bs
 }
 
-func RegisterBudget(rt *Runtime, spec BudgetSpec) {
+func RegisterBudget(rt *Runtime, spec LimitsSpec) {
 	if spec.MaxTokens > 0 {
 		rt.OnPostLLMCall(func(ctx context.Context, p *core.PostLLMCallPayload) error {
 			bs := budgetFrom(ctx)

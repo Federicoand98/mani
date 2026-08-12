@@ -20,19 +20,21 @@ type maskRule struct {
 	with string
 }
 
-func RegisterGuardrails(rt *Runtime, spec GuardrailSpec) {
+func RegisterPolicyRules(rt *Runtime, spec PolicySpec) {
 	var deny []denyRule
-
-	for _, d := range spec.Deny {
-		label := d.Label
-		if label == "" {
-			label = d.Pattern
+	for _, r := range spec.Rules {
+		if r.Action != "" && r.Action != "deny" {
+			continue // slot per azioni future (warn, ask): oggi solo deny
 		}
-		deny = append(deny, denyRule{tool: d.Tool, re: regexp.MustCompile(d.Pattern), label: label})
+		label := r.Label
+		if label == "" {
+			label = r.Pattern
+		}
+		deny = append(deny, denyRule{tool: r.Tool, re: regexp.MustCompile(r.Pattern), label: label})
 	}
 
 	var mask []maskRule
-	for _, m := range spec.Mask {
+	for _, m := range spec.Redact {
 		mask = append(mask, maskRule{re: regexp.MustCompile(m.Pattern), with: m.With})
 	}
 

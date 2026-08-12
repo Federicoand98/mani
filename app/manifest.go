@@ -1,7 +1,10 @@
 package app
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"time"
@@ -11,53 +14,34 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type (
-	RiskPolicy string
-	RiskName   string
-)
-
-const (
-	RiskPolicyAllow RiskPolicy = "allow"
-	RiskPolicyDeny  RiskPolicy = "deny"
-	RiskPolicyAsk   RiskPolicy = "ask"
-)
-
-type CompactionCfg struct {
-	Enabled bool `yaml:"enabled"`
-	Keep    int  `yaml:"keep"`
+type RuntimeSpec struct {
+	Identity      IdentitySpec      `yaml:"identity"`
+	Capabilities  CapabilitiesSpec  `yaml:"capabilities"`
+	Context       ContextSpec       `yaml:"context"`
+	Output        OutputSpec        `yaml:"output"`
+	Policy        PolicySpec        `yaml:"policy"`
+	Limits        LimitsSpec        `yaml:"limits"`
+	Run           RunSpec           `yaml:"run"`
+	Observability ObservabilitySpec `yaml:"observability"`
 }
 
-type SubagentsCfg struct {
-	Enabled bool `yaml:"enabled"`
-	Depth   int  `yaml:"depth"`
+// --- 1. identity ---
+
+type IdentitySpec struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Provider    string `yaml:"provider"`
+	Model       string `yaml:"model"`
+	Prompt      string `yaml:"prompt"`
 }
 
-// Features: enabled/disabled middleware features
-// default: all features enabled
-type Features struct {
-	Planning         bool          `yaml:"planning"`
-	ContextInjection bool          `yaml:"context_injection"`
-	Tracing          bool          `yaml:"tracing"`
-	Compaction       CompactionCfg `yaml:"compaction"`
-	Subagents        SubagentsCfg  `yaml:"subagents"`
-}
+// --- 2. capabilities ---
 
-// MCPSpec: MCP server specification
-type MCPSpec struct {
-	Name    string   `yaml:"name"`
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
-	URL     string   `yaml:"url"`
-}
-
-// SubagentSpec: Runtime spec for subagents. No trigger, no inner subagents. empty tool = inherit
-type SubagentSpec struct {
-	Name          string   `yaml:"name"`
-	Description   string   `yaml:"description"`
-	SystemPrompt  string   `yaml:"system_prompt"`
-	Model         string   `yaml:"model"` // "" = inherit
-	Tools         []string `yaml:"tools"`
-	MaxIterations int      `yaml:"max_iterations"` // 0 = inherit
+type CapabilitiesSpec struct {
+	Workspace string         `yaml:"workspace"`
+	Tools     []ToolRef      `yaml:"tools"`
+	MCP       []MCPSpec      `yaml:"mcp"`
+	Subagents []SubagentSpec `yaml:"subagents"`
 }
 
 type ToolRef struct {
@@ -70,69 +54,98 @@ type ToolRef struct {
 	Risk    RiskName          `yaml:"risk"`
 }
 
-type DenyRule struct {
+type SubagentSpec struct {
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Prompt      string   `yaml:"prompt"`
+	Model       string   `yaml:"model"` // "" = inherit
+	Tools       []string `yaml:"tools"`
+}
+
+type MCPSpec struct {
+	Name    string   `yaml:"name"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+	URL     string   `yaml:"url"`
+}
+
+// --- 3. context ---
+
+type ContextSpec struct {
+	Window     int           `yaml:"window"`
+	Inject     bool          `yaml:"inject"`
+	Compaction CompactionCfg `yaml:"compaction"`
+}
+
+type CompactionCfg struct {
+	Enabled bool `yaml:"enabled"`
+	Keep    int  `yaml:"keep"`
+}
+
+// --- 4. output ---
+
+type OutputSpec struct {
+	Schema tool.InputSchema `yaml:"schema"`
+}
+
+// --- 5. policy ---
+type (
+	RiskPolicy string
+	RiskName   string
+)
+
+const (
+	RiskPolicyAllow RiskPolicy = "allow"
+	RiskPolicyDeny  RiskPolicy = "deny"
+	RiskPolicyAsk   RiskPolicy = "ask"
+)
+
+type PolicySpec struct {
+	Tools  map[string]RiskPolicy `yaml:"tools"`
+	Rules  []RuleSpec            `yaml:"rules"`
+	Redact []RedactSpec          `yaml:"redact"`
+}
+
+type RuleSpec struct {
 	Tool    string `yaml:"tool"`
 	Pattern string `yaml:"pattern"`
+	Action  string `yaml:"action"`
 	Label   string `yaml:"label"`
 }
 
-type MaskRule struct {
+type RedactSpec struct {
 	Pattern string `yaml:"pattern"`
 	With    string `yaml:"with"`
 }
 
-type GuardrailSpec struct {
-	Deny []DenyRule `yaml:"deny"`
-	Mask []MaskRule `yaml:"mask"`
+// --- 6. limits ---
+
+type LimitsSpec struct {
+	MaxTokens     int    `yaml:"max_tokens"`
+	MaxToolCalls  int    `yaml:"max_tool_calls"`
+	MaxDuration   string `yaml:"max_duration"`
+	MaxIterations int    `yaml:"max_iterations"`
+	ToolTimeout   string `yaml:"tool_timeout"`
+	SubagentDepth int    `yaml:"subagent_depth"`
 }
 
-type BudgetSpec struct {
-	MaxTokens      int    `yaml:"max_tokens"`
-	MaxToolCalls   int    `yaml:"max_tool_calls"`
-	MaxDuration    string `yaml:"max_duration"`
-	PerToolTimeout string `yaml:"per_tool_timeout"`
+// --- 7. run ---
+
+type RunSpec struct {
+	Triggers  []TriggerSpec `yaml:"triggers"`
+	Scheduler SchedulerSpec `yaml:"scheduler"`
 }
 
-type RuntimeSpec struct {
-	Provider      string                `yaml:"provider"`
-	Model         string                `yaml:"model"`
-	SystemPrompt  string                `yaml:"system_prompt"`
-	Workspace     string                `yaml:"workspace"`
-	Tools         []ToolRef             `yaml:"tools"`
-	Features      Features              `yaml:"features"`
-	Permissions   map[string]RiskPolicy `yaml:"permissions"`
-	MCPServers    []MCPSpec             `yaml:"mcpservers"`
-	Triggers      []TriggerSpec         `yaml:"triggers"`
-	Queue         QueueSpec             `yaml:"queue"`
-	Subagents     []SubagentSpec        `yaml:"subagents"`
-	OutputSchema  tool.InputSchema      `yaml:"output_schema"`
-	Guardrails    GuardrailSpec         `yaml:"guardrails"`
-	Budget        BudgetSpec            `yaml:"budget"`
-	Observability ObservabilitySpec     `yaml:"observability"`
-	ContextWindow int                   `yaml:"context_window"`
-	MaxIterations int                   `yaml:"max_iterations"`
-}
-
-type ObservabilitySpec struct {
-	Journal JournalSpec `yaml:"journal"`
-}
-
-type JournalSpec struct {
-	Enabled   bool   `yaml:"enabled"`
-	Path      string `yaml:"path"`
-	Retention int    `yaml:"retention"` // ring buffer
+type SchedulerSpec struct {
+	Path        string    `yaml:"path"`
+	Concurrency int       `yaml:"concurrency"`
+	MaxPending  int       `yaml:"max_pending"`
+	Retry       RetrySpec `yaml:"retry"`
 }
 
 type RetrySpec struct {
 	MaxAttempts int    `yaml:"max_attempts"` // default 3
 	Backoff     string `yaml:"backoff"`      // default "30s"
-}
-
-type QueueSpec struct {
-	Path        string    `yaml:"path"`        // assente = coda in RAM (come oggi)
-	Concurrency int       `yaml:"concurrency"` // default 1
-	MaxPending  int       `yaml:"max_pending"` // default 64
-	Retry       RetrySpec `yaml:"retry"`
 }
 
 type TriggerSpec struct {
@@ -146,163 +159,162 @@ type TriggerSpec struct {
 	CatchUp bool   `yaml:"catch_up"` // ← default false
 }
 
+// --- 8. observability ---
+
+type ObservabilitySpec struct {
+	Tracing bool        `yaml:"tracing"`
+	Journal JournalSpec `yaml:"journal"`
+}
+
+type JournalSpec struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	Retention int    `yaml:"retention"` // ring buffer
+}
+
 func DefaultSpec() RuntimeSpec {
 	return RuntimeSpec{
-		Features: Features{
-			Planning:         true,
-			ContextInjection: true,
-			Tracing:          true,
-			Compaction:       CompactionCfg{Enabled: true, Keep: 20},
-			Subagents:        SubagentsCfg{Enabled: true, Depth: 5},
+		Context: ContextSpec{
+			Inject:     true,
+			Compaction: CompactionCfg{Enabled: true, Keep: 20},
 		},
+		Limits: LimitsSpec{
+			SubagentDepth: 5,
+		},
+		Observability: ObservabilitySpec{Tracing: true},
 	}
 }
 
 func LoadManifest(path string) (RuntimeSpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return RuntimeSpec{}, fmt.Errorf("manifest: read %s: %w", path, err)
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: read %s: %w", path, err)
 	}
 
 	spec := DefaultSpec()
-	if err := yaml.Unmarshal(data, &spec); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("manifest: unmarshal %s: %w", path, err)
+
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&spec); err != nil && !errors.Is(err, io.EOF) {
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
 	}
 
 	if err := spec.Validate(); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("manifest: validate %s: %w", path, err)
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: validate %s: %w", path, err)
 	}
 
 	return spec, nil
 }
 
 func (s RuntimeSpec) Validate() error {
+	// --- capabilities.tools ---
 	declared := map[string]bool{}
-
-	for _, ref := range s.Tools {
+	for _, ref := range s.Capabilities.Tools {
 		if ref.Name == "" {
-			return fmt.Errorf("manifest: tool name required")
+			return fmt.Errorf("[manifest]: capabilities.tools: tool name required")
 		}
-
 		if declared[ref.Name] {
-			return fmt.Errorf("manifest: tool %s declared multiple times", ref.Name)
+			return fmt.Errorf("[manifest]: tool %q declarated too many times", ref.Name)
 		}
-
 		declared[ref.Name] = true
 
 		if ref.isSubprocess() {
 			if ref.Schema.Type == "" {
-				return fmt.Errorf("manifest: subprocess tool %s requires schema type", ref.Name)
+				return fmt.Errorf("[manifest]: tool subprocess %q requires schema.type", ref.Name)
 			}
 		} else if !knownTool(ref.Name) {
-			return fmt.Errorf("manifest: unknown tool %s", ref.Name)
+			return fmt.Errorf("[manifest]: tool unknown %q (built-in: read, edit, write, bash, planning, delegate)", ref.Name)
 		}
 	}
 
-	for name, p := range s.Permissions {
-		switch p {
-		case RiskPolicyAllow, RiskPolicyAsk, RiskPolicyDeny:
-		default:
-			return fmt.Errorf("manifest: unknown permission %s", name)
-		}
-	}
-
-	if s.OutputSchema.Type != "" && s.OutputSchema.Type != "object" {
-		return fmt.Errorf("manifest: output schema type must be 'object' or empty, got %s", s.OutputSchema.Type)
+	if len(s.Capabilities.Subagents) > 0 && !declared["delegate"] {
+		return fmt.Errorf("[manifest]: capabilities.subagents but \"delegate\" tool not declared")
 	}
 
 	seen := map[string]bool{}
-	for _, sa := range s.Subagents {
+	for _, sa := range s.Capabilities.Subagents {
 		if sa.Name == "" {
-			return fmt.Errorf("manifest: subagent name required")
+			return fmt.Errorf("[manifest]: subagent: name required")
 		}
-
 		if sa.Description == "" {
-			return fmt.Errorf("manifest: subagent description required")
+			return fmt.Errorf("[manifest]: subagent %q: description required", sa.Name)
 		}
-
+		if seen[sa.Name] {
+			return fmt.Errorf("[manifest]: subagent %q: duplicate", sa.Name)
+		}
 		seen[sa.Name] = true
-
 		for _, t := range sa.Tools {
 			if !knownTool(t) && !declared[t] {
-				return fmt.Errorf("manifest: unknown tool %s", t)
+				return fmt.Errorf("[manifest]: subagent %q: tool unknown %q", sa.Name, t)
 			}
 		}
 	}
 
-	for _, t := range s.Triggers {
-		switch t.Type {
-		case "every":
-			if t.Every == "" {
-				return fmt.Errorf("trigger every: campo 'every' richiesto")
-			}
-			if _, err := time.ParseDuration(t.Every); err != nil {
-				return fmt.Errorf("trigger every: durata %q non valida: %w", t.Every, err)
-			}
-			if t.Prompt == "" {
-				return fmt.Errorf("trigger every: 'prompt' richiesto")
-			}
-		case "daily":
-			if t.At == "" {
-				return fmt.Errorf("trigger daily: campo 'at' richiesto")
-			}
-			if t.Prompt == "" {
-				return fmt.Errorf("trigger daily: 'prompt' richiesto")
-			}
-		case "webhook":
-			if t.Addr == "" {
-				return fmt.Errorf("trigger webhook: campo 'addr' richiesto")
-			}
-			// prompt opzionale (template)
+	// --- policy ---
+	for name, p := range s.Policy.Tools {
+		switch p {
+		case RiskPolicyAllow, RiskPolicyAsk, RiskPolicyDeny:
 		default:
-			return fmt.Errorf("trigger type sconosciuto: %q", t.Type)
+			return fmt.Errorf("[manifest]: policy.tools[%s]: invalid value %q (allow|ask|deny)", name, p)
+		}
+	}
+	for i, r := range s.Policy.Rules {
+		if r.Pattern == "" {
+			return fmt.Errorf("[manifest]: policy.rules[%d]: pattern required", i)
+		}
+		if _, err := regexp.Compile(r.Pattern); err != nil {
+			return fmt.Errorf("[manifest]: policy.rules[%d]: invalid regex: %w", i, err)
+		}
+		if r.Action != "" && r.Action != "deny" {
+			return fmt.Errorf("[manifest]: policy.rules[%d]: action %q not supported (only \"deny\")", i, r.Action)
+		}
+	}
+	for i, m := range s.Policy.Redact {
+		if _, err := regexp.Compile(m.Pattern); err != nil {
+			return fmt.Errorf("[manifest]: policy.redact[%d]: invalid regex: %w", i, err)
 		}
 	}
 
-	for _, d := range s.Guardrails.Deny {
-		if d.Tool == "" || d.Pattern == "" {
-			return fmt.Errorf("guardrail deny: 'tool' e 'pattern' must be specified")
-		}
+	// --- output ---
+	if s.Output.Schema.Type != "" && s.Output.Schema.Type != "object" {
+		return fmt.Errorf("[manifest]: output.schema.type must be \"object\", found %q", s.Output.Schema.Type)
+	}
 
-		if _, err := regexp.Compile(d.Pattern); err != nil {
-			return fmt.Errorf("guardrail deny: pattern %q: %w", d.Pattern, err)
+	// --- limits (le durate) ---
+	for name, v := range map[string]string{
+		"limits.max_duration": s.Limits.MaxDuration,
+		"limits.tool_timeout": s.Limits.ToolTimeout,
+	} {
+		if v == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(v); err != nil {
+			return fmt.Errorf("manifest: %s: %w", name, err)
 		}
 	}
 
-	for _, d := range s.Guardrails.Mask {
-		if d.Pattern == "" {
-			return fmt.Errorf("guardrail mask: 'pattern' required")
-		}
-
-		if _, err := regexp.Compile(d.Pattern); err != nil {
-			return fmt.Errorf("guardrail mask: pattern %q: %w", d.Pattern, err)
-		}
+	// --- run ---
+	if s.Run.Scheduler.Concurrency < 0 {
+		return fmt.Errorf("[manifest]: run.scheduler.concurrency must be >= 0")
 	}
-
-	for _, dur := range []string{s.Budget.MaxDuration, s.Budget.PerToolTimeout} {
-		if dur != "" {
-			if _, err := time.ParseDuration(dur); err != nil {
-				return fmt.Errorf("budget: invalid duration %q: %w", dur, err)
-			}
-		}
-	}
-
-	if s.Queue.Concurrency < 0 {
-		return fmt.Errorf("manifest: queue.concurrency must be >= 0")
-	}
-	if s.Queue.Retry.Backoff != "" {
-		if _, err := time.ParseDuration(s.Queue.Retry.Backoff); err != nil {
-			return fmt.Errorf("manifest: queue.retry.backoff: %w", err)
+	if b := s.Run.Scheduler.Retry.Backoff; b != "" {
+		if _, err := time.ParseDuration(b); err != nil {
+			return fmt.Errorf("[manifest]: run.scheduler.retry.backoff: %w", err)
 		}
 	}
 	seenTrigger := map[string]bool{}
-	for _, t := range s.Triggers {
+	for i, t := range s.Run.Triggers {
+		switch t.Type {
+		case "every", "daily", "webhook":
+		default:
+			return fmt.Errorf("[manifest]: run.triggers[%d]: type %q not valid (every|daily|webhook)", i, t.Type)
+		}
 		if t.Memory != "" && t.Memory != "fresh" && t.Memory != "persistent" {
-			return fmt.Errorf("manifest: trigger memory must be 'fresh' or 'persistent', got %q", t.Memory)
+			return fmt.Errorf("[manifest]: run.triggers[%d]: memory must be fresh|persistent, found %q", i, t.Memory)
 		}
 		if t.Name != "" {
 			if seenTrigger[t.Name] {
-				return fmt.Errorf("manifest: duplicate trigger name %q", t.Name)
+				return fmt.Errorf("[manifest]: run.triggers: name %q duplicate", t.Name)
 			}
 			seenTrigger[t.Name] = true
 		}
@@ -326,6 +338,16 @@ func (t *ToolRef) UnmarshalYAML(node *yaml.Node) error {
 	var r raw
 	if err := node.Decode(&r); err != nil {
 		return err
+	}
+
+	known := map[string]bool{
+		"name": true, "description": true, "command": true,
+		"args": true, "env": true, "schema": true, "risk": true,
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if k := node.Content[i].Value; !known[k] {
+			return fmt.Errorf("tool: campo sconosciuto %q (riga %d)", k, node.Content[i].Line)
+		}
 	}
 
 	*t = ToolRef(r)

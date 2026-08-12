@@ -1,23 +1,29 @@
-provider: ollama
-model: qwen3.5:9b
+# The minimal manifest: who the agent is, what it can do, what it may do.
+# Everything else (context, limits, run, observability) stays at its defaults.
 
-system_prompt: |
-  Sei un agente generico e questo è il tuo system prompt
+identity:
+  provider: ollama
+  model: qwen3.5:9b
+  prompt: |
+    You are a general-purpose agent, and this is your system prompt.
 
-tools:
-  - read
-  - edit
-  - bash
-  - name: fetch_stock
-    description: "fetch stock data"
-    command: ./tools/.venv/bin/python
-    args: ["tools/stock.py"]
-    schema:
+capabilities:
+  tools:
+    - read
+    - edit
+    - bash
+    - planning                    # a tool, not a flag
+    - name: fetch_stock           # subprocess tool: JSON on stdin, result on stdout
+      description: "fetch stock data"
+      command: ./tools/.venv/bin/python
+      args: ["tools/stock.py"]
+      schema:
         type: object
         properties:
-            symbol: { type: string, description: "stock symbol to fetch" }
+          symbol: { type: string, description: "stock symbol to fetch" }
         required: ["symbol"]
 
-permissions:
+policy:
+  tools:
     bash: deny
     fetch_stock: allow

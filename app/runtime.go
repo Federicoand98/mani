@@ -196,9 +196,6 @@ func (r *Runtime) spawnNamed(name string) (*core.Agent, SubagentSpec, error) {
 	child.SetContextLimit(r.cfg.ContextWindow)
 
 	maxIter := r.cfg.MaxIterations
-	if spec.MaxIterations != 0 {
-		maxIter = spec.MaxIterations
-	}
 	child.SetMaxIterations(maxIter)
 
 	tools, err := r.subagentsTools(spec.Tools)

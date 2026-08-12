@@ -15,6 +15,37 @@ l'esecuzione come stream di `Event`. È un adapter applicativo, non dominio. Un 
 libreria lo salta e cabla `core` da sé.
 _Avoid_: Engine, Orchestrator, App.
 
+**Manifest**:
+Il file YAML che *dichiara* un agente. È il prodotto: la tesi è "agenti come configurazione".
+Ha **8 blocchi di primo livello**, ognuno dei quali risponde a **una sola domanda** (vedi
+§ Grammatica del manifest). Si carica in `RuntimeSpec` con `KnownFields(true)`: una chiave
+sconosciuta è un **errore**, mai un silenzio. _Avoid_: Config (è la config globale in
+`config/`, un'altra cosa), Spec (è il tipo Go, non il documento), Definition.
+
+**Block**:
+Una delle 8 sezioni di primo livello del Manifest. Un blocco = una domanda; se una chiave ne
+risponde a due va spezzata, se a nessuna non è una chiave di manifest.
+_Avoid_: Section, Group, Namespace.
+
+**Policy**:
+Il blocco che risponde a "cosa gli è permesso", su **tre grane**: `tools` (se un tool è
+utilizzabile: allow/ask/deny), `rules` (se la **singola invocazione** passa, guardando
+l'input), `redact` (mascheratura dell'**output**). Meccanismi interni diversi — la prima è
+un gate, le altre due sono hook — ma un'unica domanda, quindi un unico blocco.
+_Avoid_: Permissions (è solo la prima grana), Guardrails (era il nome delle altre due).
+
+**Limits**:
+Il blocco dei **tetti numerici** su un run: token, tool call, durata, iterazioni, timeout per
+tool, profondità dei subagent. Prima erano sparsi in quattro posti.
+_Avoid_: Budget (era il nome parziale), Quota, Constraints.
+
+**Capability**:
+Un'abilità dell'agente dichiarata in `capabilities`: un Tool (built-in, subprocess o MCP), un
+Subagent, il workspace. `planning` e `delegate` **sono tool**, non flag: si dichiarano come
+gli altri. Chiave di manifest e `tool.Name()` a runtime devono coincidere — se divergono, la
+`Policy` non blocca e i Subagent non risolvono, entrambi in silenzio.
+_Avoid_: Feature (era il cassetto senza criterio), Plugin, Skill.
+
 **Trace**:
 La sequenza strutturata di step di un run (llm call, tool call/result, con `run_id` di
 correlazione), emessa come log `slog` a livelli (error/warn/info/debug). Non è nel `core`:
@@ -28,11 +59,34 @@ i suoi tool e li adatta a `tool.Tool`. Rende i tool scrivibili in qualsiasi ling
 adapter sorgente-di-tool, come `tool/fs`. _Avoid_: Plugin, Extension.
 
 **Trigger**:
-Una sorgente di eventi (cron a intervallo, webhook HTTP) che, allo scatto, accoda un task
-eseguito dall'agente. È un **driving adapter** (package `trigger/`, come `cli`/`tui`) che
-guida il `Runtime` da eventi invece che dall'umano. I run sono **serializzati** (una coda,
-un worker) su una sessione condivisa; non essendoci umano, i prompt di permesso seguono una
-**Policy** (deny di default, allow opt-in). _Avoid_: Hook (è middleware del loop), Scheduler.
+Una sorgente di eventi (`every` a intervallo, `daily` a orario, `webhook` HTTP) che, allo
+scatto, accoda un `Task`. È un **driving adapter** (il `Daemon` in `app`) che guida il
+`Runtime` da eventi invece che dall'umano. Ha un'identità stabile (`name`, o un hash di
+tipo+schedule+prompt) che permette il **catch-up** degli scatti persi mentre il processo era
+spento. Non essendoci umano, i prompt di permesso seguono una **Policy** (deny di default,
+allow opt-in). _Avoid_: Hook (è middleware del loop), Cron (è solo uno dei tipi).
+
+**Task**:
+Una singola esecuzione dell'agente generata dallo scatto di un Trigger: porta il prompt, il
+trigger d'origine, la modalità di memoria e lo stato dei tentativi (`attempt`, `next_at`).
+È **durevole**: sopravvive al riavvio, quindi tutto ciò che serve a rieseguirlo sta nel Task
+stesso. Non esiste (per ora) un modo esterno di accodarne.
+_Avoid_: Job, Run (il Run è l'esecuzione, il Task è la richiesta).
+
+**Task Queue**:
+La porta che accoda, consegna e archivia i `Task`. Due adapter: in memoria (default) e su
+filesystem in stile **maildir** — lo stato di un task *è la directory in cui si trova*
+(`pending/`, `running/`, `done/`, `failed/`) e la transizione è un `os.Rename` atomico. Si
+ispeziona con `ls`, si ripara con `mv`. Scelta opposta al `Journal` e per un motivo preciso:
+il journal è un record storico (append-only), la coda è **stato mutabile**.
+_Avoid_: Broker, Bus, Mailbox.
+
+**Scheduler**:
+Il blocco `run.scheduler` del manifest e i worker che ne discendono: governa **come** i Task
+vengono eseguiti (quanti in parallelo, quanti accumularne, quante volte ritentare, se
+sopravvivono al riavvio). **Non contiene task**: quelli nascono a runtime dai Trigger. I suoi
+worker partono da soli — non si dichiara nulla per consumarli.
+_Avoid_: Queue (come nome del blocco: descrive il contenitore, non il comportamento), Pool.
 
 **Emitter**:
 La porta (in `core`) attraverso cui l'Agent comunica verso l'esterno ciò che produce
@@ -84,7 +138,7 @@ _Avoid_: Permission, Choice, Answer.
 
 **Diff Preview**:
 La rappresentazione `+`/`-` di una modifica che un tool di scrittura sta per applicare,
-derivata dall'`input` (es. `old_content`/`new_content` di edit_file) **prima** di eseguire
+derivata dall'`input` (es. `old_content`/`new_content` di `edit`) **prima** di eseguire
 il tool. Viaggia nel campo `Preview` della richiesta di permesso e la TUI la colora, così
 l'utente approva/rifiuta vedendo il cambiamento. Non è un meccanismo a sé: è un
 arricchimento del gate permesso. _Avoid_: Patch, Hunk.
@@ -122,7 +176,7 @@ _Avoid_: Worker, Child agent (in codice "child" ok), Actor.
 **Plan**:
 La todo list del task corrente: una sequenza di `PlanStep` (`description` + `status`:
 pending/in_progress/done). È **model-owned** — il modello la scrive/aggiorna via il tool
-`todo_write` — e **advisory**: il loop non la impone, guida soltanto. Vive nella `Session`
+`planning` — e **advisory**: il loop non la impone, guida soltanto. Vive nella `Session`
 (persiste), viene re-iniettata come reminder a ogni chiamata LLM. Il `core` non la conosce:
 è orchestrazione (tool + hook in `app`). _Avoid_: Tasks, Steps (sono le voci), Workflow.
 
@@ -166,3 +220,46 @@ Interfaccia separata in `core` (`ModelLister`), non parte del port `LLMClient`. 
 comando `/model` fa type-assert: se l'adapter la implementa mostra il picker, altrimenti
 degrada a testo libero.
 _Avoid_: ModelRegistry, Catalog.
+
+---
+
+## Grammatica del manifest
+
+**La regola:** ogni blocco di primo livello risponde a **esattamente una domanda**.
+
+| Blocco | Domanda |
+|---|---|
+| `identity` | chi PENSA? |
+| `capabilities` | cosa SA FARE? |
+| `context` | cosa VEDE e RICORDA? |
+| `output` | cosa RESTITUISCE? |
+| `policy` | cosa GLI È PERMESSO? |
+| `limits` | QUANTO può consumare? |
+| `run` | QUANDO parte e COME viene eseguito? |
+| `observability` | cosa LASCIA DIETRO DI SÉ? |
+
+**Dove va una chiave nuova.** Si pongono queste domande *in quest'ordine*; la prima che
+risponde "sì" vince. L'ordine va dal meno invasivo (osserva soltanto) al più fondante
+(definisce l'agente), così la decisione è deterministica.
+
+```
+1. Registra soltanto, senza cambiare il comportamento?   → observability
+2. Decide QUANDO parte un run, o QUANTI ne girano?       → run
+3. È un tetto numerico su un consumo?                    → limits
+4. Può BLOCCARE o MODIFICARE un'azione?                  → policy
+5. Vincola la FORMA della risposta finale?               → output
+6. Cambia cosa finisce nel CONTESTO del modello?         → context
+7. Aggiunge un'ABILITÀ all'agente?                       → capabilities
+8. Cambia CHI o COSA ragiona?                            → identity
+```
+
+L'albero decide **dove** va una cosa; il filtro-feature decide **se** deve esistere
+(manifest expressiveness / safe autonomy / operability, altrimenti è terreno LangChain).
+Sono due controlli distinti, entrambi necessari.
+
+**Nomi ritirati** (fase 31, rottura netta — `KnownFields(true)` li rifiuta esplicitamente):
+`features` · `permissions` · `guardrails` · `budget` · `queue` · `mcpservers` ·
+`system_prompt` · `output_schema` · `context_window` · `max_iterations` · `triggers` ·
+`tools` e `provider`/`model` di primo livello. Il tool `todo_write` è diventato `planning`;
+i tool `read_file`/`edit_file`/`write_file` sono diventati `read`/`edit`/`write` per far
+coincidere chiave di manifest e nome a runtime.

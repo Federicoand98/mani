@@ -130,10 +130,10 @@ func newNamedDelegateTool(rt *Runtime, maxDepth int, names []string) tool.Tool {
 
 		mem := core.NewInMemory()
 
-		if spec.SystemPrompt != "" {
+		if spec.Prompt != "" {
 			mem.Add(core.Message{
 				Role:    core.RoleSystem,
-				Content: []core.ContentBlock{core.TextBlock{Text: spec.SystemPrompt}},
+				Content: []core.ContentBlock{core.TextBlock{Text: spec.Prompt}},
 			})
 		}
 

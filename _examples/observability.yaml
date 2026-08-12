@@ -1,27 +1,29 @@
-provider: anthropic
-model: claude-sonnet-5
-system_prompt: "Sei un agente di manutenzione notturna."
+# Audit trail: every run leaves a readable record in ./runs
+# (one JSON line per event, one file per run) and via GET /runs with `mani serve`.
 
-tools:
-  - read
-  - bash
+identity:
+  name: nightly-maintainer
+  provider: anthropic
+  model: claude-sonnet-5
+  prompt: "You are a nightly maintenance agent."
 
-guardrails:
-  deny:
-    - tool: bash
-      pattern: "rm\\s+-rf"
-      label: "distruttivo"
-  mask:
-    - pattern: "sk-[a-zA-Z0-9]{20,}"
-      with: "***REDACTED***"
+capabilities:
+  tools: [read, bash]
+
+policy:
+  rules:
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "destructive" }
+  redact:
+    - { pattern: 'sk-[a-zA-Z0-9]{20,}', with: "***REDACTED***" }
+
+run:
+  triggers:
+    - type: daily
+      at: "02:00"
+      prompt: "Check the logs and summarize the anomalies."
 
 observability:
   journal:
     enabled: true
     path: ./runs
-    retention: 200    # ultimi 200 run in RAM
-
-triggers:
-  - type: daily
-    at: "02:00"
-    prompt: "Controlla i log e riassumi le anomalie."
+    retention: 200                # last 200 runs also kept in memory

@@ -1,8 +1,7 @@
 # mani
 
 **A Declarative Agent Runtime in Go.** Define governable AI agents as configuration, run them
-headless, as a service, or on triggers — with permissions, guardrails, budgets and an audit trail
-built in.
+headless, as a service, or on triggers — with policy, limits and an audit trail built in.
 
 > Learning project (`github.com/Federicoand98/mani`): every piece exists for a reason. Minimal,
 > hexagonal, `core/` has zero external dependencies — readable end to end.
@@ -11,10 +10,11 @@ built in.
 
 The thesis is **agents as configuration, not code**. Where it aims to differ from LangChain / LangGraph:
 
-- **Declarative / manifest-first** — an agent (provider, tools, permissions, guardrails, budget,
-  triggers, MCP servers, subagents, output schema) is one YAML file, not glue code.
-- **Governance-first** — permissions, risk levels, guardrails and per-run budgets live in the
-  runtime, so a manifest-defined agent can run **unattended** safely by construction — and the
+- **Declarative / manifest-first** — an agent (model, tools, policy, limits, triggers, MCP
+  servers, subagents, output schema) is one YAML file, not glue code: eight blocks, one
+  question each.
+- **Governance-first** — per-tool policy, risk levels, pattern rules and per-run limits live in
+  the runtime, so a manifest-defined agent can run **unattended** safely by construction — and the
   **run journal** records what it actually did.
 - **Minimal & legible** — hexagonal architecture, no framework sprawl, a single Go binary.
 
@@ -33,21 +33,24 @@ A model (Claude, GPT, a local Llama…) that can **use tools** — read a file, 
 your own script — in a loop, until the task is done. mani is the thing that runs that loop *under
 rules you write*.
 
-### The three questions a manifest answers
+### One block, one question
+
+A manifest has **8 top-level blocks**, and each answers exactly **one** question about the
+agent. That's the whole mental model:
 
 ```yaml
-provider: anthropic                       # 1. WHO thinks?
-model: claude-sonnet-5
+identity:                                 # WHO thinks?
+  provider: anthropic
+  model: claude-sonnet-5
+  prompt: "You are a nightly maintenance agent."
 
-system_prompt: "You are a nightly maintenance agent."
+capabilities:                             # WHAT can it do?
+  tools: [read, bash]
 
-tools:                                    # 2. WHAT can it do?
-  - read
-  - bash
-
-permissions:                              # 3. WHAT is it NOT allowed to do?
-  bash: ask                               # allow | ask | deny
-  read: allow
+policy:                                   # WHAT is it allowed to do?
+  tools:
+    bash: ask                             # allow | ask | deny
+    read: allow
 ```
 
 Save it as `agent.yaml` and run:
@@ -56,19 +59,26 @@ Save it as `agent.yaml` and run:
 mani run --config agent.yaml --task "Summarize the errors in today's log"
 ```
 
+The other five blocks — `context`, `output`, `limits`, `run`, `observability` — are shown
+below. Adding something new? Walk the list top to bottom and the first match wins, so you
+always know where a setting belongs (full table in [CONTEXT.md](CONTEXT.md)).
+
 ### Safety nets you get for free
 
-You don't have to trust the model. You constrain it:
+You don't have to trust the model. You constrain it — `policy` works at three levels of
+granularity, from the coarsest to the finest:
 
 ```yaml
-guardrails:
-  deny:                                   # never, no matter what the model wants
-    - { tool: bash, pattern: 'rm\s+-rf', label: "recursive delete" }
-    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', label: "pipe-to-shell" }
-  mask:                                   # scrub secrets out of tool output
+policy:
+  tools:                                  # 1. THE TOOL: may it be used at all?
+    bash: allow
+  rules:                                  # 2. THE CALL: inspect the input, block this one
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "recursive delete" }
+    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', action: deny, label: "pipe-to-shell" }
+  redact:                                 # 3. THE OUTPUT: scrub secrets before the model sees them
     - { pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }
 
-budget:                                   # a runaway agent can't drain your account
+limits:                                   # a runaway agent can't drain your account
   max_tokens: 50000
   max_tool_calls: 20
   max_duration: 2m
@@ -77,10 +87,11 @@ budget:                                   # a runaway agent can't drain your acc
 ### Let it run by itself, at night
 
 ```yaml
-triggers:
-  - type: daily
-    at: "02:00"
-    prompt: "Check the logs and summarize anomalies."
+run:
+  triggers:
+    - type: daily
+      at: "02:00"
+      prompt: "Check the logs and summarize anomalies."
 ```
 
 ```bash
@@ -109,16 +120,17 @@ Any executable that reads JSON on stdin and writes text on stdout becomes a tool
 a shell script, anything:
 
 ```yaml
-tools:
-  - name: fetch_stock
-    description: "fetch stock data"
-    command: ./tools/.venv/bin/python
-    args: ["tools/stock.py"]
-    schema:
-      type: object
-      properties:
-        symbol: { type: string, description: "stock symbol to fetch" }
-      required: ["symbol"]
+capabilities:
+  tools:
+    - name: fetch_stock
+      description: "fetch stock data"
+      command: ./tools/.venv/bin/python
+      args: ["tools/stock.py"]
+      schema:
+        type: object
+        properties:
+          symbol: { type: string, description: "stock symbol to fetch" }
+        required: ["symbol"]
 ```
 
 ### Get structured data back instead of prose
@@ -126,12 +138,13 @@ tools:
 Declare the shape of the answer and the agent must return exactly that:
 
 ```yaml
-output_schema:
-  type: object
-  properties:
-    sentiment: { type: string, enum: [positive, negative, neutral] }
-    score:     { type: number }
-  required: [sentiment, score]
+output:
+  schema:
+    type: object
+    properties:
+      sentiment: { type: string, enum: [positive, negative, neutral] }
+      score:     { type: number }
+    required: [sentiment, score]
 ```
 
 ```bash
@@ -158,7 +171,7 @@ That makes the agent a **typed function** you can pipe into other programs.
 | Triggers (every / daily / webhook) as a long-lived daemon | ✅ |
 | Agent server (REST + WebSocket, bearer auth) | ✅ |
 | Structured output (typed response schema) | ✅ |
-| Guardrails (deny / mask) + per-run budget | ✅ |
+| Policy: per-tool allow/ask/deny, pattern rules, output redaction + per-run limits | ✅ |
 | Run journal / audit trail (`GET /runs`) | ✅ |
 | Python SDK | 🗺️ roadmap |
 | Deploy & ship tooling (release binaries, containers, service templates) | 🗺️ roadmap |
@@ -203,7 +216,7 @@ mani run --config agent.yaml --task "Summarize the errors in today's log"
 mani run --config agent.yaml --task "..." --verbose      # logs to stderr (default: silent)
 ```
 
-Prints `LastResponse()`, or pretty-printed JSON when the manifest declares an `output_schema`.
+Prints the final text, or pretty-printed JSON when the manifest declares an `output.schema`.
 Permission requests are **fail-closed** (auto-denied) in headless mode — design manifests for
 unattended use with `allow`/`deny`, not `ask`.
 
@@ -213,15 +226,26 @@ Omit `--task` and the manifest's triggers drive the runtime. The scheduler is **
 the same binary and the same manifest work on Linux, macOS and Windows — no systemd/cron needed.
 
 ```yaml
-triggers:
-  - { type: every,   every: 30m, prompt: "Poll the queue and process pending items." }
-  - { type: daily,   at: "02:00", prompt: "Check the logs and summarize anomalies." }
-  - { type: webhook, addr: ":8787", prompt: "Handle this event: {{body}}" }
+run:
+  triggers:
+    - { type: every,   every: 30m, name: disk-watch, prompt: "Report partitions above 85%." }
+    - { type: daily,   at: "02:00", name: nightly, catch_up: true, prompt: "Summarize anomalies." }
+    - { type: webhook, addr: ":8787", prompt: "Handle this event: {{body}}" }
+  scheduler:
+    path: ./queue          # durable: tasks survive restarts and crashes
+    concurrency: 2         # runs executed in parallel
+    retry: { max_attempts: 3, backoff: 30s }
 ```
 
 ```bash
 mani run --config agent.yaml
 ```
+
+Each trigger firing becomes one **task**. With `scheduler.path` set, the queue is a directory
+(`pending/ running/ done/ failed/`) you can inspect with `ls`: tasks survive a crash, failed
+ones are retried with backoff, and a `daily` trigger with `catch_up: true` recovers a firing
+missed while the process was down. Its workers start on their own — there is nothing to declare
+to consume the queue.
 
 ### 4. Agent server (REST + WebSocket)
 
@@ -313,58 +337,82 @@ HTTP/WebSocket tomorrow — same channel).
 
 ## Manifest reference
 
+Eight blocks, one question each. Unknown keys are a **hard error**, never a silent no-op.
+
+| Block | Question it answers |
+|---|---|
+| `identity` | who thinks? |
+| `capabilities` | what can it do? |
+| `context` | what does it see and remember? |
+| `output` | what does it return? |
+| `policy` | what is it allowed to do? |
+| `limits` | how much may it consume? |
+| `run` | when does it start, and how is it executed? |
+| `observability` | what does it leave behind? |
+
 ```yaml
-provider: anthropic              # ollama | openai | anthropic | copilot | openrouter
-model: claude-sonnet-5
-system_prompt: "..."
-workspace: .                     # default: cwd; every fs tool is confined to it
+identity:
+  name: nightly-maintainer       # identifies the agent
+  description: "..."
+  provider: anthropic            # ollama | openai | anthropic | copilot | openrouter
+  model: claude-sonnet-5
+  prompt: "..."                  # the system prompt
 
-tools: [read, edit, write, bash] # or subprocess objects (see above)
+capabilities:
+  workspace: .                   # default: cwd; every fs tool is confined to it
+  tools: [read, edit, write, bash, planning, delegate]   # or subprocess objects (see above)
+  mcp:
+    - { name: deepwiki, url: https://mcp.deepwiki.com/sse }
+  subagents:                     # named delegates; reachable via the `delegate` tool
+    - name: researcher
+      description: "read-only code exploration, reports file:line"
+      prompt: "..."
+      tools: [read]
+      model: ""                  # "" = inherit
 
-permissions:                     # allow | ask | deny; `default` sets the fallback
-  bash: deny
-  default: allow
-
-features:                        # all on by default
-  planning: true
-  context_injection: true
-  tracing: true
+context:
+  window: 0                      # 0 = inherit from config
+  inject: true                   # pull AGENTS.md into the system prompt
   compaction: { enabled: true, keep: 20 }
-  subagents:  { enabled: true, depth: 5 }
 
-subagents:                       # named delegates with their own prompt/tools/model
-  - name: researcher
-    description: "read-only code exploration, reports file:line"
-    system_prompt: "..."
-    tools: [read]
-    model: ""                    # "" = inherit
+output:
+  schema: { type: object, properties: {...}, required: [...] }
 
-mcpservers:
-  - { name: deepwiki, url: https://mcp.deepwiki.com/sse }
+policy:
+  tools:                         # allow | ask | deny; `default` sets the fallback
+    bash: deny
+    default: allow
+  rules: [{ tool: bash, pattern: 'rm\s+-rf', action: deny, label: "..." }]
+  redact: [{ pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }]
 
-output_schema: { type: object, properties: {...}, required: [...] }
-
-guardrails:
-  deny: [{ tool: bash, pattern: 'rm\s+-rf', label: "..." }]
-  mask: [{ pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }]
-
-budget:
+limits:
   max_tokens: 50000
   max_tool_calls: 20
   max_duration: 2m
-  per_tool_timeout: 15s
+  max_iterations: 15
+  tool_timeout: 15s
+  subagent_depth: 5
+
+run:
+  triggers: [...]
+  scheduler:                     # how triggers are executed — NOT a list of tasks
+    path: ./queue                # present ⇒ the queue survives restarts
+    concurrency: 1
+    max_pending: 64
+    retry: { max_attempts: 3, backoff: 30s }
 
 observability:
+  tracing: true
   journal: { enabled: true, path: ./runs, retention: 200 }
-
-triggers: [...]
-context_window: 0                # 0 = inherit
-max_iterations: 15
 ```
 
-Runnable examples in [`_examples/`](_examples/): `manifest-minimal.yaml`, `manifest.yaml`,
-`guarded.yaml` (guardrails + budget), `sentiment.yaml` (structured output),
-`observability.yaml` (journal + trigger).
+**Built-in tools:** `read` · `edit` · `write` · `bash` · `planning` · `delegate`. The last two
+are ordinary tools, not flags — declare them to enable them. A tool's manifest key is always
+its runtime name, so `policy` and subagent references resolve against the same vocabulary.
+
+Runnable examples in [`_examples/`](_examples/): `manifest-minimal.yaml`, `manifest.yaml`
+(subagents + MCP), `guarded.yaml` (all three policy levels + limits), `sentiment.yaml`
+(structured output), `observability.yaml` (journal + trigger), `queue.yaml` (durable scheduler).
 
 ## Architecture
 
@@ -373,8 +421,8 @@ Dependency arrows always point inward.
 
 ```
 cmd/mani/      composition root — TUI, run, serve
-app/           application service — Runtime, events, manifest, permissions,
-               guardrails, budget, journal, subagents, triggers
+app/           application service — Runtime, events, manifest, policy, limits,
+               journal, task queue, subagents, triggers
 server/        driving adapter — REST + WebSocket
 tui/           driving adapter — terminal UI (BubbleTea)
 core/          domain — Agent, Memory, LLMClient port, hooks, types
@@ -388,7 +436,7 @@ config/        config + credentials on disk       session/  session storage
 Interfaces are defined in the **consuming** package (Go idiom): `LLMClient`, `Memory`,
 `PreToolUseHook` live in `core/`; `Tool` lives in `tool/`.
 
-Governance and observability are **pure composition over hooks** — guardrails, budget and the
+Governance and observability are **pure composition over hooks** — policy rules, limits and the
 journal add zero lines to `core/`. The journal writes append-only JSONL (one file per run) behind
 a `Journal` port, so SQLite/Redis are drop-in adapters later.
 

@@ -22,7 +22,7 @@ func NewReadFileTool(workspaceRoot string) *ReadFileTool {
 // --------------------------------------------------
 
 func (t *ReadFileTool) Name() string {
-	return "read_file"
+	return "read"
 }
 
 func (t *ReadFileTool) Description() string {
@@ -53,12 +53,12 @@ func (t *ReadFileTool) Schema() tool.ToolSchema {
 func (t *ReadFileTool) Execute(ctx context.Context, input map[string]any) (string, error) {
 	raw, ok := input["path"]
 	if !ok {
-		return "", fmt.Errorf("read_file: missing required input 'path'")
+		return "", fmt.Errorf("read: missing required input 'path'")
 	}
 
 	path, ok := raw.(string)
 	if !ok {
-		return "", fmt.Errorf("read_file: input 'path' should be a string")
+		return "", fmt.Errorf("read: input 'path' should be a string")
 	}
 
 	safePath, err := t.Workspace.Resolve(path)
@@ -68,7 +68,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, input map[string]any) (strin
 
 	content, err := os.ReadFile(safePath)
 	if err != nil {
-		return "", fmt.Errorf("read_file: failed to read file: %w", err)
+		return "", fmt.Errorf("read: failed to read file: %w", err)
 	}
 
 	return string(content), nil

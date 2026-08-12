@@ -17,17 +17,17 @@ func NewWorkspace(root string) Workspace {
 func (w Workspace) Resolve(path string) (string, error) {
 	root, err := filepath.Abs(w.root)
 	if err != nil {
-		return "", fmt.Errorf("edit_file: failed to resolve workspace root: %w", err)
+		return "", fmt.Errorf("fs: failed to resolve workspace root: %w", err)
 	}
 
 	abs := filepath.Clean(filepath.Join(root, path))
 
 	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("edit_file: access to path '%s' is outside of the workspace", path)
+		return "", fmt.Errorf("fs: access to path '%s' is outside of the workspace", path)
 	}
 
 	if abs == root {
-		return "", fmt.Errorf("edit_file: path cannot be the workspace root")
+		return "", fmt.Errorf("fs: path cannot be the workspace root")
 	}
 
 	return abs, nil

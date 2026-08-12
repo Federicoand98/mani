@@ -17,7 +17,7 @@ func RegisterPlanning(rt *Runtime) {
 
 func newPlanTool(rt *Runtime) tool.Tool {
 	schema := tool.ToolSchema{
-		Name:        "todo_write",
+		Name:        "planning",
 		Description: `Create or update the to-do list for the current task. ALWAYS pass the entire list (replacing the previous one). 'steps' is a JSON array of objects: {"description": string, "status": "pending"|"in_progress"|"done"}. Use it to plan multi-step tasks and track progress: mark a step as in_progress while working on it, and done when finished.`,
 		InputSchema: tool.InputSchema{
 			Type: "object",

@@ -136,7 +136,7 @@ I payload sono sotto la chiave `payload`:
 
 ```json
 { "type": "token", "payload": { "text": "Ho a disposizione " } }
-{ "type": "tool_result", "payload": { "name": "read_file", "result": "...", "is_error": false } }
+{ "type": "tool_result", "payload": { "name": "read", "result": "...", "is_error": false } }
 { "type": "permission_request", "payload": {
     "request_id": "9f8e7d", "tool_name": "bash", "risk_level": "execute",
     "input": { "cmd": "ls -la" }, "preview": "ls -la" } }
@@ -212,8 +212,8 @@ SID=$(curl -s -XPOST http://localhost:9000/sessions | jq -r .session_id)
 websocat ws://localhost:9000/sessions/$SID/turn
 > {"type":"input","input":"leggi go.mod e dimmi il modulo"}
 < {"type":"token","payload":{"text":"Il modulo "}}
-< {"type":"tool_call","payload":{"name":"read_file","input":{"path":"go.mod"}}}
-< {"type":"tool_result","payload":{"name":"read_file","result":"module github.com/...","is_error":false}}
+< {"type":"tool_call","payload":{"name":"read","input":{"path":"go.mod"}}}
+< {"type":"tool_result","payload":{"name":"read","result":"module github.com/...","is_error":false}}
 < {"type":"token","payload":{"text":"è github.com/Federicoand98/mani"}}
 < {"type":"done"}
 

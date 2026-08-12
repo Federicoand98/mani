@@ -25,7 +25,7 @@ func NewWriteFileTool(workspaceRoot string) *WriteFileTool {
 }
 
 func (t *WriteFileTool) Name() string {
-	return "write_file"
+	return "write"
 }
 
 func (t *WriteFileTool) Description() string {
@@ -60,30 +60,30 @@ func (t *WriteFileTool) Schema() tool.ToolSchema {
 func (t *WriteFileTool) Execute(ctx context.Context, input map[string]any) (string, error) {
 	path, ok := input["path"].(string)
 	if !ok {
-		return "", fmt.Errorf("write_file: path must be a string")
+		return "", fmt.Errorf("write: path must be a string")
 	}
 
 	content, ok := input["content"].(string)
 	if !ok {
-		return "", fmt.Errorf("write_file: content must be a string")
+		return "", fmt.Errorf("write: content must be a string")
 	}
 
 	abs, err := t.Workspace.Resolve(path)
 	if err != nil {
-		return "", fmt.Errorf("write_file: %w", err)
+		return "", fmt.Errorf("write: %w", err)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", fmt.Errorf("write_file: context canceled: %w", err)
+		return "", fmt.Errorf("write: context canceled: %w", err)
 	}
 
 	err = os.WriteFile(abs, []byte(content), 0o644)
 	if err != nil {
-		return "", fmt.Errorf("write_file: error writing file: %w", err)
+		return "", fmt.Errorf("write: error writing file: %w", err)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", fmt.Errorf("write_file: context canceled: %w", err)
+		return "", fmt.Errorf("write: context canceled: %w", err)
 	}
 
 	return fmt.Sprintf("File written to %s", path), nil
