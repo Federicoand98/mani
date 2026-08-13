@@ -41,6 +41,8 @@ func runTUI(ctx context.Context, cfg config.Config) error {
 		WithTool(fstools.NewEditFileTool(ws)).
 		WithTool(fstools.NewWriteFileTool(ws)).
 		WithTool(fstools.NewDeleteFileTool(ws)).
+		WithTool(fstools.NewGlobTool(ws)).
+		WithTool(fstools.NewGrepTool(ws)).
 		WithTool(bash.NewBashTool(ws)).
 		WithTool(fetch.New()).
 		UsePermissionManager()

@@ -36,3 +36,11 @@ func (w Workspace) Resolve(path string) (string, error) {
 
 	return abs, nil
 }
+
+func (w Workspace) Root() (string, error) {
+	root, err := filepath.Abs(w.root)
+	if err != nil {
+		return "", fmt.Errorf("fs: failed to resolve workspace root: %w", err)
+	}
+	return root, nil
+}

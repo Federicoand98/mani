@@ -27,6 +27,8 @@ var toolContructors = map[string]ToolConstructor{
 	"read":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewReadFileTool(deps.Workspace), nil },
 	"edit":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewEditFileTool(deps.Workspace), nil },
 	"write": func(deps ToolDeps) (tool.Tool, error) { return fs.NewWriteFileTool(deps.Workspace), nil },
+	"glob":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewGlobTool(deps.Workspace), nil },
+	"grep":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewGrepTool(deps.Workspace), nil },
 	"bash":  func(deps ToolDeps) (tool.Tool, error) { return bash.NewBashTool(deps.Workspace), nil },
 	"planning": func(deps ToolDeps) (tool.Tool, error) {
 		if deps.Runtime == nil {
