@@ -2,8 +2,10 @@ package bash
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBash_ValidCommand_ReturnsOutput(t *testing.T) {
@@ -17,11 +19,33 @@ func TestBash_ValidCommand_ReturnsOutput(t *testing.T) {
 	}
 }
 
-func TestBash_NonZeroExit_ReturnsError(t *testing.T) {
+func TestBash_NonZeroExit_ReturnsOutputNotError(t *testing.T) {
 	b := NewBashTool(t.TempDir())
-	_, err := b.Execute(context.Background(), map[string]any{"command": "exit 1"})
-	if err == nil || !strings.Contains(err.Error(), "bash:") {
-		t.Errorf("atteso errore wrappato 'bash:', ottenuto %v", err)
+	out, err := b.Execute(context.Background(), map[string]any{
+		"command": "echo boom >&2; exit 3",
+	})
+	if err != nil {
+		t.Fatalf("un exit code non-zero non deve essere un errore del tool, ottenuto: %v", err)
+	}
+	if !strings.Contains(out, "exit status 3") {
+		t.Errorf("il risultato deve riportare l'exit code, ottenuto %q", out)
+	}
+	if !strings.Contains(out, "boom") {
+		t.Errorf("il risultato deve contenere stderr, ottenuto %q", out)
+	}
+}
+
+func TestBash_RespectsExternalTimeout(t *testing.T) {
+	b := NewBashTool(t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := b.Execute(ctx, map[string]any{"command": "sleep 5"})
+	if err == nil {
+		t.Fatal("atteso errore per timeout del context")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("atteso context.DeadlineExceeded, ottenuto %v", err)
 	}
 }
 

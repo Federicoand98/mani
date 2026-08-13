@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
@@ -68,6 +69,9 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = b.workspaceRoot
+
+	cmd.WaitDelay = 100 * time.Millisecond
+
 	out, err := cmd.CombinedOutput()
 
 	if ctx.Err() != nil {
@@ -76,7 +80,11 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		return fmt.Sprintf("bash: exit status %d\n%s", ee.ExitCode(), out), nil
+		return fmt.Sprintf("exit status %d\n%s", ee.ExitCode(), out), nil
+	}
+
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return string(out) + "\n(note: a background process is still running, output may be incomplete)", nil
 	}
 
 	if err != nil {

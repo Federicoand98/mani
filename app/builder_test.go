@@ -7,8 +7,8 @@ import (
 )
 
 func TestBuild_FailsOnUnusableProvider(t *testing.T) {
-	// isola le credenziali: nessun auth.json reale deve influenzare il test
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	spec := DefaultSpec()
 	spec.Identity.Provider = "anthropic"

@@ -63,6 +63,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 	return &Runtime{
 		agent:           agent,
 		cfg:             cfg,
+		clientErr:       clientErr,
 		thinkingEnabled: cfg.Thinking,
 		store:           session.NewInMemoryStore(),
 		current:         session.New(cfg.ActiveModel()),
