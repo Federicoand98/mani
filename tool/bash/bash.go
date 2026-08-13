@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"time"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
@@ -65,9 +64,6 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 	if !ok {
 		return "", fmt.Errorf("bash: command must be a string")
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = b.workspaceRoot
