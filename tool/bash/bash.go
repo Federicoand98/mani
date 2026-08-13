@@ -21,10 +21,11 @@ import (
 
 type BashTool struct {
 	workspaceRoot string
+	shell         shell
 }
 
 func NewBashTool(workspaceRoot string) *BashTool {
-	return &BashTool{workspaceRoot: workspaceRoot}
+	return &BashTool{workspaceRoot: workspaceRoot, shell: detectShell()}
 }
 
 func (b *BashTool) Name() string {
@@ -32,7 +33,10 @@ func (b *BashTool) Name() string {
 }
 
 func (b *BashTool) Description() string {
-	return "Executes bash commands in the workspace folder"
+	return fmt.Sprintf(
+		"Executes a shell command in the workspace folder. The shell is %s - write commands in that dialect.",
+		b.shell.dialect,
+	)
 }
 
 func (b *BashTool) RiskLevel() core.RiskLevel {
