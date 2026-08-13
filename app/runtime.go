@@ -22,7 +22,6 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
-	"github.com/Federicoand98/mani/llm/ollama"
 	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/mcp"
@@ -41,6 +40,7 @@ type Runtime struct {
 	subagents       map[string]SubagentSpec
 	journal         Journal
 	cancel          context.CancelFunc
+	clientErr       error      // != nil if provider is not available
 	mu              sync.Mutex // protege l'accesso a cancel
 }
 
@@ -51,9 +51,9 @@ func NewFromConfig(cfg config.Config) *Runtime {
 	// var client core.LLMClient = ollama.NewOllamaClient(cfg.OllamaBaseURL, cfg.Model)
 	// client = NewRetryClient(client, 3, 500*time.Millisecond)
 
-	client, err := newLLMClient(cfg, auth)
-	if err != nil {
-		client = NewRetryClient(ollama.NewOllamaClient(cfg.ProviderBaseURL("ollama"), cfg.ProviderModel("ollama")), 3, 500*time.Millisecond)
+	client, clientErr := newLLMClient(cfg, auth)
+	if clientErr != nil {
+		client = unavailableClient{err: clientErr}
 	}
 
 	agent := core.NewAgent(client)
@@ -144,6 +144,7 @@ func (r *Runtime) ListModels(ctx context.Context) ([]string, error) {
 
 func (r *Runtime) Provider() string  { return r.cfg.Provider }
 func (r *Runtime) ModelName() string { return r.cfg.ActiveModel() }
+func (r *Runtime) ClientErr() error  { return r.clientErr }
 
 func (r *Runtime) SetMaxIterations(n int) *Runtime {
 	r.agent.SetMaxIterations(n)
@@ -158,6 +159,7 @@ func (r *Runtime) rebuildClient() error {
 	}
 
 	r.agent.Client = client
+	r.clientErr = nil
 	return nil
 }
 

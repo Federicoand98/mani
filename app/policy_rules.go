@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/Federicoand98/mani/core"
 )
@@ -70,7 +72,80 @@ func RegisterPolicyRules(rt *Runtime, spec PolicySpec) {
 	}
 }
 
+func RegisterNetworkPolicy(rt *Runtime, spec NetworkSpec) {
+	if len(spec.Allow) == 0 && len(spec.Deny) == 0 {
+		return
+	}
+
+	rt.agent.AddPreToolUseHook(func(ctx context.Context, toolName string, level core.RiskLevel, input map[string]any) error {
+		if level != core.RiskNetwork {
+			return nil
+		}
+
+		raw, _ := input["url"].(string)
+		if raw == "" {
+			return fmt.Errorf("[network policy]: tool %q has risk 'network' but no 'url' input to check", toolName)
+		}
+
+		u, err := url.Parse(raw)
+		if err != nil {
+			return fmt.Errorf("[network policy]: invalid url %q: %w", raw, err)
+		}
+
+		host := strings.ToLower(u.Hostname())
+
+		for _, p := range spec.Deny {
+			if matchHost(p, host) {
+				return fmt.Errorf("[network policy]: host %q is denied", host)
+			}
+		}
+
+		if len(spec.Allow) == 0 {
+			return nil
+		}
+
+		for _, p := range spec.Allow {
+			if matchHost(p, host) {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("[network policy]: host %q is not in policy.network.allow", host)
+	})
+}
+
 func serializeInput(in map[string]any) string {
 	b, _ := json.Marshal(in)
 	return string(b)
+}
+
+func matchHost(pattern, host string) bool {
+	pattern = strings.ToLower(pattern)
+	if strings.HasPrefix(pattern, "*.") {
+		return strings.HasSuffix(host, pattern[1:])
+	}
+	return pattern == host
+}
+
+func hostAllowedFunc(spec NetworkSpec) func(string) bool {
+	if len(spec.Allow) == 0 && len(spec.Deny) == 0 {
+		return nil
+	}
+	return func(host string) bool {
+		host = strings.ToLower(host)
+		for _, p := range spec.Deny {
+			if matchHost(p, host) {
+				return false
+			}
+		}
+		if len(spec.Allow) == 0 {
+			return true
+		}
+		for _, p := range spec.Allow {
+			if matchHost(p, host) {
+				return true
+			}
+		}
+		return false
+	}
 }

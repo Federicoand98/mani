@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -12,6 +13,14 @@ import (
 	"github.com/Federicoand98/mani/llm/openai"
 	"github.com/Federicoand98/mani/llm/openrouter"
 )
+
+type unavailableClient struct{ err error }
+
+func (c unavailableClient) Send(ctx context.Context, messages []core.Message, tools []core.ToolDefinition, tokenHandler core.TokenHandler) (core.LLMResponse, error) {
+	return core.LLMResponse{}, c.err
+}
+
+var _ core.LLMClient = unavailableClient{}
 
 func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 	provider, model := cfg.Provider, cfg.ActiveModel()

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log/slog"
 	"os"
 
@@ -13,16 +12,16 @@ import (
 
 func runServer(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	configPath := fs.String("config", "", "path al manifest YAML")
-	addr := fs.String("addr", ":9000", "indirizzo di ascolto")
+	configPath := fs.String("config", "", "path to the YAML manifest")
+	addr := fs.String("addr", ":9000", "listen address")
 	tokenFlag := fs.String("token", "", "bearer token")
 	insecure := fs.Bool("insecure", false, "run without auth (dev-only)")
-	_ = fs.Bool("verbose", false, "mostra i log (serve li mostra comunque)")
-	_ = fs.Bool("debug", false, "alias di --verbose")
+	_ = fs.Bool("verbose", false, "show verbose logs (server always shows them)")
+	_ = fs.Bool("debug", false, "alias for --verbose")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {
-		return fmt.Errorf("serve: --config richiesto")
+		return usagef("--config is required")
 	}
 
 	token := *tokenFlag
@@ -31,7 +30,7 @@ func runServer(ctx context.Context, args []string) error {
 	}
 
 	if token == "" && !*insecure {
-		return fmt.Errorf("serve: no token or --insecure flag set")
+		return usagef("no token: set --token, MANI_SERVER_TOKEN, or pass --insecure")
 	}
 
 	if token == "" {

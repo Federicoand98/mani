@@ -6,16 +6,18 @@ import (
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/bash"
+	"github.com/Federicoand98/mani/tool/fetch"
 	"github.com/Federicoand98/mani/tool/fs"
 	"github.com/Federicoand98/mani/tool/subprocess"
 )
 
 // ToolDeps: dependencies for a tool that needs to be passed to the tool's constructor
 type ToolDeps struct {
-	Workspace string
-	Runtime   *Runtime
-	Subagents []SubagentSpec
-	Depth     int
+	Workspace   string
+	Runtime     *Runtime
+	Subagents   []SubagentSpec
+	Depth       int
+	HostAllowed func(host string) bool
 }
 
 // ToolConstructor: build a tool from the given dependencies
@@ -52,6 +54,13 @@ var toolContructors = map[string]ToolConstructor{
 		}
 
 		return newNamedDelegateTool(deps.Runtime, depth, names), nil
+	},
+	"fetch": func(deps ToolDeps) (tool.Tool, error) {
+		var opts []fetch.Option
+		if deps.HostAllowed != nil {
+			opts = append(opts, fetch.WithHostAllowd(deps.HostAllowed))
+		}
+		return fetch.New(opts...), nil
 	},
 }
 

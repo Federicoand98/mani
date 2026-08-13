@@ -14,16 +14,32 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fail("config load", err)
+		fail(exitUsage, "config load", err)
 	}
 
-	sub := ""
+	arg := ""
 	if len(os.Args) > 1 {
-		sub = os.Args[1]
+		arg = os.Args[1]
 	}
+
+	switch arg {
+	case "-h", "--help", "help":
+		usage(os.Stdout)
+		return
+	case "-v", "--version", "version":
+		fmt.Println(versionString())
+		return
+	}
+
+	if strings.HasPrefix(arg, "-") {
+		fmt.Fprintf(os.Stderr, "mani: unknown flag %q\n\n", arg)
+		usage(os.Stderr)
+		os.Exit(exitUsage)
+	}
+
 	// destinazione log: serve → stderr; run → silenzioso (discard) salvo --verbose/--debug; TUI → file
 	dest := "file"
-	switch sub {
+	switch arg {
 	case "serve":
 		dest = "stderr"
 	case "run":
@@ -38,31 +54,23 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "run":
-			if err := runFromManifest(ctx, os.Args[2:]); err != nil {
-				fail("run", err)
-			}
-			return
-		case "serve":
-			if err := runServer(ctx, os.Args[2:]); err != nil {
-				fail("serve", err)
-			}
-			return
+	if arg == "" {
+		if err := runTUI(ctx, cfg); err != nil {
+			fail(exitRuntime, "tui", err)
 		}
+		return
 	}
 
-	if err := runTUI(ctx, cfg); err != nil {
-		fail("tui", err)
+	cmd, ok := lookupCommand(arg)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "mani: unknown command %q\n\n", arg)
+		usage(os.Stderr)
+		os.Exit(exitUsage)
 	}
-}
 
-// fail stampa l'errore su stderr (visibile nel terminale, non solo nel log slog
-// che è rediretto su file) ed esce con status 1.
-func fail(context string, err error) {
-	fmt.Fprintf(os.Stderr, "mani %s: %v\n", context, err)
-	os.Exit(1)
+	if err := cmd.run(ctx, os.Args[2:]); err != nil {
+		fail(exitCodeFor(err), cmd.name, err)
+	}
 }
 
 // hasFlag: true se uno dei nomi compare tra gli args (accetta -x, --x, --x=val).

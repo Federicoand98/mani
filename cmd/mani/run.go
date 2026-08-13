@@ -12,14 +12,14 @@ import (
 
 func runFromManifest(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", "", "path al manifest YAML")
-	task := fs.String("task", "", "task headless; se assente avvia i trigger del manifest")
-	_ = fs.Bool("verbose", false, "mostra i log sul terminale (default: silenzioso)")
-	_ = fs.Bool("debug", false, "alias di --verbose")
+	configPath := fs.String("config", "", "path to the YAML manifest")
+	task := fs.String("task", "", "run a single task headlessly; without it, the manifest tringgers are started")
+	_ = fs.Bool("verbose", false, "print logs to the terminal (default: quiet)")
+	_ = fs.Bool("debug", false, "alias for --verbose")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {
-		return fmt.Errorf("run: --config richiesto")
+		return usagef("--config is required")
 	}
 
 	spec, err := app.LoadManifest(*configPath)
@@ -36,7 +36,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 	// nessun task → daemon dei trigger
 	if *task == "" {
 		if len(spec.Run.Triggers) == 0 {
-			return fmt.Errorf("run: nessun --task e nessun trigger nel manifest")
+			return usagef("no --task given and no triggers in the manifest")
 		}
 		d, err := app.BuildDaemon(rt, spec)
 		if err != nil {

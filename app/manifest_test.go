@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Federicoand98/mani/core"
 )
 
 // writeManifest scrive un manifest temporaneo e ne ritorna il path.
@@ -358,8 +360,12 @@ func TestValidate_Rejects(t *testing.T) {
 func TestValidate_AcceptsKnownTools(t *testing.T) {
 	s := DefaultSpec()
 	s.Capabilities.Tools = []ToolRef{
-		{Name: "read"}, {Name: "edit"}, {Name: "write"},
-		{Name: "bash"}, {Name: "planning"}, {Name: "delegate"},
+		{Name: "read"},
+		{Name: "edit"},
+		{Name: "write"},
+		{Name: "bash"},
+		{Name: "planning"},
+		{Name: "delegate"},
 	}
 	if err := s.Validate(); err != nil {
 		t.Fatalf("i sei built-in devono passare: %v", err)
@@ -460,5 +466,23 @@ func TestExamples_AllLoad(t *testing.T) {
 				t.Errorf("%s non carica: %v", filepath.Base(p), err)
 			}
 		})
+	}
+}
+
+func TestRiskLevel_String_CoversAllLevels(t *testing.T) {
+	cases := map[core.RiskLevel]string{
+		core.RiskNone: "none", core.RiskNetwork: "network",
+		core.RiskWrite: "write", core.RiskExecute: "execute",
+	}
+	for level, want := range cases {
+		if got := level.String(); got != want {
+			t.Errorf("RiskLevel(%d).String() = %q, want %q", level, got, want)
+		}
+	}
+}
+
+func TestRiskNetwork_IsNotRiskNone(t *testing.T) {
+	if core.RiskNetwork == core.RiskNone {
+		t.Fatal("RiskNetwork must differ from RiskNone")
 	}
 }

@@ -29,6 +29,10 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 
 	rt := NewFromConfig(cfg)
 
+	if err := rt.ClientErr(); err != nil {
+		return nil, fmt.Errorf("[builder]: identity.provider %q: %w", spec.Identity.Provider, err)
+	}
+
 	// i subagent vanno noti PRIMA di costruire il tool delegate (gli servono i nomi per l'enum)
 	if len(spec.Capabilities.Subagents) > 0 {
 		rt.subagents = make(map[string]SubagentSpec, len(spec.Capabilities.Subagents))
@@ -38,16 +42,21 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	}
 
 	deps := ToolDeps{
-		Workspace: ws,
-		Runtime:   rt,
-		Subagents: spec.Capabilities.Subagents,
-		Depth:     spec.Limits.SubagentDepth,
+		Workspace:   ws,
+		Runtime:     rt,
+		Subagents:   spec.Capabilities.Subagents,
+		Depth:       spec.Limits.SubagentDepth,
+		HostAllowed: hostAllowedFunc(spec.Policy.Network),
 	}
 
 	// 1. tool
-	var toolTimeout time.Duration
+	toolTimeout := 60 * time.Second
 	if spec.Limits.ToolTimeout != "" {
-		toolTimeout, _ = time.ParseDuration(spec.Limits.ToolTimeout)
+		d, err := time.ParseDuration(spec.Limits.ToolTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("build: limits.tool_timeout: %w", err)
+		}
+		toolTimeout = d
 	}
 
 	for _, ref := range spec.Capabilities.Tools {
@@ -91,6 +100,10 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	// 5. policy
 	if len(spec.Policy.Rules) > 0 || len(spec.Policy.Redact) > 0 {
 		RegisterPolicyRules(rt, spec.Policy)
+	}
+
+	if len(spec.Policy.Network.Allow) > 0 || len(spec.Policy.Network.Deny) > 0 {
+		RegisterNetworkPolicy(rt, spec.Policy.Network)
 	}
 
 	// 6. limits

@@ -118,12 +118,15 @@ type RiskLevel int
 
 const (
 	RiskNone RiskLevel = iota
+	RiskNetwork
 	RiskWrite
 	RiskExecute
 )
 
 func (r RiskLevel) String() string {
 	switch r {
+	case RiskNetwork:
+		return "network"
 	case RiskWrite:
 		return "write"
 	case RiskExecute:

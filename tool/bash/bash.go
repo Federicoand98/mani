@@ -5,6 +5,7 @@ package bash
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 
@@ -68,6 +69,16 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = b.workspaceRoot
 	out, err := cmd.CombinedOutput()
+
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("bash: %w", ctx.Err())
+	}
+
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return fmt.Sprintf("bash: exit status %d\n%s", ee.ExitCode(), out), nil
+	}
+
 	if err != nil {
 		return "", fmt.Errorf("bash: %w", err)
 	}

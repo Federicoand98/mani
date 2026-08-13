@@ -101,9 +101,10 @@ const (
 )
 
 type PolicySpec struct {
-	Tools  map[string]RiskPolicy `yaml:"tools"`
-	Rules  []RuleSpec            `yaml:"rules"`
-	Redact []RedactSpec          `yaml:"redact"`
+	Tools   map[string]RiskPolicy `yaml:"tools"`
+	Rules   []RuleSpec            `yaml:"rules"`
+	Redact  []RedactSpec          `yaml:"redact"`
+	Network NetworkSpec           `yaml:"network"`
 }
 
 type RuleSpec struct {
@@ -116,6 +117,11 @@ type RuleSpec struct {
 type RedactSpec struct {
 	Pattern string `yaml:"pattern"`
 	With    string `yaml:"with"`
+}
+
+type NetworkSpec struct {
+	Allow []string `yaml:"allow"`
+	Deny  []string `yaml:"deny"`
 }
 
 // --- 6. limits ---
@@ -356,6 +362,8 @@ func (t *ToolRef) UnmarshalYAML(node *yaml.Node) error {
 
 func (r RiskName) toCore() core.RiskLevel {
 	switch r {
+	case "network":
+		return core.RiskNetwork
 	case "write":
 		return core.RiskWrite
 	case "execute":
