@@ -9,7 +9,7 @@ While the version is `0.x`, breaking changes may land in any minor release.
 
 ## [Unreleased]
 
-First public release. Before tagging, move this section to `## [0.1.0] - YYYY-MM-DD`.
+First public release. Before tagging, move this section to `## [0.1.1] - 2026-08-14`.
 
 ### Added
 
@@ -40,5 +40,5 @@ First public release. Before tagging, move this section to `## [0.1.0] - YYYY-MM
 - **Library use**: import `github.com/Federicoand98/mani` and wire the core with
   your own adapters.
 
-[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Federicoand98/mani/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Federicoand98/mani/releases/tag/v0.1.1
