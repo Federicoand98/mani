@@ -66,6 +66,15 @@ func (t ToolResultBlock) BlockType() string {
 	return "tool_result"
 }
 
+type ImageBlock struct {
+	MediaType string // image/png, image/jpeg, image/gif, image/webp
+	Data      []byte
+}
+
+func (t ImageBlock) BlockType() string {
+	return "image"
+}
+
 // Message rappresenta un messaggio generico.
 type Message struct {
 	Role    Role // "user", "assistant", "system", "tool"

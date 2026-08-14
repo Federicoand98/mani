@@ -21,10 +21,17 @@ type antContent struct {
 	Text      string         `json:"text,omitempty"`
 	ID        string         `json:"id,omitempty"`
 	Name      string         `json:"name,omitempty"`
+	Source    *antSource     `json:"source,omitempty"`
 	Input     map[string]any `json:"input,omitempty"`
 	ToolUseID string         `json:"tool_use_id,omitempty"`
 	Content   []antContent   `json:"content,omitempty"`
 	IsError   bool           `json:"is_error,omitempty"`
+}
+
+type antSource struct {
+	Type      string `json:"type"` // "base64"
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type antTool struct {

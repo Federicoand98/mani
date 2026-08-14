@@ -20,6 +20,8 @@ func EstimateTokens(messages []Message) int {
 				}
 			case ToolResultBlock:
 				chars += len(v.Content)
+			case ImageBlock:
+				chars += (len(v.Data) / 750) * 4
 			}
 		}
 	}

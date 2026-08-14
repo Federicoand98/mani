@@ -25,10 +25,12 @@ type messageDTO struct {
 
 // è volutamente piatto -> tiene i campi di tutti i tipi di plocco con un discrimatore. Omitempty tiene il blocco pulito
 type blockDTO struct {
-	Type      string         `json:"type"` // "text" | "tool_use"
+	Type      string         `json:"type"` // "text" | "tool_use" | "tool_result" | "image"
 	Text      string         `json:"text,omitempty"`
 	ID        string         `json:"id,omitempty"`
 	Name      string         `json:"name,omitempty"`
+	MediaType string         `json:"media_type,omitempty"`
+	Data      string         `json:"data,omitempty"`
 	Input     map[string]any `json:"input,omitempty"`
 	ToolUseID string         `json:"tool_use_id,omitempty"`
 	Content   string         `json:"content,omitempty"`

@@ -1,5 +1,7 @@
 package openai
 
+import "encoding/json"
+
 type oaiMessage struct {
 	Role       string        `json:"role"`
 	Content    string        `json:"content,omitempty"`
@@ -92,4 +94,26 @@ type oaiModelsResponse struct {
 	Data []struct {
 		ID string `json:"id"`
 	} `json:"data"`
+}
+
+type oaiContent struct {
+	text  string
+	parts []oaiPart
+}
+
+type oaiPart struct {
+	Type     string       `json:"type"` // "text" | "image_url"
+	Text     string       `json:"text,omitempty"`
+	ImageURL *oaiImageURL `json:"image_url,omitempty"`
+}
+
+type oaiImageURL struct {
+	URL string `json:"url"` // data:image/png;base64,....
+}
+
+func (c oaiContent) MarshalJSON() ([]byte, error) {
+	if len(c.parts) == 0 {
+		return json.Marshal(c.text)
+	}
+	return json.Marshal(c.parts)
 }

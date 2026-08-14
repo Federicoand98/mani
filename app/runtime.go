@@ -328,7 +328,7 @@ func (r *Runtime) OnSessionEnd(fn func(context.Context, *SessionEventPayload) er
 
 // ----------------------------------
 
-func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input string) (<-chan Event, context.CancelFunc) {
+func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input string, attachments ...core.ContentBlock) (<-chan Event, context.CancelFunc) {
 	ch := make(chan Event, 32)
 
 	var runCtx context.Context
@@ -382,8 +382,8 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 	return ch, cancel
 }
 
-func (r *Runtime) Execute(ctx context.Context, input string) <-chan Event {
-	ch, cancel := r.ExecuteIn(ctx, r.current, input)
+func (r *Runtime) Execute(ctx context.Context, input string, attachments ...core.ContentBlock) <-chan Event {
+	ch, cancel := r.ExecuteIn(ctx, r.current, input, attachments...)
 
 	r.mu.Lock()
 	r.cancel = cancel

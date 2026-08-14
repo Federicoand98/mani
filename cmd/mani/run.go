@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/core"
 )
 
 func runFromManifest(ctx context.Context, args []string) error {
@@ -17,6 +18,9 @@ func runFromManifest(ctx context.Context, args []string) error {
 	_ = fs.Bool("verbose", false, "print logs to the terminal (default: quiet)")
 	_ = fs.Bool("debug", false, "alias for --verbose")
 	_ = fs.Parse(args)
+
+	var images stringList
+	fs.Var(&images, "image", "attach an image to the task (repeatable)")
 
 	if *configPath == "" {
 		return usagef("--config is required")
@@ -47,8 +51,17 @@ func runFromManifest(ctx context.Context, args []string) error {
 		return nil
 	}
 
+	var attachments []core.ContentBlock
+	for _, p := range images {
+		img, err := app.LoadImage(p)
+		if err != nil {
+			return usagef("%v", err)
+		}
+		attachments = append(attachments, img)
+	}
+
 	// turno singolo headless
-	for ev := range rt.Execute(ctx, *task) {
+	for ev := range rt.Execute(ctx, *task, attachments...) {
 		switch ev.Type {
 		case app.EventPermissionRequest:
 			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny // fail-closed

@@ -44,14 +44,16 @@ func NewAgent(client LLMClient) *Agent {
 	}
 }
 
-func (a *Agent) Run(ctx context.Context, memory Memory, userInput string, em Emitter) (RunResult, error) {
+func (a *Agent) Run(ctx context.Context, memory Memory, userInput string, em Emitter, attachments ...ContentBlock) (RunResult, error) {
 	if em == nil {
 		em = nopEmitter{}
 	}
 
 	var finalResult map[string]any
 
-	memory.Add(Message{Role: RoleUser, Content: []ContentBlock{TextBlock{Text: userInput}}})
+	content := []ContentBlock{TextBlock{Text: userInput}}
+	content = append(content, attachments...)
+	memory.Add(Message{Role: RoleUser, Content: content})
 
 	onToken := func(token string, isThinking bool) {
 		if isThinking {
