@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Federicoand98/mani/core"
@@ -28,11 +30,12 @@ type RuntimeSpec struct {
 // --- 1. identity ---
 
 type IdentitySpec struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Provider    string `yaml:"provider"`
-	Model       string `yaml:"model"`
-	Prompt      string `yaml:"prompt"`
+	Name          string `yaml:"name"`
+	Description   string `yaml:"description"`
+	Provider      string `yaml:"provider"`
+	Model         string `yaml:"model"`
+	Prompt        string `yaml:"prompt"`
+	promptInclude string `yaml:"-"`
 }
 
 // --- 2. capabilities ---
@@ -205,6 +208,10 @@ func LoadManifest(path string) (RuntimeSpec, error) {
 		return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
 	}
 
+	if err := spec.resolveIncludes(filepath.Dir(path)); err != nil {
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: resolve includes %s: %w", path, err)
+	}
+
 	if err := spec.Validate(); err != nil {
 		return RuntimeSpec{}, fmt.Errorf("[manifest]: validate %s: %w", path, err)
 	}
@@ -358,6 +365,89 @@ func (t *ToolRef) UnmarshalYAML(node *yaml.Node) error {
 
 	*t = ToolRef(r)
 	return nil
+}
+
+const includeTag = "!include"
+
+func (i *IdentitySpec) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("identity: expected a mapping (line %d)", node.Line)
+	}
+
+	known := map[string]bool{
+		"name": true, "description": true, "provider": true, "model": true, "prompt": true,
+	}
+
+	for k := 0; k+1 < len(node.Content); k += 2 {
+		key, val := node.Content[k], node.Content[k+1]
+
+		if !known[key.Value] {
+			return fmt.Errorf("identity: unknown field %q (line %d)", key.Value, key.Line)
+		}
+
+		if val.Tag == includeTag && key.Value != "prompt" {
+			return fmt.Errorf("identity: !include is only allowed for prompt (line %d)", val.Line)
+		}
+
+		switch key.Value {
+		case "name":
+			i.Name = val.Value
+		case "description":
+			i.Description = val.Value
+		case "provider":
+			i.Provider = val.Value
+		case "model":
+			i.Model = val.Value
+		case "prompt":
+			if val.Tag == includeTag {
+				i.promptInclude = val.Value
+			} else {
+				i.Prompt = val.Value
+			}
+		}
+	}
+	return nil
+}
+
+const macIncludeBytes = 256 << 10
+
+func (s *RuntimeSpec) resolveIncludes(baseDir string) error {
+	if s.Identity.promptInclude != "" {
+		text, err := readInclude(baseDir, s.Identity.promptInclude)
+		if err != nil {
+			return fmt.Errorf("identity.prompt: %w", err)
+		}
+		s.Identity.Prompt = text
+	}
+	return nil
+}
+
+func readInclude(baseDir, rel string) (string, error) {
+	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) {
+		return "", fmt.Errorf("!include %q: absolute paths are not supported", rel)
+	}
+
+	full := filepath.Join(baseDir, filepath.FromSlash(rel))
+
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", fmt.Errorf("!include %q: %w", rel, err)
+	}
+
+	if info.IsDir() {
+		return "", fmt.Errorf("!include %q: directories are not supported", rel)
+	}
+
+	if info.Size() > macIncludeBytes {
+		return "", fmt.Errorf("!include %q: file is too large", rel)
+	}
+
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", fmt.Errorf("!include %q: %w", rel, err)
+	}
+
+	return string(data), nil
 }
 
 func (r RiskName) toCore() core.RiskLevel {

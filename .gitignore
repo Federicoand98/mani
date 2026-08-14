@@ -42,3 +42,6 @@ _examples/custom-tool/custom-tool
 _examples/headless-agent/headless-agent
 _examples/hooks/hooks
 _examples/aiws/
+
+# artefatti di goreleaser
+dist/

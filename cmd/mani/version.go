@@ -6,13 +6,31 @@ import (
 	"runtime/debug"
 )
 
+var version string
+
 func versionString() string {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "mani (unknown version)"
+	bi, _ := debug.ReadBuildInfo()
+
+	v := version
+	if v == "" {
+		v = versionFromBuildInfo(bi)
+	}
+
+	goVer := runtime.Version()
+	if bi != nil && bi.GoVersion != "" {
+		goVer = bi.GoVersion
+	}
+
+	return fmt.Sprintf("mani %s %s/%s (%s)", v, runtime.GOOS, runtime.GOARCH, goVer)
+}
+
+func versionFromBuildInfo(bi *debug.BuildInfo) string {
+	if bi == nil {
+		return "unknown"
 	}
 
 	v := bi.Main.Version
+
 	var rev string
 	var dirty bool
 	for _, s := range bi.Settings {
@@ -27,15 +45,15 @@ func versionString() string {
 		}
 	}
 
-	if (v == "" || v == "(devel)") && rev != "" {
+	if v == "" || v == "(devel)" {
+		if rev == "" {
+			return "devel"
+		}
 		v = rev
 		if dirty {
 			v += "-dirty"
 		}
 	}
-	if v == "" {
-		v = "devel"
-	}
 
-	return fmt.Sprintf("mani %s %s/%s (go %s)", v, runtime.GOOS, runtime.GOARCH, bi.GoVersion)
+	return v
 }
