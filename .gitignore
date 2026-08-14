@@ -45,3 +45,7 @@ _examples/aiws/
 
 # artefatti di goreleaser
 dist/
+
+# journal generato dalla demo
+_examples/demo/runs/
+_examples/demo/queue/

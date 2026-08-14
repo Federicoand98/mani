@@ -1,0 +1,29 @@
+# Act 3 of the demo: extend it in any language.
+#
+# A tool is any executable: mani writes the arguments as JSON on stdin and reads
+# the result from stdout. No plugin SDK, no Go, no rebuild — and the tool is
+# governed like every other one, because it declares its own risk level.
+
+identity:
+  name: ops
+  provider: copilot
+  model: claude-haiku-4.5
+  prompt: "You are an ops assistant. Be brief: one sentence."
+
+capabilities:
+  tools:
+    - name: disk_usage
+      description: Reports free space and usage percentage for a filesystem path
+      command: ./disk.py
+      risk: none
+      schema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: filesystem path to inspect
+        required: [path]
+
+limits:
+  max_iterations: 5
+  max_duration: 2m

@@ -46,7 +46,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		slog.Info("avvio trigger daemon", "triggers", len(spec.Run.Triggers))
+		slog.Info("[daemon]: starting", "triggers", len(spec.Run.Triggers))
 		d.Run(ctx) // bloccante finché ctx non è cancellato
 		return nil
 	}

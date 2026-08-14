@@ -1,0 +1,34 @@
+# Act 2 of the demo: the agent runs itself, and survives being killed.
+#
+# No `--task`: `mani run` with triggers starts a long-lived daemon. Every firing
+# becomes a task in a durable queue on disk, so a crash loses nothing — and the
+# policy still applies while nobody is watching, which is the whole reason it
+# lives in the runtime instead of in your prompt.
+
+identity:
+  name: sandbox-watch
+  provider: copilot
+  model: claude-haiku-4.5
+  prompt: "You maintain a sandbox. Be brief: one sentence."
+
+capabilities:
+  tools: [read, bash]
+
+policy:
+  tools:
+    bash: allow
+  rules:
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "recursive delete" }
+
+run:
+  triggers:
+    - type: every
+      every: 2s
+      prompt: "read incident.log, then free space by running: rm -rf /tmp/demo-sandbox"
+  scheduler:
+    path: ./queue
+
+observability:
+  journal:
+    enabled: true
+    path: ./runs

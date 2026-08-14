@@ -21,6 +21,21 @@ The thesis is **agents as configuration, not code**. Where it aims to differ fro
 The classic coding-agent tools (`read`, `edit`, `write`, `bash`) are **batteries included and the
 canonical example, not the identity** — a coding agent is just one manifest.
 
+## See it
+
+The manifest declares the shape of the answer, the runtime validates it, and the run drops into
+a unix pipeline like any other command:
+
+![An agent returning typed JSON, piped into jq](_examples/demo/triage.gif)
+
+Two more in [`_examples/demo/`](_examples/demo/), with the tapes they were recorded from:
+
+- [`unattended.gif`](_examples/demo/unattended.gif) — no `--task`: the agent starts itself on a
+  trigger, gets `kill -9`'d mid-work, and **resumes the same task** on restart. The journal
+  shows the policy blocking `rm -rf` on every pass, while nobody was watching.
+- [`polyglot.gif`](_examples/demo/polyglot.gif) — eight lines of Python become a governed tool:
+  JSON in on stdin, JSON out on stdout, no plugin SDK and no Go.
+
 ---
 
 # Part 1 — For everyone
@@ -178,7 +193,18 @@ That makes the agent a **typed function** you can pipe into other programs.
 
 ## Install & quick start
 
-Needs Go 1.26+. For the default provider, a local [Ollama](https://ollama.com).
+Needs Go 1.25+ (see `go.mod`). For the default provider, a local [Ollama](https://ollama.com).
+
+```bash
+go install github.com/Federicoand98/mani/cmd/mani@latest
+
+mani init                             # scaffold a commented agent.yaml
+mani validate --config agent.yaml     # check it without running anything
+mani run --config agent.yaml --task "hello"
+mani                                  # or just start the interactive chat
+```
+
+From a clone instead:
 
 ```bash
 git clone https://github.com/Federicoand98/mani

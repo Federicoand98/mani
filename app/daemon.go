@@ -188,7 +188,7 @@ func (d *Daemon) execute(ctx context.Context, t Task, worker int) {
 	// torna in coda senza consumare un tentativo, e riparte al prossimo avvio.
 	if cancelled {
 		_ = d.queue.Retry(t, time.Now())
-		slog.Info("[daemon]: task interrotto, rimesso in coda", "id", t.ID, "trigger", t.Trigger)
+		slog.Info("[daemon]: task interrupted, requeued", "id", t.ID, "trigger", t.Trigger)
 		return
 	}
 

@@ -2,9 +2,11 @@
 
 identity:
   name: system-assistant
-  provider: ollama
-  model: qwen3.5:9b
-  prompt: "You are a system assistant."
+  provider: copilot
+  model: claude-haiku-4.5
+  # "Be brief" non e' cosmesi: la risposta finisce in una GIF accanto al blocco
+  # policy, e una risposta lunga fa scorrere via la regola che si sta dimostrando.
+  prompt: "You are a system assistant. Be brief: at most two sentences."
 
 capabilities:
   tools: [read, bash]
@@ -27,3 +29,11 @@ limits:
   max_tool_calls: 20
   max_duration: 2m
   tool_timeout: 15s
+
+# Il journal e' quello che rende il blocco DIMOSTRABILE. Senza, si vede solo il
+# modello che si scusa — indistinguibile da un modello che declina per conto suo.
+# Qui resta un record: quale regola, su quale tool, con quale etichetta.
+observability:
+  journal:
+    enabled: true
+    path: ./runs
