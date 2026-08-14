@@ -49,3 +49,6 @@ dist/
 # journal generato dalla demo
 _examples/demo/runs/
 _examples/demo/queue/
+
+# binario compilato nella radice (go build ./cmd/mani)
+/mani

@@ -32,10 +32,11 @@ First public release. Before tagging, move this section to `## [0.1.0] - YYYY-MM
 - **Run journal**: every run leaves a readable record on disk, queryable over HTTP.
 - **Agent server** over HTTP and WebSocket with bearer authentication, multi-turn
   conversations and a permission back-channel.
-- **MCP server mode**: expose an agent as a tool to any MCP client.
 - **Interactive terminal chat** with sessions, streaming, and image attachments.
-- **CLI**: `run`, `serve`, `mcp`, `init`, `validate`, `tui`, plus `--help` and
-  `--version`, with distinct exit codes for usage errors and runtime failures.
+- **CLI**: `run`, `serve`, `init`, `validate`, `tui`, plus `--help` and `--version`,
+  with distinct exit codes for usage errors and runtime failures.
+- **`!include`** for long system prompts: `prompt: !include ./prompts/reviewer.md`,
+  resolved relative to the manifest and checked by `mani validate`.
 - **Library use**: import `github.com/Federicoand98/mani` and wire the core with
   your own adapters.
 
