@@ -105,7 +105,6 @@ Unknown keys are a **hard error**, never a silent no-op.
 | [Usage](docs/usage.md) | CLI, trigger daemon, agent server, subprocess tools, library |
 | [Agent server](docs/agent-server.md) | the REST + WebSocket protocol in full |
 | [Agentic loop](docs/agentic-loop.md) | where hooks fire, where permissions gate |
-| [Backlog](docs/backlog.md) | what was deliberately deferred, and why |
 | [`_examples/`](_examples/) | runnable manifests |
 
 ## Status
