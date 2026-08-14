@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -142,6 +143,13 @@ func TestEditFile_NonexistentFile_Errors(t *testing.T) {
 }
 
 func TestEditFile_PreservesPermissions(t *testing.T) {
+	// Windows non ha i bit di permesso POSIX: os.Stat riporta 0666 per qualunque
+	// file scrivibile e 0444 per uno di sola lettura, quindi non esiste un
+	// permesso 0600 da preservare. Non e' un limite di edit, e' del filesystem.
+	if runtime.GOOS == "windows" {
+		t.Skip("i permessi POSIX non esistono su Windows")
+	}
+
 	tool, root := newEditTool(t)
 	p := filepath.Join(root, "a.txt")
 	if err := os.WriteFile(p, []byte("hello"), 0o600); err != nil {

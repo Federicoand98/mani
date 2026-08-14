@@ -3,6 +3,8 @@ package bash
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -67,16 +69,24 @@ func TestBash_CommandNotString_Errors(t *testing.T) {
 
 func TestBash_RunsInWorkspaceDir(t *testing.T) {
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "probe.txt"), []byte("in-workspace"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
 	b := NewBashTool(root)
 
-	out, err := b.Execute(context.Background(), map[string]any{"command": "pwd"})
+	// Si verifica il COMPORTAMENTO — il comando gira dentro il workspace — e non
+	// la stringa stampata da `pwd`. Confrontare i path non puo' funzionare:
+	//   - su macOS t.TempDir() da' /var/... mentre pwd stampa /private/var/...
+	//   - su Windows la shell rilevata e' Git Bash, che stampa un path POSIX
+	//     tradotto ("/tmp/...") dove Go riporta "C:\Users\...\Temp\...".
+	// Leggere un file che esiste solo nel workspace prova la stessa cosa ovunque.
+	out, err := b.Execute(context.Background(), map[string]any{"command": "cat probe.txt"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	// macOS espone /private/var/... ma t.TempDir() restituisce /var/... -> confronto suffix
-	got := strings.TrimSpace(out)
-	if !strings.HasSuffix(got, root) {
-		t.Errorf("pwd %q non termina con root %q", got, root)
+	if !strings.Contains(out, "in-workspace") {
+		t.Errorf("il comando non e' stato eseguito nel workspace, output: %q", out)
 	}
 }
 
