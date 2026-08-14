@@ -8,8 +8,7 @@ headless, as a service, or on triggers — with policy, limits and an audit trai
 
 ## Why mani
 
-The thesis is **agents as configuration, not code**. Where it aims to differ from LangChain /
-LangGraph:
+The thesis is **agents as configuration, not code**.
 
 - **Declarative / manifest-first** — an agent (model, tools, policy, limits, triggers, MCP
   servers, subagents, output schema) is one YAML file, not glue code: eight blocks, one question
