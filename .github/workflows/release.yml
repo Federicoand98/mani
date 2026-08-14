@@ -20,12 +20,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refuse to release a tag that is not on master
+      # Si rilascia SOLO la punta di master. Il controllo precedente usava
+      # `merge-base --is-ancestor`, che verifica soltanto che il commit stia da
+      # qualche parte nella storia di master: v0.1.0 venne taggata sul commit
+      # iniziale (solo .gitignore e LICENSE) e passo' senza un fiato.
+      #
+      # Nota: `--depth=0` non esiste, git vuole un intero positivo. "Tutta la
+      # storia" si ottiene omettendo il flag; il refspec esplicito garantisce
+      # che refs/remotes/origin/master esista davvero.
+      - name: Refuse to release a tag that is not the tip of master
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          git fetch --no-tags --depth=0 origin master
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "::error::tag ${GITHUB_REF_NAME} points at a commit that is not on master; refusing to release"
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+          tip="$(git rev-parse refs/remotes/origin/master)"
+          if [ "$GITHUB_SHA" != "$tip" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not the tip of master (${tip}); refusing to release"
             exit 1
           fi
 
