@@ -1,0 +1,21 @@
+# Structured output: the agent becomes a typed function.
+#   mani run --config _examples/sentiment.yaml --task "the service was terrible"
+#   → {"sentiment": "negative", "score": 0.1}
+
+identity:
+  name: sentiment-classifier
+  description: "Classifies the sentiment of a text"
+  provider: ollama
+  model: qwen3.5:9b
+  prompt: "Classify the sentiment of the text given by the user."
+
+capabilities:
+  tools: []
+
+output:
+  schema:
+    type: object
+    properties:
+      sentiment: { type: string, enum: [positive, negative, neutral] }
+      score: { type: number }
+    required: [sentiment, score]

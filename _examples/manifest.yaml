@@ -1,0 +1,46 @@
+# Full manifest: all eight blocks in use, with subagents and MCP.
+
+identity:
+  name: repo-maintainer
+  description: "Repository maintenance"
+  provider: ollama
+  model: qwen3.5:9b
+  prompt: |
+    You are a repo maintenance agent. Concise, precise.
+    You never edit a file before reading its context.
+
+capabilities:
+  # workspace omitted = os.Getwd(), resolved in Build
+  tools:
+    - read
+    - edit
+    - bash
+    - delegate                    # enables delegation to the subagents below
+  mcp:
+    - name: deepwiki
+      url: https://mcp.deepwiki.com/sse
+  subagents:
+    - name: researcher
+      description: "explores the code read-only, reports with file:line"
+      prompt: "You are a researcher. You change nothing. Answer with file:line references."
+      tools: [read]               # restricted subset
+      model: ""                   # "" = inherit the parent's model
+    - name: coder
+      description: "implements changes once the plan is settled"
+      prompt: "You are an implementer. You apply minimal, targeted changes."
+      tools: [read, edit, write, bash]
+
+context:
+  window: 0                       # 0 = inherit from config
+  compaction:
+    enabled: false                # on by default: here we turn it off
+
+policy:
+  # declared tools are allowed unless overridden
+  tools:
+    bash: deny
+    default: allow
+
+limits:
+  max_iterations: 15
+  subagent_depth: 2

@@ -1,0 +1,35 @@
+# Act 3 of the demo: the agent is a typed function.
+#
+# `output.schema` turns the final answer into validated JSON instead of prose, so
+# the run pipes straight into jq. No tools: it only classifies its input.
+
+identity:
+  name: incident-triage
+  description: Classifies an incident log into a structured verdict
+  provider: copilot
+  model: claude-haiku-4.5
+  prompt: |
+    You triage production incidents. Read the log and classify it.
+    Be terse: the summary is one sentence.
+
+output:
+  schema:
+    type: object
+    properties:
+      severity:
+        type: string
+        enum: [critical, high, medium, low]
+      component:
+        type: string
+        description: the component at fault
+      summary:
+        type: string
+        description: one sentence
+      needs_paging:
+        type: boolean
+        description: should someone be woken up now
+    required: [severity, component, summary, needs_paging]
+
+limits:
+  max_iterations: 5
+  max_duration: 2m

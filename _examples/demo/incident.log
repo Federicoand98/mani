@@ -1,0 +1,7 @@
+2026-08-14T02:11:04Z checkout-api  WARN  db pool: 18/20 connections in use
+2026-08-14T02:11:39Z checkout-api  WARN  db pool: 20/20 connections in use, 4 waiting
+2026-08-14T02:12:02Z checkout-api  ERROR pq: sorry, too many clients already
+2026-08-14T02:12:02Z checkout-api  ERROR POST /orders 500 (2 of 3 pods affected)
+2026-08-14T02:12:47Z checkout-api  ERROR POST /orders 500 (3 of 3 pods affected)
+2026-08-14T02:13:10Z payments      WARN  upstream checkout-api unreachable, retrying
+2026-08-14T02:15:00Z checkout-api  ERROR sustained 100% error rate for 3m

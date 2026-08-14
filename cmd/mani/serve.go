@@ -1,0 +1,46 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log/slog"
+	"os"
+
+	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/server"
+)
+
+func runServer(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	configPath := fs.String("config", "", "path to the YAML manifest")
+	addr := fs.String("addr", ":9000", "listen address")
+	tokenFlag := fs.String("token", "", "bearer token")
+	insecure := fs.Bool("insecure", false, "run without auth (dev-only)")
+	_ = fs.Bool("verbose", false, "show verbose logs (server always shows them)")
+	_ = fs.Bool("debug", false, "alias for --verbose")
+	_ = fs.Parse(args)
+
+	if *configPath == "" {
+		return usagef("--config is required")
+	}
+
+	token := *tokenFlag
+	if token == "" {
+		token = os.Getenv("MANI_SERVER_TOKEN")
+	}
+
+	if token == "" && !*insecure {
+		return usagef("no token: set --token, MANI_SERVER_TOKEN, or pass --insecure")
+	}
+
+	if token == "" {
+		slog.Warn("agent server without AUTH (insecure, dev only)")
+	}
+
+	spec, err := app.LoadManifest(*configPath)
+	if err != nil {
+		return err
+	}
+
+	return server.New(spec, token).ListenAndServe(ctx, *addr)
+}

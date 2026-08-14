@@ -1,0 +1,39 @@
+# Governance: the three levels of `policy` and the ceilings in `limits`.
+
+identity:
+  name: system-assistant
+  provider: copilot
+  model: claude-haiku-4.5
+  # "Be brief" non e' cosmesi: la risposta finisce in una GIF accanto al blocco
+  # policy, e una risposta lunga fa scorrere via la regola che si sta dimostrando.
+  prompt: "You are a system assistant. Be brief: at most two sentences."
+
+capabilities:
+  tools: [read, bash]
+
+policy:
+  # level 1 — THE TOOL: may it be used at all (allow | ask | deny)
+  tools:
+    bash: allow
+    read: allow
+  # level 2 — THE CALL: inspect the input, block this single invocation
+  rules:
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "recursive delete" }
+    - { tool: bash, pattern: 'curl.*\|\s*(sh|bash)', action: deny, label: "pipe-to-shell" }
+  # level 3 — THE OUTPUT: redact before the result goes back to the model
+  redact:
+    - { pattern: 'sk-[A-Za-z0-9]{20,}', with: "***REDACTED***" }
+
+limits:
+  max_tokens: 50000
+  max_tool_calls: 20
+  max_duration: 2m
+  tool_timeout: 15s
+
+# Il journal e' quello che rende il blocco DIMOSTRABILE. Senza, si vede solo il
+# modello che si scusa — indistinguibile da un modello che declina per conto suo.
+# Qui resta un record: quale regola, su quale tool, con quale etichetta.
+observability:
+  journal:
+    enabled: true
+    path: ./runs

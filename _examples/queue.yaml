@@ -1,0 +1,47 @@
+# Unattended, durable execution.
+#
+# `run.scheduler` is NOT a list of tasks: tasks are born when a trigger fires.
+# It governs HOW they are executed — how many in parallel, how many may pile up,
+# how many times to retry, whether they survive a restart (with `path`, its workers
+# start on their own).
+
+identity:
+  name: night-maintainer
+  description: "Unattended nightly maintenance"
+  provider: anthropic
+  model: claude-sonnet-5
+  prompt: "You are a night maintenance agent."
+
+capabilities:
+  tools: [read, bash]
+
+policy:
+  tools:
+    bash: allow                   # headless: use allow/deny, NEVER ask (fail-closed)
+  rules:
+    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "destructive" }
+
+limits:
+  max_tokens: 50000
+  max_duration: 10m
+
+run:
+  triggers:
+    - type: daily
+      at: "02:00"
+      name: nightly-report        # stable identity: required for catch-up
+      catch_up: true              # if I was down at 02:00, run once at startup
+      prompt: "Check the logs and summarize the anomalies."
+    - type: every
+      every: 30m
+      name: disk-watch
+      memory: persistent          # remembers what it already reported, no repeat alerts
+      prompt: "Check disk space and report partitions above 85%."
+  scheduler:
+    path: ./queue                 # ⇒ durable queue: survives restarts and crashes
+    concurrency: 2                # tasks executed in parallel
+    max_pending: 128
+    retry: { max_attempts: 3, backoff: 30s }
+
+observability:
+  journal: { enabled: true, path: ./runs, retention: 200 }

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master, development]
+    # doc-only changes don't need a build
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+
+# One run per branch: pushing again cancels the previous, still-running one.
+# Keeps a fast push cadence from piling up wasted runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^_examples/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        run: go test -race -count=1 ./...
+
+      # _examples/ is skipped by ./... (Go ignores paths starting with "_"),
+      # so build each example explicitly or they silently rot.
+      # - name: build examples
+      #   run: |
+      #     for dir in _examples/*/; do
+      #       [ -f "$dir/main.go" ] || continue
+      #       echo "==> $dir"
+      #       (cd "$dir" && go build ./... && go vet ./...)
+      #     done
+
+  # mani ships an in-process scheduler precisely so it runs everywhere, and the
+  # durable queue relies on os.Rename semantics — so the other OSes must be tested.
+  # Not on every development push though: it's the slow, expensive half of the CI.
+  cross-platform:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go test -count=1 ./...
