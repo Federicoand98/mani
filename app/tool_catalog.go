@@ -24,12 +24,13 @@ type ToolDeps struct {
 type ToolConstructor func(deps ToolDeps) (tool.Tool, error)
 
 var toolContructors = map[string]ToolConstructor{
-	"read":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewReadFileTool(deps.Workspace), nil },
-	"edit":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewEditFileTool(deps.Workspace), nil },
-	"write": func(deps ToolDeps) (tool.Tool, error) { return fs.NewWriteFileTool(deps.Workspace), nil },
-	"glob":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewGlobTool(deps.Workspace), nil },
-	"grep":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewGrepTool(deps.Workspace), nil },
-	"bash":  func(deps ToolDeps) (tool.Tool, error) { return bash.NewBashTool(deps.Workspace), nil },
+	"read":   func(deps ToolDeps) (tool.Tool, error) { return fs.NewReadFileTool(deps.Workspace), nil },
+	"edit":   func(deps ToolDeps) (tool.Tool, error) { return fs.NewEditFileTool(deps.Workspace), nil },
+	"write":  func(deps ToolDeps) (tool.Tool, error) { return fs.NewWriteFileTool(deps.Workspace), nil },
+	"delete": func(deps ToolDeps) (tool.Tool, error) { return fs.NewDeleteFileTool(deps.Workspace), nil },
+	"glob":   func(deps ToolDeps) (tool.Tool, error) { return fs.NewGlobTool(deps.Workspace), nil },
+	"grep":   func(deps ToolDeps) (tool.Tool, error) { return fs.NewGrepTool(deps.Workspace), nil },
+	"bash":   func(deps ToolDeps) (tool.Tool, error) { return bash.NewBashTool(deps.Workspace), nil },
 	"planning": func(deps ToolDeps) (tool.Tool, error) {
 		if deps.Runtime == nil {
 			return nil, fmt.Errorf("[tool_catalog]: runtime is not available")
@@ -60,7 +61,7 @@ var toolContructors = map[string]ToolConstructor{
 	"fetch": func(deps ToolDeps) (tool.Tool, error) {
 		var opts []fetch.Option
 		if deps.HostAllowed != nil {
-			opts = append(opts, fetch.WithHostAllowd(deps.HostAllowed))
+			opts = append(opts, fetch.WithHostAllowed(deps.HostAllowed))
 		}
 		return fetch.New(opts...), nil
 	},

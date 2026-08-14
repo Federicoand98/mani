@@ -67,7 +67,7 @@ func (b *BashTool) Execute(ctx context.Context, input map[string]any) (string, e
 		return "", fmt.Errorf("bash: command must be a string")
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := exec.CommandContext(ctx, b.shell.path, b.shell.flag, command)
 	cmd.Dir = b.workspaceRoot
 
 	cmd.WaitDelay = 100 * time.Millisecond

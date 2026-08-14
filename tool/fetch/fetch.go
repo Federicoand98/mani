@@ -30,7 +30,7 @@ type FetchTool struct {
 
 type Option func(*FetchTool)
 
-func WithHostAllowd(fn func(host string) bool) Option {
+func WithHostAllowed(fn func(host string) bool) Option {
 	return func(ft *FetchTool) { ft.hostAllowed = fn }
 }
 
