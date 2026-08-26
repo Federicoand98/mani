@@ -1,3 +1,5 @@
+
+
 # mani
 
 **A Declarative Agent Runtime in Go.** Define governable AI agents as configuration, run them
@@ -50,7 +52,8 @@ mani                                  # or just start the interactive chat
 ```
 
 Config lives in `~/.config/mani/config.json`; credentials never touch a manifest — they go in
-`$XDG_DATA_HOME/mani/auth.json` (mode 0600), managed with `/login` in the TUI.
+`$XDG_DATA_HOME/mani/auth.json` (default `~/.local/share/mani/auth.json`, mode 0600), managed
+with `/login` in the TUI.
 
 ## One block, one question
 
