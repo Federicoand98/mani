@@ -166,8 +166,7 @@ go build ./... && go test ./...
 3. **Python SDK** — drive the runtime over the agent server.
 
 Feature filter: does it deepen manifest expressiveness, safe autonomy, or operability as a
-service? If not, it's out of scope. Everything postponed on purpose is in
-[docs/backlog.md](docs/backlog.md), with the reason.
+service? If not, it's out of scope.
 
 ## Stability
 
