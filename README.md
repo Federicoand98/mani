@@ -111,14 +111,14 @@ Unknown keys are a **hard error**, never a silent no-op.
 | Area | State |
 |---|---|
 | Declarative manifest (8 blocks) + headless `run` | ✅ |
-| CLI: `init`, `validate`, `run`, `serve`, `tui`, `--version` | ✅ |
+| CLI: `init`, `validate`, `run`, `runs`, `serve`, `tui`, `--version` | ✅ |
 | Providers: Ollama, OpenAI, Anthropic, GitHub Copilot, OpenRouter | ✅ |
 | Tools: `read` `write` `edit` `delete` `glob` `grep` `bash` `fetch` `planning` `delegate` | ✅ |
 | MCP client, subprocess tools in any language | ✅ |
 | Policy: allow/ask/deny, risk levels incl. `network`, rules, redaction, per-run limits | ✅ |
 | Triggers (every / daily / webhook) + durable queue that survives crashes | ✅ |
 | Structured output (typed response schema) | ✅ |
-| Run journal / audit trail (`GET /runs`) | ✅ |
+| Run journal / audit trail (`mani runs`, `GET /runs`) | ✅ |
 | Agent server (REST + WebSocket, bearer auth) | ✅ |
 | Sessions, planning, subagents, hooks, tracing, compaction, image input | ✅ |
 | MCP **server** mode (expose an agent as a tool) | 🚧 next |

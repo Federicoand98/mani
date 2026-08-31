@@ -114,7 +114,8 @@ design manifests for this route with `allow`/`deny`, not `ask`.
 
 ### `GET /runs` and `GET /runs/{id}`
 
-The run journal. `GET /runs` accepts `?session=` and `?limit=` and returns run headers
+The run journal. `GET /runs` accepts `?session=`, `?limit=`, `?status=` (`ok` | `error` |
+`cancelled`) and `?since=` (a duration such as `24h`) and returns run headers
 (status, source, timings, token/tool/blocked counters); `GET /runs/{id}` returns the full record
 including the event list.
 
@@ -123,6 +124,10 @@ cross-session view is served from the shared directory on disk, so a path is req
 
 ```bash
 curl -s -H "Authorization: Bearer $MANI_SERVER_TOKEN" "http://localhost:9000/runs?limit=5"
+curl -s -H "Authorization: Bearer $MANI_SERVER_TOKEN" "http://localhost:9000/runs?status=error&since=24h"
+
+The same filters are available offline with `mani runs --status error --since 24h`:
+one vocabulary for HTTP and the terminal.
 ```
 
 ---
