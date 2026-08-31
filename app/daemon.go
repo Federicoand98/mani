@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -54,12 +55,15 @@ type Daemon struct {
 	addr          string
 	webhookPrompt string
 	webhookMemory string
+	webhookToken  string
 	policy        Policy
 	concurrency   int
 	maxAttempts   int           // tentativi massimi per task
 	backoff       time.Duration // backoff base (esponenziale sui tentativi)
 	state         *triggerState
 }
+
+const maxWebhookBody = 64 << 10 // 64KB
 
 func NewTrigger(rt *Runtime, q TaskQueue) *Daemon {
 	return &Daemon{
@@ -94,10 +98,11 @@ func (d *Daemon) Daily(id, clock, prompt, memory string, catchUp bool) *Daemon {
 	return d
 }
 
-func (d *Daemon) Webhook(addr, promptTemplate, memory string) *Daemon {
+func (d *Daemon) Webhook(addr, promptTemplate, memory string, token string) *Daemon {
 	d.addr = addr
 	d.webhookPrompt = promptTemplate
 	d.webhookMemory = memory
+	d.webhookToken = token
 	return d
 }
 
@@ -242,18 +247,39 @@ func (d *Daemon) runDaily(ctx context.Context, dl dailySpec) {
 }
 
 func (d *Daemon) runWebhook(ctx context.Context) {
+	if host, _, err := net.SplitHostPort(d.addr); err == nil && (host == "" || host == "0.0.0.0" || host == "::") {
+		slog.Warn("[daemon]: webhook listening on all interfaces", "addr", d.addr, "hint", "use 127.0.0.1:PORT to restrict access to localhost")
+	}
+
+	srv := &http.Server{Addr: d.addr, Handler: d.webhookHandler()}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+
+	slog.Info("[daemon]: webhook listening", "addr", d.addr, "path", "/hook")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Error("[daemon]: webhook server", "err", err)
+	}
+}
+
+func (d *Daemon) webhookHandler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/hook", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed (POST only)", http.StatusMethodNotAllowed)
 			return
 		}
 
-		body, _ := io.ReadAll(r.Body)
-		sbody := strings.TrimSpace(string(body))
-		prompt := renderWebhookPrompt(d.webhookPrompt, sbody)
+		r.Body = http.MaxBytesReader(w, r.Body, maxWebhookBody)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 
+		prompt := renderWebhookPrompt(d.webhookPrompt, strings.TrimSpace(string(body)))
 		if prompt == "" {
 			http.Error(w, "empty prompt", http.StatusBadRequest)
 			return
@@ -267,16 +293,7 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 		}
 	})
 
-	srv := &http.Server{Addr: d.addr, Handler: mux}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Close()
-	}()
-
-	slog.Info("webhook listening", "addr", d.addr, "path", "/hook")
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("webhook server", "err", err)
-	}
+	return BearerAuth(d.webhookToken, mux)
 }
 
 func (d *Daemon) enqueue(t Task) bool {

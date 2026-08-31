@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,6 +13,12 @@ import (
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/mcp"
 )
+
+type DaemonOption func(*daemonOptions)
+
+type daemonOptions struct {
+	insecure bool
+}
 
 // Build builds a new Runtime from the given RuntimeSpec.
 func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
@@ -140,7 +147,18 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	return rt, nil
 }
 
-func BuildDaemon(rt *Runtime, spec RuntimeSpec) (*Daemon, error) {
+func AllowInsercureWebhook() DaemonOption {
+	return func(o *daemonOptions) {
+		o.insecure = true
+	}
+}
+
+func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, error) {
+	var o daemonOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	q, err := buildQueue(spec.Run.Scheduler)
 	if err != nil {
 		return nil, fmt.Errorf("build: queue: %w", err)
@@ -175,7 +193,14 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec) (*Daemon, error) {
 		case "daily":
 			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
 		case "webhook":
-			d.Webhook(t.Addr, t.Prompt, t.Memory)
+			token := os.Getenv("MANI_WEBHOOK_TOKEN")
+			if token == "" && !o.insecure {
+				return nil, fmt.Errorf("build: webhook trigger %q: MANI_WEBHOOK_TOKEN not set (or pass --insecure to run without authentication)", id)
+			}
+			if token == "" {
+				slog.Warn("[daemon]: webhook trigger without authentication (insecure, dev only)", "trigger", id, "addr", t.Addr)
+			}
+			d.Webhook(t.Addr, t.Prompt, t.Memory, token)
 		default:
 			return nil, fmt.Errorf("build: invalid trigger type %q", t.Type)
 		}
