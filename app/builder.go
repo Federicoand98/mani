@@ -89,15 +89,29 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 		sysPrompt += "\n\nThis agent has an output schema: finish ALWAYS using the `respond` tool with an object matching the schema. Do not respond with plain text."
 	}
 
-	// 4. context
+	// 1. observability
+	if spec.Observability.Tracing {
+		RegisterTracing(rt)
+	}
+
+	if spec.Observability.Journal.Enabled {
+		j, err := buildJournal(spec.Observability.Journal)
+		if err != nil {
+			return nil, fmt.Errorf("build: journal: %w", err)
+		}
+		RegisterJournal(rt, j)
+	}
+
+	// 2. context
 	if spec.Context.Inject {
 		registerContextInjectionWith(rt, sysPrompt, ws)
 	}
+
 	if spec.Context.Compaction.Enabled {
 		RegisterTrimCompaction(rt, spec.Context.Compaction.Keep)
 	}
 
-	// 5. policy
+	// 3. policy
 	if len(spec.Policy.Rules) > 0 || len(spec.Policy.Redact) > 0 {
 		RegisterPolicyRules(rt, spec.Policy)
 	}
@@ -106,24 +120,12 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 		RegisterNetworkPolicy(rt, spec.Policy.Network)
 	}
 
-	// 6. limits
+	// 4. limits
 	if spec.Limits.MaxTokens > 0 || spec.Limits.MaxToolCalls > 0 {
 		RegisterBudget(rt, spec.Limits)
 	}
 	if spec.Limits.MaxDuration != "" {
 		rt.maxDuration, _ = time.ParseDuration(spec.Limits.MaxDuration)
-	}
-
-	// 7. observability
-	if spec.Observability.Tracing {
-		RegisterTracing(rt)
-	}
-	if spec.Observability.Journal.Enabled {
-		j, err := buildJournal(spec.Observability.Journal)
-		if err != nil {
-			return nil, fmt.Errorf("build: journal: %w", err)
-		}
-		RegisterJournal(rt, j)
 	}
 
 	// 8. MCP
