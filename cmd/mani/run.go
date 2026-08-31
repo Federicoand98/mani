@@ -46,7 +46,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 
 		var opts []app.DaemonOption
 		if *insecure {
-			opts = append(opts, app.AllowInsercureWebhook())
+			opts = append(opts, app.AllowInsecureWebhook())
 		}
 
 		d, err := app.BuildDaemon(rt, spec, opts...)
