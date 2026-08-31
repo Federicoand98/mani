@@ -101,6 +101,31 @@ exfiltration channel for a file the agent just read. Network tools are additiona
 `policy.network`, and refuse private, loopback and link-local addresses at dial time — a
 allowlisted name that resolves to `127.0.0.1` must not reach the agent's own server.
 
+## Environment variables
+
+A manifest is meant to be committed, so anything secret is *referenced*, never written:
+
+```yaml
+capabilities:
+  tools:
+    - name: deploy
+      command: ./deploy.sh
+      env: { API_TOKEN: ${DEPLOY_TOKEN} }
+```
+
+The rules are deliberately narrow:
+
+| | |
+|---|---|
+| Only `${VAR}` with braces | a bare `$VAR` would false-positive in every bash command and regex pattern |
+| Only values, never keys | a key is structure, not data |
+| Never inside block scalars (`\|`, `>`) | `identity.prompt` is prose; eating its `${}` would be a bug that surfaces much later |
+| String fields only | interpolating into a number or a boolean is not supported |
+| An undefined variable is an **error** | not an empty string: a blank token would silently mean "authentication disabled" |
+| Not expanded inside `!include`d files | those are prose too |
+
+`mani validate` resolves them, so a missing variable fails in CI rather than at 3am.
+
 ## `!include`
 
 A real system prompt is a hundred lines, and YAML is a bad place for it:

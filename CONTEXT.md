@@ -111,6 +111,17 @@ pre/post LLM call in the core; session start/end on the orchestrator side). It r
 `HookEvent` (`Type` + pointer payload) and may observe, **mutate** the data in place, or abort
 by returning an `error`. Uniform: every hook receives every event and filters on `Type`. The
 payload is valid only for the duration of the call.
+
+**Registration order is semantic, not cosmetic.** `PreToolUse` hooks form a chain that stops at
+the first one returning an error, so they are registered **observation → mutation → decision**:
+tracing and the journal first (they always return `nil` and must see everything), then the hooks
+that rewrite the payload, then policy, network and budget, which can abort. Register them the
+other way round and a denied tool call reaches neither the logs nor the journal — the one event
+an operator most wants to see is the one that disappears.
+
+In `PostToolUse` the order is **reversed**: redaction *mutates* the result, so it must run before
+observation, or the journal keeps the secrets in clear. Two chains, one principle applied in
+opposite directions.
 _Avoid_: Filter, Interceptor, Listener.
 
 **HookEvent**:

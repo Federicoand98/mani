@@ -10,6 +10,7 @@ mani init                 scaffold a commented agent.yaml
 mani validate --config    check a manifest without running anything
 mani run --config         one task, or the trigger daemon
 mani serve --config       expose the agent over HTTP/WebSocket
+mani runs   --config      list past runs, or replay one as a timeline
 mani tui                  the interactive chat, named explicitly
 mani --help  --version
 ```
@@ -60,9 +61,24 @@ run:
     retry: { max_attempts: 3, backoff: 30s }
 ```
 
+A `webhook` trigger needs a bearer token — the daemon refuses to start without one:
+
 ```bash
+export MANI_WEBHOOK_TOKEN=secret
 mani run --config agent.yaml
+
+mani run --config agent.yaml --insecure   # dev only: no authentication
 ```
+
+```bash
+curl -XPOST -H "Authorization: Bearer $MANI_WEBHOOK_TOKEN" \
+     -d '{"alert":"disk full"}' localhost:8787/hook
+```
+
+The request body flows into the prompt, so an unauthenticated endpoint is prompt
+injection with tool access. The body is capped at 64 KB. An `addr` without a host
+(`:8787`) listens on **every** interface — use `127.0.0.1:8787` to keep it local; mani
+warns when it doesn't.
 
 Each trigger firing becomes one **task**. With `scheduler.path` set, the queue is a directory
 (`pending/ running/ done/ failed/`) you can inspect with `ls`: a task's state *is* the directory
@@ -72,7 +88,46 @@ Workers start on their own — there is nothing to declare to consume the queue.
 
 See [`_examples/demo/unattended.tape`](../_examples/demo/) for this happening under a `SIGKILL`.
 
-## 4. Agent server (REST + WebSocket)
+## 4. Inspecting the journal
+
+Every run leaves a record; `mani runs` reads it without a server running.
+
+```bash
+mani runs --config agent.yaml                  # the last 20 runs
+mani runs --config agent.yaml --status error --since 24h
+mani runs --config agent.yaml --json | jq '.[].summary.blocked'
+mani runs --path ./runs                        # a journal directory directly
+```
+
+```
+ID            STATUS  STARTED              DURATION  TOKENS   TOOLS  BLOCKED
+82fdb6ffaa1b  ok      2026-08-31 18:06:10  3.6s      681/96   2      1
+a159f37dccb6  error   2026-08-31 18:05:02  1.2s      412/18   1      0
+```
+
+One run in full, as a timeline. A unique id prefix is enough, as with `git`:
+
+```bash
+mani runs --config agent.yaml 82fdb6
+```
+
+```
+run 82fdb6ffaa1b  ok  2026-08-31 18:06:10 → 18:06:13 (3.6s)
+source: trigger:every   tokens: 681 in / 96 out   tools: 2   blocked: 1
+
+18:06:11.8  tool_call      read       {"path":"incident.log"}
+18:06:11.8  tool_result    read       ok  559 bytes
+18:06:12.1  tool_call      delegate   {"agent":"researcher"}
+18:06:12.4     |- llm_call     messages=4 tools=2
+18:06:12.9     |- tool_result  read  ok  1204 bytes
+18:06:13.1  guardrail      bash       deny  "recursive delete"
+18:06:13.6  run_end        ok
+```
+
+Subagent events are indented: the journal is a flat log *read* as a tree, which is why
+every event carries a depth.
+
+## 5. Agent server (REST + WebSocket)
 
 ```bash
 export MANI_SERVER_TOKEN=secret
@@ -106,7 +161,7 @@ The WebSocket carries `token` / `thinking` / `tool_call` / `tool_result` / `usag
 frames, plus `permission_request` — the client answers with a `request_id` and a decision, so
 approvals work over the wire. Full protocol in [agent-server.md](agent-server.md).
 
-## 5. Subprocess tools
+## 6. Subprocess tools
 
 A tool is any executable: mani writes the JSON input on **stdin**, reads the result from
 **stdout** (stderr on a non-zero exit becomes the error the model sees). Declare `risk`
@@ -130,7 +185,7 @@ capabilities:
 A worked example, eight lines of Python: [`_examples/demo/disk.py`](../_examples/demo/disk.py)
 with [`_examples/demo-polyglot.yaml`](../_examples/demo-polyglot.yaml).
 
-## 6. Library usage
+## 7. Library usage
 
 `mani` is importable — skip the CLI and wire a `Runtime` yourself:
 

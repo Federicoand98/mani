@@ -200,23 +200,37 @@ func LoadManifest(path string) (RuntimeSpec, error) {
 		return RuntimeSpec{}, fmt.Errorf("[manifest]: read %s: %w", path, err)
 	}
 
+	{
+		probe := DefaultSpec()
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&probe); err != nil && !errors.Is(err, io.EOF) {
+			return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+		}
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: unmarshal %s: %w", path, err)
+	}
+
+	if err := expandEnvNodes(&root); err != nil {
+		return RuntimeSpec{}, fmt.Errorf("[manifest]: expand env %s: %w", path, err)
+	}
+
 	spec := DefaultSpec()
 
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true)
-	if err := dec.Decode(&spec); err != nil && !errors.Is(err, io.EOF) {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+	if len(root.Content) > 0 {
+		if err := root.Decode(&spec); err != nil {
+			return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+		}
 	}
 
 	if err := spec.resolveIncludes(filepath.Dir(path)); err != nil {
 		return RuntimeSpec{}, fmt.Errorf("[manifest]: resolve includes %s: %w", path, err)
 	}
 
-	if err := spec.Validate(); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: validate %s: %w", path, err)
-	}
-
-	return spec, nil
+	return spec, spec.Validate()
 }
 
 func (s RuntimeSpec) Validate() error {
@@ -448,6 +462,62 @@ func readInclude(baseDir, rel string) (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// expandEnvNodes replaces ${VAR} in the scalar VALUES of the tree, never in
+// keys. It skips block scalars (| and >): these are human-written prose —
+// typically identity.prompt — and stripping their ${} would be a bug that
+// surfaces much later, in production.
+// An undefined variable is an ERROR, not an empty string: token:
+// ${HOOK_TOKEN} with a missing variable would become an empty token, which for
+// BearerAuth means "authentication disabled". The most dangerous silent failure
+// possible.
+func expandEnvNodes(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if err := expandEnvNodes(n.Content[i+1]); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for _, c := range n.Content {
+			if err := expandEnvNodes(c); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		if n.Style == yaml.LiteralStyle || n.Style == yaml.FoldedStyle {
+			return nil
+		}
+		v, err := expandEnvString(n.Value, n.Line)
+		if err != nil {
+			return err
+		}
+		n.Value = v
+	}
+	return nil
+}
+
+var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+func expandEnvString(s string, line int) (string, error) {
+	var missing []string
+
+	out := envRef.ReplaceAllStringFunc(s, func(m string) string {
+		name := envRef.FindStringSubmatch(m)[1]
+		val, ok := os.LookupEnv(name)
+		if !ok {
+			missing = append(missing, name)
+			return m
+		}
+		return val
+	})
+
+	if len(missing) > 0 {
+		return "", fmt.Errorf("line %d: environment variable %s is not set", line, strings.Join(missing, ", "))
+	}
+	return out, nil
 }
 
 func (r RiskName) toCore() core.RiskLevel {

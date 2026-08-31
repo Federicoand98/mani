@@ -15,6 +15,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to the YAML manifest")
 	task := fs.String("task", "", "run a single task headlessly; without it, the manifest tringgers are started")
+	insecure := fs.Bool("insecure", false, "start webhook triggers without authentication (dev only)")
 	_ = fs.Bool("verbose", false, "print logs to the terminal (default: quiet)")
 	_ = fs.Bool("debug", false, "alias for --verbose")
 	_ = fs.Parse(args)
@@ -42,7 +43,13 @@ func runFromManifest(ctx context.Context, args []string) error {
 		if len(spec.Run.Triggers) == 0 {
 			return usagef("no --task given and no triggers in the manifest")
 		}
-		d, err := app.BuildDaemon(rt, spec)
+
+		var opts []app.DaemonOption
+		if *insecure {
+			opts = append(opts, app.AllowInsecureWebhook())
+		}
+
+		d, err := app.BuildDaemon(rt, spec, opts...)
 		if err != nil {
 			return err
 		}

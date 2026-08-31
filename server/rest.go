@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Federicoand98/mani/app"
 )
@@ -103,12 +104,23 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "journal not enabled (set observability.journal.path)", http.StatusNotImplemented)
 		return
 	}
-	f := app.ListFilter{SessionID: r.URL.Query().Get("session")}
-	if l := r.URL.Query().Get("limit"); l != "" {
+
+	q := r.URL.Query()
+	f := app.ListFilter{SessionID: q.Get("session"), Status: q.Get("status")}
+	if l := q.Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil {
 			f.Limit = n
 		}
 	}
+	if s := q.Get("since"); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			http.Error(w, "invalid since duration", http.StatusBadRequest)
+			return
+		}
+		f.Since = time.Now().Add(-d)
+	}
+
 	runs, err := s.journal.List(f)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
