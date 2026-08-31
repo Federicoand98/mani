@@ -42,15 +42,15 @@ func usage(w io.Writer) {
 	fmt.Fprintf(w, `mani - a declarative agent runtime
 
 Usage:
-	mani [command] [flags]
-	mani 					start the interactive terminal chat
+  mani [command] [flags]
+  mani						start the interactive terminal chat
 
 Commands:
-	`)
+`)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, c := range commands {
-		fmt.Fprintf(tw, "%s\t%s\n", c.name, c.summary)
+		fmt.Fprintf(tw, "  %s\t%s\n", c.name, c.summary)
 	}
 	tw.Flush()
 
