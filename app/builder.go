@@ -147,7 +147,7 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 	return rt, nil
 }
 
-func AllowInsercureWebhook() DaemonOption {
+func AllowInsecureWebhook() DaemonOption {
 	return func(o *daemonOptions) {
 		o.insecure = true
 	}

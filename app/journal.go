@@ -28,6 +28,24 @@ type Journal interface {
 type ListFilter struct {
 	SessionID string
 	Limit     int
+	Status    string
+	Since     time.Time
+}
+
+func (f ListFilter) matches(m RunMeta) bool {
+	if f.SessionID != "" && m.SessionID != f.SessionID {
+		return false
+	}
+
+	if f.Status != "" && m.Status != f.Status {
+		return false
+	}
+
+	if !f.Since.IsZero() && m.StartedAt.Before(f.Since) {
+		return false
+	}
+
+	return true
 }
 
 // Events
@@ -39,7 +57,7 @@ const (
 	EvLLMReponse EventKind = "llm_response"
 	EvToolCall   EventKind = "tool_call"
 	EvToolResult EventKind = "tool_result"
-	EvGuardrail  EventKind = "guardrail" // Data["action"] = "denied" | "masked"
+	EvGuardrail  EventKind = "guardrail" // Data["action"] = "deny" | "mask" (vedi recordGovernance)
 	EvRunEnd     EventKind = "run_end"
 )
 
@@ -85,7 +103,7 @@ type RunMeta struct {
 	Summary   Summary   `json:"summary"`
 }
 
-func (r *RunRecord) meta() RunMeta {
+func (r *RunRecord) Meta() RunMeta {
 	return RunMeta{
 		ID: r.ID, SessionID: r.SessionID, Source: r.Source,
 		StartedAt: r.StartedAt, EndedAt: r.EndedAt, Status: r.Status, Summary: r.Summary,
@@ -125,9 +143,9 @@ func (r *RunRecord) apply(ev RunEvent) {
 
 	case EvGuardrail:
 		switch ev.Data["action"].(string) {
-		case "denied":
+		case "deny":
 			r.Summary.Blocked++
-		case "masked":
+		case "mask":
 			r.Summary.Masked++
 		}
 
@@ -251,10 +269,11 @@ func (j *InMemoryJournal) List(f ListFilter) ([]RunMeta, error) {
 
 	out := make([]RunMeta, 0, len(j.runs))
 	for _, rec := range j.runs {
-		if f.SessionID != "" && rec.SessionID != f.SessionID {
+		m := rec.Meta()
+		if !f.matches(m) {
 			continue
 		}
-		out = append(out, rec.meta())
+		out = append(out, rec.Meta())
 	}
 
 	sortMetaNewestFirst(out)
@@ -354,8 +373,18 @@ func (j *JSONLJournal) readRun(runID string) (RunRecord, error) {
 		}
 		rec.apply(ev)
 	}
+	if err := sc.Err(); err != nil {
+		return RunRecord{}, err
+	}
 
-	return rec, sc.Err()
+	// Zero eventi leggibili = file corrotto o troncato. Senza questo controllo
+	// readRun restituirebbe un RunRecord col solo ID, e List lo mostrerebbe come
+	// una run fantasma senza data ne' stato.
+	if len(rec.Events) == 0 {
+		return RunRecord{}, fmt.Errorf("journal: %s: no readable events", runID)
+	}
+
+	return rec, nil
 }
 
 func (j *JSONLJournal) Get(runID string) (RunRecord, error) {
@@ -375,16 +404,24 @@ func (j *JSONLJournal) List(f ListFilter) ([]RunMeta, error) {
 			continue
 		}
 
+		if !f.Since.IsZero() {
+			if info, err := e.Info(); err == nil && info.ModTime().Before(f.Since) {
+				continue
+			}
+		}
+
 		id := name[:len(name)-len(".jsonl")]
 		rec, err := j.readRun(id)
 		if err != nil {
 			continue
 		}
-		if f.SessionID != "" && rec.SessionID != f.SessionID {
+
+		m := rec.Meta()
+		if !f.matches(m) {
 			continue
 		}
 
-		out = append(out, rec.meta())
+		out = append(out, rec.Meta())
 	}
 
 	sortMetaNewestFirst(out)
