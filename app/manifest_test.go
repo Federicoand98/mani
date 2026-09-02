@@ -344,6 +344,12 @@ func TestValidate_Rejects(t *testing.T) {
 		"trigger type invalido": func(s *RuntimeSpec) {
 			s.Run.Triggers = []TriggerSpec{{Type: "sometimes"}}
 		},
+		"daily trigger without a time": func(s *RuntimeSpec) {
+			s.Run.Triggers = []TriggerSpec{{Type: "daily", Prompt: "x"}}
+		},
+		"daily trigger with a timezone suffix": func(s *RuntimeSpec) {
+			s.Run.Triggers = []TriggerSpec{{Type: "daily", At: "09:00 UTC", Prompt: "x"}}
+		},
 	}
 
 	for name, mutate := range cases {
@@ -484,5 +490,142 @@ func TestRiskLevel_String_CoversAllLevels(t *testing.T) {
 func TestRiskNetwork_IsNotRiskNone(t *testing.T) {
 	if core.RiskNetwork == core.RiskNone {
 		t.Fatal("RiskNetwork must differ from RiskNone")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ${VAR} expansion
+// ---------------------------------------------------------------------------
+
+func TestExpandEnvString(t *testing.T) {
+	t.Setenv("MANI_TEST_TOKEN", "s3cr3t")
+	t.Setenv("MANI_TEST_HOST", "example.com")
+	t.Setenv("MANI_TEST_EMPTY", "")
+
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr []string // substrings the error must contain
+	}{
+		{name: "single reference", in: "${MANI_TEST_TOKEN}", want: "s3cr3t"},
+		{name: "reference inside a longer string", in: "Bearer ${MANI_TEST_TOKEN}!", want: "Bearer s3cr3t!"},
+		{name: "several references", in: "${MANI_TEST_HOST}/${MANI_TEST_TOKEN}", want: "example.com/s3cr3t"},
+		{name: "the same reference twice", in: "${MANI_TEST_TOKEN}${MANI_TEST_TOKEN}", want: "s3cr3ts3cr3t"},
+		{name: "no reference at all", in: "plain text", want: "plain text"},
+
+		// Without braces there is no expansion: a bare $VAR would false-positive
+		// in every bash command and every regex pattern in policy.rules.
+		{name: "bare dollar is left alone", in: "$MANI_TEST_TOKEN", want: "$MANI_TEST_TOKEN"},
+		{name: "shell syntax is left alone", in: "rm -rf $HOME/tmp", want: "rm -rf $HOME/tmp"},
+		{name: "not an identifier, left literal", in: "${9NOPE}", want: "${9NOPE}"},
+		{name: "unclosed brace is left literal", in: "${MANI_TEST_TOKEN", want: "${MANI_TEST_TOKEN"},
+
+		{
+			name:    "an undefined variable is an error",
+			in:      "${MANI_TEST_MISSING}",
+			wantErr: []string{"MANI_TEST_MISSING", "not set", "line 7"},
+		},
+		{
+			// All of them at once: fixing one variable per run would be a
+			// miserable way to bring up a manifest.
+			name:    "the error lists every missing variable",
+			in:      "${MANI_TEST_MISSING_A}/${MANI_TEST_MISSING_B}",
+			wantErr: []string{"MANI_TEST_MISSING_A", "MANI_TEST_MISSING_B"},
+		},
+		{
+			// Known gap: only an *undefined* variable is an error. One that is
+			// defined and empty expands to nothing, so `export TOKEN=` still
+			// yields a blank token here.
+			name: "defined but empty expands to nothing",
+			in:   "token: ${MANI_TEST_EMPTY}",
+			want: "token: ",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := expandEnvString(tc.in, 7)
+
+			if len(tc.wantErr) > 0 {
+				if err == nil {
+					t.Fatalf("expandEnvString(%q) = %q, want an error", tc.in, got)
+				}
+				for _, want := range tc.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not mention %q", err, want)
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expandEnvString(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("expandEnvString(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadManifest_EnvExpansion(t *testing.T) {
+	t.Setenv("MANI_TEST_MODEL", "qwen3.5:9b")
+	t.Setenv("MANI_TEST_TOKEN", "s3cr3t")
+
+	s, err := LoadManifest(writeManifest(t, `
+identity:
+  provider: ollama
+  model: ${MANI_TEST_MODEL}
+  prompt: |
+    Never expand ${MANI_TEST_TOKEN} in here.
+capabilities:
+  tools:
+    - name: deploy
+      command: ./deploy.sh
+      schema:
+        type: object
+        properties:
+          target: { type: string }
+        required: [target]
+      env:
+        API_TOKEN: ${MANI_TEST_TOKEN}
+        ${MANI_TEST_MODEL}: literal-key
+`))
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+
+	if s.Identity.Model != "qwen3.5:9b" {
+		t.Errorf("identity.model = %q, want the expanded value", s.Identity.Model)
+	}
+
+	// A block scalar is prose: identity.prompt keeps its ${} verbatim, or a
+	// prompt that talks about shell syntax would be silently rewritten.
+	if !strings.Contains(s.Identity.Prompt, "${MANI_TEST_TOKEN}") {
+		t.Errorf("identity.prompt was expanded: %q", s.Identity.Prompt)
+	}
+
+	env := s.Capabilities.Tools[0].Env
+	if env["API_TOKEN"] != "s3cr3t" {
+		t.Errorf("env[API_TOKEN] = %q, want the expanded value", env["API_TOKEN"])
+	}
+	// Keys are structure, not data: they are never expanded.
+	if _, ok := env["${MANI_TEST_MODEL}"]; !ok {
+		t.Errorf("the key was expanded, env = %v", env)
+	}
+}
+
+func TestLoadManifest_UndefinedEnvIsAnError(t *testing.T) {
+	_, err := LoadManifest(writeManifest(t, `
+identity:
+  provider: ollama
+  model: ${MANI_TEST_DEFINITELY_MISSING}
+`))
+	if err == nil {
+		t.Fatal("expected an error for an undefined variable")
+	}
+	if !strings.Contains(err.Error(), "MANI_TEST_DEFINITELY_MISSING") {
+		t.Errorf("error %q does not name the missing variable", err)
 	}
 }

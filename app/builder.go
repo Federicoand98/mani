@@ -191,6 +191,9 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, 
 			}
 			d.Every(id, dur, t.Prompt, t.Memory)
 		case "daily":
+			if _, _, err := parseClock(t.At); err != nil {
+				return nil, fmt.Errorf("build: trigger %q: %w", id, err)
+			}
 			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
 		case "webhook":
 			token := os.Getenv("MANI_WEBHOOK_TOKEN")

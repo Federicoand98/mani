@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func (d *Daemon) Every(id string, interval time.Duration, prompt, memory string)
 func (d *Daemon) Daily(id, clock, prompt, memory string, catchUp bool) *Daemon {
 	h, m, err := parseClock(clock)
 	if err != nil {
-		slog.Warn("trigger: DailyAt orario invalido", "clock", clock)
+		slog.Error("[daemon]: daily trigger disabled, invalid time", "trigger", id, "at", clock, "err", err)
 		return d
 	}
 
@@ -314,35 +315,87 @@ func (d *Daemon) catchUp(ctx context.Context) {
 		if !dl.catchUp {
 			continue
 		}
-		// ultima occorrenza attesa PRIMA di adesso
-		prev := nextOccurrence(time.Now(), dl.hour, dl.minute).Add(-24 * time.Hour)
+		// the last occurrence expected BEFORE now
+		prev := previousOccurrence(time.Now(), dl.hour, dl.minute)
 		last, ok := d.state.lastRun(dl.id)
 		if ok && !last.Before(prev) {
-			continue // già eseguito dopo l'ultima occorrenza attesa
+			continue // already run after the last expected occurrence
 		}
-		slog.Info("catch-up: trigger perso, accodo", "trigger", dl.id, "expected", prev)
+		slog.Info("[daemon]: catch-up, missed trigger enqueued", "trigger", dl.id, "expected", prev)
 		d.enqueue(Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
 		d.state.mark(dl.id, time.Now())
 	}
 }
 
+// parseClock reads an "HH:MM" wall-clock time in the local timezone.
+//
+// It is deliberately strict about trailing input: fmt.Sscanf ignores whatever
+// follows the pattern, so "09:00 UTC" used to parse as 09:00 local, silently
+// running the trigger at a time the manifest did not ask for.
 func parseClock(clock string) (int, int, error) {
-	var h, m int
-	if _, err := fmt.Sscanf(clock, "%d:%d", &h, &m); err != nil {
-		return 0, 0, fmt.Errorf("expected HH:MM: %w", err)
+	invalid := func() (int, int, error) {
+		return 0, 0, fmt.Errorf("expected HH:MM in local time, found %q", clock)
 	}
+
+	hs, ms, ok := strings.Cut(clock, ":")
+	if !ok || !isDigits(hs) || !isDigits(ms) {
+		return invalid()
+	}
+
+	h, err := strconv.Atoi(hs)
+	if err != nil {
+		return invalid()
+	}
+	m, err := strconv.Atoi(ms)
+	if err != nil {
+		return invalid()
+	}
+
 	if h < 0 || h > 23 || m < 0 || m > 59 {
-		return 0, 0, fmt.Errorf("hour must be between 0 and 23, minute must be between 0 and 59")
+		return 0, 0, fmt.Errorf("hour must be between 0 and 23, minute must be between 0 and 59, found %q", clock)
 	}
 	return h, m, nil
 }
 
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// occurrenceOn returns hour:minute on the day of t shifted by dayOffset days,
+// in t's location.
+//
+// The day is moved here, inside time.Date, instead of by adding 24 hours to the
+// result: across a daylight-saving boundary a day lasts 23 or 25 hours, so
+// adding a fixed 24 would drift the trigger by an hour for the rest of the year.
+// time.Date also normalises the month and year rollover for free.
+func occurrenceOn(t time.Time, dayOffset, hour, minute int) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day()+dayOffset, hour, minute, 0, 0, t.Location())
+}
+
+// nextOccurrence returns the first hour:minute strictly after now.
 func nextOccurrence(now time.Time, hour, minute int) time.Time {
-	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	next := occurrenceOn(now, 0, hour, minute)
 	if !next.After(now) {
-		next = next.Add(24 * time.Hour)
+		next = occurrenceOn(now, 1, hour, minute)
 	}
 	return next
+}
+
+// previousOccurrence returns the most recent hour:minute at or before now.
+func previousOccurrence(now time.Time, hour, minute int) time.Time {
+	prev := occurrenceOn(now, 0, hour, minute)
+	if prev.After(now) {
+		prev = occurrenceOn(now, -1, hour, minute)
+	}
+	return prev
 }
 
 func renderWebhookPrompt(template, body string) string {
