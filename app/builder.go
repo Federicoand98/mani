@@ -191,6 +191,9 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, 
 			}
 			d.Every(id, dur, t.Prompt, t.Memory)
 		case "daily":
+			if _, _, err := parseClock(t.At); err != nil {
+				return nil, fmt.Errorf("build: trigger %q: %w", id, err)
+			}
 			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
 		case "webhook":
 			token := os.Getenv("MANI_WEBHOOK_TOKEN")
@@ -247,7 +250,7 @@ func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager, rt
 	return func(ctx context.Context, toolName string, level core.RiskLevel, input map[string]any) error {
 		switch resolvePolicy(policy, toolName) {
 		case RiskPolicyDeny:
-			rt.recordGovernance(ctx, "denied", toolName, "permission")
+			rt.recordGovernance(ctx, "deny", toolName, "permission")
 			return fmt.Errorf("permission: tool %q denied", toolName)
 		case RiskPolicyAsk:
 			return mgr.check(ctx, toolName, level, input)

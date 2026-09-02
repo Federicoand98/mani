@@ -339,6 +339,11 @@ func (s RuntimeSpec) Validate() error {
 		if t.Memory != "" && t.Memory != "fresh" && t.Memory != "persistent" {
 			return fmt.Errorf("[manifest]: run.triggers[%d]: memory must be fresh|persistent, found %q", i, t.Memory)
 		}
+		if t.Type == "daily" {
+			if _, _, err := parseClock(t.At); err != nil {
+				return fmt.Errorf("[manifest]: run.triggers[%d].at: %w", i, err)
+			}
+		}
 		if t.Name != "" {
 			if seenTrigger[t.Name] {
 				return fmt.Errorf("[manifest]: run.triggers: name %q duplicate", t.Name)
@@ -480,7 +485,7 @@ func expandEnvNodes(n *yaml.Node) error {
 				return err
 			}
 		}
-	case yaml.SequenceNode:
+	case yaml.DocumentNode, yaml.SequenceNode:
 		for _, c := range n.Content {
 			if err := expandEnvNodes(c); err != nil {
 				return err

@@ -109,3 +109,52 @@ func TestBudget_PerRunReset(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Journal: the guardrail vocabulary is a contract between producer and counter
+// ---------------------------------------------------------------------------
+
+// Every producer of a guardrail event must use a word RunRecord.apply counts.
+// manifestPolicyHook used to write "denied" while apply counts "deny", so a tool
+// blocked by policy.tools was recorded but never showed up in Summary.Blocked —
+// the audit trail said the run was clean.
+func TestManifestPolicy_DenyIsCountedAsBlocked(t *testing.T) {
+	client := core.NewMock(
+		core.RespToolCall("1", "bash", map[string]any{"command": "ls"}),
+		core.RespText("done"),
+	)
+	rt := testRuntime(t, client)
+
+	ran := false
+	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
+
+	j := NewInMemoryJournal(10)
+	RegisterJournal(rt, j)
+
+	rt.permission = NewPermissionManager()
+	rt.agent.AddPreToolUseHook(manifestPolicyHook(
+		map[string]RiskPolicy{"bash": RiskPolicyDeny}, rt.permission, rt,
+	))
+
+	drain(rt.Execute(context.Background(), "list the files"))
+
+	if ran {
+		t.Error("policy.tools: deny did not block the tool")
+	}
+
+	metas, err := j.List(ListFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(metas) != 1 {
+		t.Fatalf("got %d runs in the journal, want 1", len(metas))
+	}
+
+	rec, err := j.Get(metas[0].ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if rec.Summary.Blocked != 1 {
+		t.Errorf("Summary.Blocked = %d, want 1: a denied tool must be counted", rec.Summary.Blocked)
+	}
+}
