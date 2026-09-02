@@ -250,7 +250,7 @@ func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager, rt
 	return func(ctx context.Context, toolName string, level core.RiskLevel, input map[string]any) error {
 		switch resolvePolicy(policy, toolName) {
 		case RiskPolicyDeny:
-			rt.recordGovernance(ctx, "denied", toolName, "permission")
+			rt.recordGovernance(ctx, "deny", toolName, "permission")
 			return fmt.Errorf("permission: tool %q denied", toolName)
 		case RiskPolicyAsk:
 			return mgr.check(ctx, toolName, level, input)
