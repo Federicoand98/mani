@@ -1,6 +1,9 @@
 package app
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -360,4 +363,176 @@ func TestRenderWebhookPrompt(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Webhook triggers: one listener, one route each
+// ---------------------------------------------------------------------------
+
+// hookDaemon builds a Daemon with no Runtime: the handler only touches the queue
+// and the webhook specs, so a real runtime would only slow the test down.
+func hookDaemon(specs ...webhookSpec) *Daemon {
+	d := &Daemon{queue: NewInMemoryQueue(16)}
+	for _, w := range specs {
+		d.Webhook("", w)
+	}
+	return d
+}
+
+func post(t *testing.T, srv *httptest.Server, path, token, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+// drainQueue returns the tasks currently queued, without blocking on an empty queue.
+func drainQueue(t *testing.T, q TaskQueue) []Task {
+	t.Helper()
+	var out []Task
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		task, err := q.Claim(ctx)
+		cancel()
+		if err != nil {
+			return out
+		}
+		out = append(out, task)
+	}
+}
+
+// Each route carries its own prompt, memory and trigger id. Before 0.1.4 the
+// Daemon held a single webhook, so the second trigger silently replaced the first.
+func TestWebhook_RoutesAreIndependent(t *testing.T) {
+	d := hookDaemon(
+		webhookSpec{id: "deploy", path: "/deploy", token: "tok-deploy", prompt: "Deploy: {{body}}"},
+		webhookSpec{id: "alert", path: "/alert", token: "tok-alert", prompt: "Triage: {{body}}", memory: "persistent"},
+	)
+	srv := httptest.NewServer(d.webhookHandler())
+	defer srv.Close()
+
+	if got := post(t, srv, "/deploy", "tok-deploy", "v1.2.3").StatusCode; got != http.StatusAccepted {
+		t.Fatalf("/deploy status = %d, want 202", got)
+	}
+	if got := post(t, srv, "/alert", "tok-alert", "disk full").StatusCode; got != http.StatusAccepted {
+		t.Fatalf("/alert status = %d, want 202", got)
+	}
+
+	tasks := drainQueue(t, d.queue)
+	if len(tasks) != 2 {
+		t.Fatalf("queued %d tasks, want 2", len(tasks))
+	}
+
+	byTrigger := map[string]Task{}
+	for _, task := range tasks {
+		byTrigger[task.Trigger] = task
+	}
+
+	deploy, ok := byTrigger["deploy"]
+	if !ok {
+		t.Fatalf("no task with trigger %q; got %v", "deploy", byTrigger)
+	}
+	if deploy.Prompt != "Deploy: v1.2.3" {
+		t.Errorf("deploy prompt = %q", deploy.Prompt)
+	}
+	if deploy.Memory != "" {
+		t.Errorf("deploy memory = %q, want empty", deploy.Memory)
+	}
+
+	alert, ok := byTrigger["alert"]
+	if !ok {
+		t.Fatalf("no task with trigger %q; got %v", "alert", byTrigger)
+	}
+	if alert.Prompt != "Triage: disk full" {
+		t.Errorf("alert prompt = %q", alert.Prompt)
+	}
+	if alert.Memory != "persistent" {
+		t.Errorf("alert memory = %q, want persistent", alert.Memory)
+	}
+}
+
+// Revoking one route's token must not touch the others.
+func TestWebhook_TokenIsPerRoute(t *testing.T) {
+	d := hookDaemon(
+		webhookSpec{id: "deploy", path: "/deploy", token: "tok-deploy", prompt: "{{body}}"},
+		webhookSpec{id: "alert", path: "/alert", token: "tok-alert", prompt: "{{body}}"},
+	)
+	srv := httptest.NewServer(d.webhookHandler())
+	defer srv.Close()
+
+	cases := []struct {
+		name, path, token string
+		want              int
+	}{
+		{"right token", "/deploy", "tok-deploy", http.StatusAccepted},
+		{"the other route's token", "/deploy", "tok-alert", http.StatusUnauthorized},
+		{"no token", "/deploy", "", http.StatusUnauthorized},
+		{"the other route still works", "/alert", "tok-alert", http.StatusAccepted},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := post(t, srv, tc.path, tc.token, "x").StatusCode; got != tc.want {
+				t.Errorf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// A manifest written before 0.1.4 declares no path: it must keep answering on
+// /hook rather than panicking on an empty ServeMux pattern.
+func TestWebhook_DefaultPath(t *testing.T) {
+	d := hookDaemon(webhookSpec{id: "legacy", token: "tok", prompt: "{{body}}"})
+
+	if got := d.webhooks[0].path; got != "/hook" {
+		t.Fatalf("path = %q, want /hook", got)
+	}
+
+	srv := httptest.NewServer(d.webhookHandler())
+	defer srv.Close()
+
+	if got := post(t, srv, "/hook", "tok", "payload").StatusCode; got != http.StatusAccepted {
+		t.Errorf("status = %d, want 202", got)
+	}
+}
+
+func TestWebhook_RejectsBadRequests(t *testing.T) {
+	d := hookDaemon(webhookSpec{id: "h", path: "/hook", token: "tok", prompt: "{{body}}"})
+	srv := httptest.NewServer(d.webhookHandler())
+	defer srv.Close()
+
+	t.Run("GET is refused", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/hook", nil)
+		req.Header.Set("Authorization", "Bearer tok")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("status = %d, want 405", resp.StatusCode)
+		}
+	})
+
+	t.Run("oversized body is refused", func(t *testing.T) {
+		body := strings.Repeat("a", maxWebhookBody+1)
+		if got := post(t, srv, "/hook", "tok", body).StatusCode; got != http.StatusRequestEntityTooLarge {
+			t.Errorf("status = %d, want 413", got)
+		}
+	})
+
+	t.Run("unknown route is 404", func(t *testing.T) {
+		if got := post(t, srv, "/nope", "tok", "x").StatusCode; got != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", got)
+		}
+	})
 }

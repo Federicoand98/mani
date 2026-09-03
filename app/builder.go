@@ -197,14 +197,17 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, 
 			}
 			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
 		case "webhook":
-			token := os.Getenv("MANI_WEBHOOK_TOKEN")
+			token := t.Token
+			if token == "" {
+				token = os.Getenv("MANI_WEBHOOK_TOKEN")
+			}
 			if token == "" && !o.insecure {
 				return nil, fmt.Errorf("build: webhook trigger %q: MANI_WEBHOOK_TOKEN not set (or pass --insecure to run without authentication)", id)
 			}
 			if token == "" {
 				slog.Warn("[daemon]: webhook trigger without authentication (insecure, dev only)", "trigger", id, "addr", t.Addr)
 			}
-			d.Webhook(t.Addr, t.Prompt, t.Memory, token)
+			d.Webhook(t.Addr, webhookSpec{id: id, path: t.Path, token: token, prompt: t.Prompt, memory: t.Memory})
 		default:
 			return nil, fmt.Errorf("build: invalid trigger type %q", t.Type)
 		}

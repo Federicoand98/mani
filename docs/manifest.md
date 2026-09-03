@@ -66,7 +66,13 @@ limits:
   subagent_depth: 5
 
 run:
-  triggers: [...]                # see docs/usage.md
+  triggers:                      # see docs/usage.md
+    - { type: every, every: 30m, prompt: "..." }
+    - { type: daily, at: "02:00", catch_up: true, prompt: "..." }
+    - type: webhook
+      addr: 127.0.0.1:8787       # one listener for every webhook trigger
+      path: /deploy              # one route each; default /hook
+      token: ${DEPLOY_TOKEN}     # per route; falls back to MANI_WEBHOOK_TOKEN
   scheduler:                     # how triggers are executed — NOT a list of tasks
     path: ./queue                # present ⇒ the queue survives restarts
     concurrency: 1

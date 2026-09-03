@@ -162,7 +162,11 @@ func runRuns(ctx context.Context, args []string) error {
 	}
 
 	if id := fs.Arg(0); id != "" {
-		rec, err := j.Get(id)
+		full, err := resolveRunID(j, id)
+		if err != nil {
+			return err
+		}
+		rec, err := j.Get(full)
 		if err != nil {
 			return fmt.Errorf("run %s: %w", id, err)
 		}

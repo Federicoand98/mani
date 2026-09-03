@@ -48,23 +48,32 @@ type dailySpec struct {
 	catchUp bool
 }
 
-type Daemon struct {
-	rt            *Runtime
-	queue         TaskQueue
-	crons         []cronSpec
-	dailies       []dailySpec
-	addr          string
-	webhookPrompt string
-	webhookMemory string
-	webhookToken  string
-	policy        Policy
-	concurrency   int
-	maxAttempts   int           // tentativi massimi per task
-	backoff       time.Duration // backoff base (esponenziale sui tentativi)
-	state         *triggerState
+type webhookSpec struct {
+	id     string
+	path   string
+	prompt string
+	memory string
+	token  string
 }
 
-const maxWebhookBody = 64 << 10 // 64KB
+type Daemon struct {
+	rt          *Runtime
+	queue       TaskQueue
+	crons       []cronSpec
+	dailies     []dailySpec
+	webhooks    []webhookSpec
+	addr        string
+	policy      Policy
+	concurrency int
+	maxAttempts int           // tentativi massimi per task
+	backoff     time.Duration // backoff base (esponenziale sui tentativi)
+	state       *triggerState
+}
+
+const (
+	maxWebhookBody  = 64 << 10 // 64KB
+	defaultHookPath = "/hook"
+)
 
 func NewTrigger(rt *Runtime, q TaskQueue) *Daemon {
 	return &Daemon{
@@ -99,11 +108,16 @@ func (d *Daemon) Daily(id, clock, prompt, memory string, catchUp bool) *Daemon {
 	return d
 }
 
-func (d *Daemon) Webhook(addr, promptTemplate, memory string, token string) *Daemon {
-	d.addr = addr
-	d.webhookPrompt = promptTemplate
-	d.webhookMemory = memory
-	d.webhookToken = token
+func (d *Daemon) Webhook(addr string, w webhookSpec) *Daemon {
+	if addr != "" {
+		d.addr = addr
+	}
+	// il default vive qui perche' e' l'imbuto: http.ServeMux va in panic su un
+	// pattern vuoto, e un manifest pre-0.1.4 non dichiara nessun path.
+	if w.path == "" {
+		w.path = defaultHookPath
+	}
+	d.webhooks = append(d.webhooks, w)
 	return d
 }
 
@@ -267,34 +281,41 @@ func (d *Daemon) runWebhook(ctx context.Context) {
 func (d *Daemon) webhookHandler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/hook", func(w http.ResponseWriter, r *http.Request) {
+	// auth per path: ogni rotta ha il suo token, quindi revocarne uno non tocca le altre
+	for _, w := range d.webhooks {
+		mux.Handle(w.path, BearerAuth(w.token, d.hookHandler(w)))
+	}
+
+	return mux
+}
+
+func (d *Daemon) hookHandler(w webhookSpec) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed (POST only)", http.StatusMethodNotAllowed)
+			http.Error(rw, "method not allowed (POST only)", http.StatusMethodNotAllowed)
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, maxWebhookBody)
+		r.Body = http.MaxBytesReader(rw, r.Body, maxWebhookBody)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			http.Error(rw, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 
-		prompt := renderWebhookPrompt(d.webhookPrompt, strings.TrimSpace(string(body)))
+		prompt := renderWebhookPrompt(w.prompt, strings.TrimSpace(string(body)))
 		if prompt == "" {
-			http.Error(w, "empty prompt", http.StatusBadRequest)
+			http.Error(rw, "empty prompt", http.StatusBadRequest)
 			return
 		}
 
-		if d.enqueue(Task{Source: "webhook", Trigger: "webhook", Prompt: prompt, Memory: d.webhookMemory}) {
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte("accepted\n"))
+		if d.enqueue(Task{Source: "webhook", Trigger: w.id, Prompt: prompt, Memory: w.memory}) {
+			rw.WriteHeader(http.StatusAccepted)
+			_, _ = rw.Write([]byte("accepted\n"))
 		} else {
-			http.Error(w, "queue full, try again later", http.StatusServiceUnavailable)
+			http.Error(rw, "queue full, try again later", http.StatusServiceUnavailable)
 		}
 	})
-
-	return BearerAuth(d.webhookToken, mux)
 }
 
 func (d *Daemon) enqueue(t Task) bool {

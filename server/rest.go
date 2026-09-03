@@ -39,11 +39,14 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
-	rt, ok := s.mgr.get(r.PathValue("id"))
+	id := r.PathValue("id")
+	rt, ok := s.mgr.acquire(id)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	defer s.mgr.release(id)
+
 	s.runChat(w, r, rt)
 }
 
