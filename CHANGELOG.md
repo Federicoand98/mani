@@ -9,6 +9,50 @@ While the version is `0.x`, breaking changes may land in any minor release.
 
 ## [Unreleased]
 
+### Added
+
+- **Multiple webhook triggers.** A manifest can now declare several `webhook`
+  triggers: they share one listener and get one route each, via the new
+  `run.triggers[].path` key (default `/hook`).
+- **`run.triggers[].token`** — the bearer token is declared per route, as a
+  `${VAR}` reference, so two webhooks can hold different secrets and revoking
+  one leaves the others working. When the field is absent the trigger falls
+  back to `MANI_WEBHOOK_TOKEN`, so manifests written before 0.1.4 keep working
+  unchanged.
+- `mani validate` rejects two webhook triggers sharing a `path`, webhook
+  triggers declaring different `addr` values (the listener is one), and a
+  `path` that does not start with `/`.
+
+### Changed
+
+- **`app.Daemon.Webhook` takes a webhook spec instead of four strings.**
+  Breaking for library users; the CLI is unaffected.
+
+### Fixed
+
+- **Only the last webhook trigger existed.** `Daemon` held a single address,
+  prompt, memory and token, and `BuildDaemon` overwrote them once per trigger,
+  so a manifest with two webhooks silently ran only the second.
+- **The journal could not tell webhooks apart.** Every webhook task was
+  recorded with the literal trigger name `webhook`, discarding the id computed
+  from the trigger. Tasks now carry their own trigger id.
+- **`${VAR}` in a manifest was never expanded.** `expandEnvNodes` did not
+  handle the document node returned when unmarshalling into a `yaml.Node`, so
+  the walk stopped before reaching any value: references reached the runtime
+  verbatim and an undefined variable was not reported. The feature shipped
+  inert in 0.1.3.
+- **Daily triggers drifted by an hour across a daylight-saving boundary.**
+  `nextOccurrence` added a fixed 24 hours, but a day lasts 23 or 25 hours
+  around a transition; the same bug, mirrored, affected `catch_up`. Both now
+  use calendar arithmetic.
+- **`at` silently accepted trailing junk.** `fmt.Sscanf` ignored whatever
+  followed the pattern, so `at: "09:00 UTC"` scheduled 09:00 local time. It is
+  now a validation error, and an invalid time refuses to start the daemon
+  instead of dropping the trigger with a warning.
+- **`Summary.Blocked` never counted permission denials.** The manifest policy
+  hook recorded the action as `denied` while the counter matched `deny`, so a
+  run blocked by `policy.tools` was reported as clean.
+
 ## [0.1.3] - 2026-08-31
 
 Consolidation release: one security fix, one observability fix, two usability
