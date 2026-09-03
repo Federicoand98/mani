@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/coder/websocket"
@@ -22,11 +23,15 @@ type conn struct {
 }
 
 func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
-	rt, ok := s.mgr.get(r.PathValue("id"))
+	// il lock sta sulla connessione, non sul turno: un client connesso e fermo
+	// e' comunque una sessione viva, e sfrattargliela darebbe 404 al turno dopo
+	id := r.PathValue("id")
+	rt, ok := s.mgr.acquire(id)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	defer s.mgr.release(id)
 
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -141,6 +146,11 @@ func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 	conn.mu.Lock()
 	conn.pending[reqID] = p.Respond
 	conn.mu.Unlock()
+
+	const permissionTimeout = 10 * time.Minute
+	time.AfterFunc(permissionTimeout, func() {
+		conn.routeDecision(reqID, "deny")
+	})
 
 	conn.send(ctx, serverMsg{Type: "permission_request", Payload: permissionRequestDTO{
 		RequestID: reqID, ToolName: p.ToolName, RiskLevel: p.RiskLevel,

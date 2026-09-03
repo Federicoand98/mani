@@ -162,10 +162,21 @@ type TriggerSpec struct {
 	Every   string `yaml:"every"`
 	At      string `yaml:"at"`
 	Addr    string `yaml:"addr"`
+	Path    string `yaml:"path"`  // default "/hook"
+	Token   string `yaml:"token"` // fallback to MANI_WEBHOOK_TOKEN
 	Prompt  string `yaml:"prompt"`
 	Name    string `yaml:"name"`     // ← identità stabile (opzionale)
 	Memory  string `yaml:"memory"`   // ← "" = fresh (default) | "persistent"
 	CatchUp bool   `yaml:"catch_up"` // ← default false
+}
+
+// HookPath returns the webhook route, defaulting to /hook so a manifest written
+// before 0.1.4 keeps working unchanged.
+func (t TriggerSpec) HookPath() string {
+	if t.Path == "" {
+		return defaultHookPath
+	}
+	return t.Path
 }
 
 // --- 8. observability ---
@@ -330,6 +341,8 @@ func (s RuntimeSpec) Validate() error {
 		}
 	}
 	seenTrigger := map[string]bool{}
+	seenPath := map[string]bool{}
+	webhookAddr := ""
 	for i, t := range s.Run.Triggers {
 		switch t.Type {
 		case "every", "daily", "webhook":
@@ -342,6 +355,24 @@ func (s RuntimeSpec) Validate() error {
 		if t.Type == "daily" {
 			if _, _, err := parseClock(t.At); err != nil {
 				return fmt.Errorf("[manifest]: run.triggers[%d].at: %w", i, err)
+			}
+		}
+		if t.Type == "webhook" {
+			path := t.HookPath()
+			if !strings.HasPrefix(path, "/") {
+				return fmt.Errorf("[manifest]: run.triggers[%d].path: must start with \"/\", found %q", i, path)
+			}
+			if seenPath[path] {
+				return fmt.Errorf("[manifest]: run.triggers[%d].path: %q declared twice", i, path)
+			}
+			seenPath[path] = true
+
+			// il listener e' uno solo: due addr diversi sarebbero un webhook muto
+			if t.Addr != "" {
+				if webhookAddr != "" && webhookAddr != t.Addr {
+					return fmt.Errorf("[manifest]: run.triggers: webhook triggers must share one addr, found %q and %q", webhookAddr, t.Addr)
+				}
+				webhookAddr = t.Addr
 			}
 		}
 		if t.Name != "" {

@@ -54,31 +54,57 @@ run:
   triggers:
     - { type: every,   every: 30m, name: disk-watch, prompt: "Report partitions above 85%." }
     - { type: daily,   at: "02:00", name: nightly, catch_up: true, prompt: "Summarize anomalies." }
-    - { type: webhook, addr: ":8787", prompt: "Handle this event: {{body}}" }
+    - { type: webhook, addr: "127.0.0.1:8787", prompt: "Handle this event: {{body}}" }
   scheduler:
     path: ./queue          # durable: tasks survive restarts and crashes
     concurrency: 2         # runs executed in parallel
     retry: { max_attempts: 3, backoff: 30s }
 ```
 
-A `webhook` trigger needs a bearer token — the daemon refuses to start without one:
+### Webhooks
+
+Several webhook triggers share **one listener** and get **one route each**:
+
+```yaml
+run:
+  triggers:
+    - type: webhook
+      addr: 127.0.0.1:8787          # declared once; the listener is one
+      path: /deploy                  # default: /hook
+      token: ${DEPLOY_HOOK_TOKEN}
+      name: deploy
+      prompt: "Deploy requested: {{body}}"
+    - type: webhook
+      path: /alert
+      token: ${ALERT_HOOK_TOKEN}
+      memory: persistent
+      prompt: "Triage this alert: {{body}}"
+```
 
 ```bash
-export MANI_WEBHOOK_TOKEN=secret
-mani run --config agent.yaml
+curl -XPOST -H "Authorization: Bearer $DEPLOY_HOOK_TOKEN" \
+     -d '{"version":"1.2.3"}' 127.0.0.1:8787/deploy
+```
 
+Each route carries its own token, prompt and memory, so revoking one secret leaves the others
+working. Two triggers may not share a `path`, and they may not declare different `addr` values —
+`mani validate` rejects both.
+
+Every webhook needs a token; the daemon refuses to start without one:
+
+```bash
+mani run --config agent.yaml
 mani run --config agent.yaml --insecure   # dev only: no authentication
 ```
 
-```bash
-curl -XPOST -H "Authorization: Bearer $MANI_WEBHOOK_TOKEN" \
-     -d '{"alert":"disk full"}' localhost:8787/hook
-```
+`token` is resolved per trigger, falling back to `MANI_WEBHOOK_TOKEN` when the field is absent —
+so a manifest written before 0.1.4, with neither `path` nor `token`, keeps answering on `/hook`
+with the token from the environment. Secrets stay in the environment either way: `${VAR}` is
+what the manifest declares, and an undefined variable is a load-time error.
 
-The request body flows into the prompt, so an unauthenticated endpoint is prompt
-injection with tool access. The body is capped at 64 KB. An `addr` without a host
-(`:8787`) listens on **every** interface — use `127.0.0.1:8787` to keep it local; mani
-warns when it doesn't.
+The request body flows into the prompt, so an unauthenticated endpoint is prompt injection with
+tool access. The body is capped at 64 KB. An `addr` without a host (`:8787`) listens on **every**
+interface — use `127.0.0.1:8787` to keep it local; mani warns when it doesn't.
 
 Each trigger firing becomes one **task**. With `scheduler.path` set, the queue is a directory
 (`pending/ running/ done/ failed/`) you can inspect with `ls`: a task's state *is* the directory

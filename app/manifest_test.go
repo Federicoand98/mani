@@ -629,3 +629,74 @@ identity:
 		t.Errorf("error %q does not name the missing variable", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Webhook triggers: manifest rules
+// ---------------------------------------------------------------------------
+
+func TestValidate_WebhookTriggers(t *testing.T) {
+	base := func(triggers ...TriggerSpec) RuntimeSpec {
+		s := DefaultSpec()
+		s.Identity.Provider = "ollama"
+		s.Run.Triggers = triggers
+		return s
+	}
+	hook := func(addr, path string) TriggerSpec {
+		return TriggerSpec{Type: "webhook", Addr: addr, Path: path, Prompt: "x"}
+	}
+
+	t.Run("two routes on one listener", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", "/deploy"), hook("", "/alert"))
+		if err := s.Validate(); err != nil {
+			t.Errorf("Validate: %v", err)
+		}
+	})
+
+	t.Run("the same addr repeated is fine", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", "/deploy"), hook("127.0.0.1:8099", "/alert"))
+		if err := s.Validate(); err != nil {
+			t.Errorf("Validate: %v", err)
+		}
+	})
+
+	t.Run("duplicate path is rejected", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", "/deploy"), hook("", "/deploy"))
+		if err := s.Validate(); err == nil {
+			t.Error("two triggers on the same path must be rejected")
+		}
+	})
+
+	// Both default to /hook, so the collision is only visible after the default
+	// is applied: this is why the check uses HookPath and not Path.
+	t.Run("two default paths collide", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", ""), hook("", ""))
+		if err := s.Validate(); err == nil {
+			t.Error("two triggers defaulting to /hook must be rejected")
+		}
+	})
+
+	// The daemon starts one listener: a second addr would be a webhook that
+	// never answers.
+	t.Run("divergent addr is rejected", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", "/deploy"), hook("127.0.0.1:9000", "/alert"))
+		if err := s.Validate(); err == nil {
+			t.Error("webhook triggers with different addr must be rejected")
+		}
+	})
+
+	t.Run("path without a leading slash is rejected", func(t *testing.T) {
+		s := base(hook("127.0.0.1:8099", "deploy"))
+		if err := s.Validate(); err == nil {
+			t.Error("a path not starting with / must be rejected")
+		}
+	})
+}
+
+func TestTriggerSpec_HookPath(t *testing.T) {
+	if got := (TriggerSpec{}).HookPath(); got != "/hook" {
+		t.Errorf("HookPath() = %q, want the /hook default", got)
+	}
+	if got := (TriggerSpec{Path: "/deploy"}).HookPath(); got != "/deploy" {
+		t.Errorf("HookPath() = %q", got)
+	}
+}
