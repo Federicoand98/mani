@@ -230,3 +230,22 @@ func TestRuns_ListAndGet(t *testing.T) {
 		t.Errorf("run inesistente: status = %d, atteso 404", rec.Code)
 	}
 }
+
+func TestServerCloseClosesSQLiteJournal(t *testing.T) {
+	spec := app.DefaultSpec()
+	spec.Observability.Journal.Enabled = true
+	spec.Observability.Journal.Backend = "sqlite"
+	spec.Observability.Journal.Path = filepath.Join(t.TempDir(), "runs.db")
+
+	s := New(spec, "secret")
+	j, ok := s.journal.(*app.SQLiteJournal)
+	if !ok {
+		t.Fatalf("server journal is %T, want *app.SQLiteJournal", s.journal)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := j.List(app.ListFilter{}); err == nil {
+		t.Fatal("Server.Close should close the SQLite journal")
+	}
+}

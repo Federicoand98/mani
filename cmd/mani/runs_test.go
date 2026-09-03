@@ -355,6 +355,46 @@ func TestOpenJournal_FromManifest(t *testing.T) {
 	}
 }
 
+func TestOpenJournal_FromSQLiteManifest(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "runs.db")
+	seed, err := app.NewSQLiteJournal(dbPath, 10)
+	if err != nil {
+		t.Fatalf("NewSQLiteJournal: %v", err)
+	}
+	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := seed.Finish("sqlite-run", "ok"); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("Close seed: %v", err)
+	}
+
+	manifestDir := t.TempDir()
+	manifest := filepath.Join(manifestDir, "agent.yaml")
+	body := "identity:\n  name: t\n  provider: ollama\n  model: x\n" +
+		"observability:\n  journal:\n    enabled: true\n    backend: sqlite\n    path: '" + filepath.ToSlash(dbPath) + "'\n"
+	if err := os.WriteFile(manifest, []byte(body), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	j, err := openJournal(manifest, "")
+	if err != nil {
+		t.Fatalf("openJournal: %v", err)
+	}
+	if c, ok := j.(interface{ Close() error }); ok {
+		defer c.Close()
+	}
+	got, err := j.Get("sqlite-run")
+	if err != nil {
+		t.Fatalf("Get from SQLite manifest: %v", err)
+	}
+	if got.Status != "ok" {
+		t.Fatalf("status = %q, want ok", got.Status)
+	}
+}
+
 // --path vince sul manifest: serve a ispezionare la directory di run altrui
 // senza avere il loro manifest.
 func TestOpenJournal_PathOverridesManifest(t *testing.T) {

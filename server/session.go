@@ -60,6 +60,20 @@ func (sm *sessionManager) remove(id string) bool {
 	return ok
 }
 
+func (sm *sessionManager) close() {
+	sm.mu.Lock()
+	runtimes := make([]*app.Runtime, 0, len(sm.m))
+	for id, rt := range sm.m {
+		runtimes = append(runtimes, rt)
+		delete(sm.m, id)
+	}
+	sm.mu.Unlock()
+
+	for _, rt := range runtimes {
+		rt.Close()
+	}
+}
+
 func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

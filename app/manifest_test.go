@@ -88,7 +88,7 @@ run:
 
 observability:
   tracing: false
-  journal: { enabled: true, path: ./runs, retention: 200 }
+  journal: { enabled: true, backend: sqlite, path: ./runs.db, retention: 200 }
 `)
 
 	s, err := LoadManifest(path)
@@ -144,8 +144,26 @@ observability:
 	}
 	// 8. observability
 	if s.Observability.Tracing || !s.Observability.Journal.Enabled ||
+		s.Observability.Journal.Backend != "sqlite" ||
 		s.Observability.Journal.Retention != 200 {
 		t.Errorf("observability: %+v", s.Observability)
+	}
+}
+
+func TestValidate_JournalBackend(t *testing.T) {
+	s := DefaultSpec()
+	s.Observability.Journal.Enabled = true
+	s.Observability.Journal.Path = filepath.Join(t.TempDir(), "runs.db")
+
+	s.Observability.Journal.Backend = "unknown"
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "backend") {
+		t.Fatalf("unknown journal backend should be rejected: %v", err)
+	}
+
+	s.Observability.Journal.Backend = "sqlite"
+	s.Observability.Journal.Path = ""
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "requires path") {
+		t.Fatalf("SQLite without a path should be rejected: %v", err)
 	}
 }
 

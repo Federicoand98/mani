@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -471,6 +472,18 @@ func (m *MultiJournal) List(f ListFilter) ([]RunMeta, error) {
 	return m.sinks[0].List(f)
 }
 
+func (m *MultiJournal) Close() error {
+	var firstErr error
+	for _, j := range m.sinks {
+		if c, ok := j.(interface{ Close() error }); ok {
+			if err := c.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
 // ======================================================
 // HOOKS
 // ======================================================
@@ -555,12 +568,30 @@ func RegisterJournal(rt *Runtime, j Journal) {
 	attachJournalHooks(rt.agent.Hooks(), j)
 }
 
+func journalRetention(retention int) int {
+	if retention <= 0 {
+		return 100
+	}
+	return retention
+}
+
+func newPersistentJournal(spec JournalSpec) (Journal, error) {
+	switch backend := strings.ToLower(strings.TrimSpace(spec.Backend)); backend {
+	case "", "jsonl":
+		return NewJSONLJournal(spec.Path)
+	case "sqlite":
+		return NewSQLiteJournal(spec.Path, journalRetention(spec.Retention))
+	default:
+		return nil, fmt.Errorf("unsupported journal backend %q (jsonl|sqlite)", spec.Backend)
+	}
+}
+
 func OpenJournalReader(spec RuntimeSpec) (Journal, bool) {
 	js := spec.Observability.Journal
 	if !js.Enabled || js.Path == "" {
 		return nil, false
 	}
-	j, err := NewJSONLJournal(js.Path)
+	j, err := newPersistentJournal(js)
 	if err != nil {
 		return nil, false
 	}

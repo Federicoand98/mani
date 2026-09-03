@@ -43,6 +43,7 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	defer s.Close()
 	srv := &http.Server{Addr: addr, Handler: s.routes()}
 
 	go func() {
@@ -55,6 +56,17 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 		return err
 	}
 
+	return nil
+}
+
+// Close releases the journal and any runtimes owned by the server.
+func (s *Server) Close() error {
+	if s.mgr != nil {
+		s.mgr.close()
+	}
+	if c, ok := s.journal.(interface{ Close() error }); ok {
+		return c.Close()
+	}
 	return nil
 }
 

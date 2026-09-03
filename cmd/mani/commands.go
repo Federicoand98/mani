@@ -157,6 +157,9 @@ func runRuns(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if c, ok := j.(interface{ Close() error }); ok {
+		defer c.Close()
+	}
 
 	if id := fs.Arg(0); id != "" {
 		rec, err := j.Get(id)

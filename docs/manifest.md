@@ -75,7 +75,11 @@ run:
 
 observability:
   tracing: true
-  journal: { enabled: true, path: ./runs, retention: 200 }
+  journal:
+    enabled: true
+    backend: jsonl             # jsonl (default) or sqlite
+    path: ./runs                # directory for jsonl; file for sqlite
+    retention: 200
 ```
 
 ## Built-in tools
