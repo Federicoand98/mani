@@ -9,6 +9,13 @@ While the version is `0.x`, breaking changes may land in any minor release.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-03
+
+Bug-fix release. Three features of 0.1.3 turned out not to do what they said:
+`${VAR}` expanded nothing, a manifest with two webhooks ran only one, and a
+daily trigger drifted by an hour twice a year. The agent server also stops
+leaking sessions and stops hanging on an unanswered permission.
+
 ### Added
 
 - **Multiple webhook triggers.** A manifest can now declare several `webhook`
@@ -22,11 +29,21 @@ While the version is `0.x`, breaking changes may land in any minor release.
 - `mani validate` rejects two webhook triggers sharing a `path`, webhook
   triggers declaring different `addr` values (the listener is one), and a
   `path` that does not start with `/`.
+- **Session garbage collection in the agent server.** A session idle for more
+  than 30 minutes is closed and removed when the next one is created. An open
+  WebSocket counts as in use for as long as it is connected, so a connected
+  client is never collected mid-turn.
 
 ### Changed
 
 - **`app.Daemon.Webhook` takes a webhook spec instead of four strings.**
   Breaking for library users; the CLI is unaffected.
+- **An unanswered `permission_request` now resolves to deny after 10 minutes**
+  instead of suspending the turn forever. Disconnecting still denies every
+  pending request immediately.
+- **`mani runs <id>` accepts a run id prefix.** The listing prints ids
+  truncated to 12 characters, and passing one back used to fail because the
+  lookup required the full id. An ambiguous prefix is reported as such.
 
 ### Fixed
 
@@ -166,7 +183,8 @@ A published version cannot be withdrawn from the module proxy, only marked.
 
 Use `0.1.2` or later.
 
-[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Federicoand98/mani/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Federicoand98/mani/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Federicoand98/mani/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Federicoand98/mani/releases/tag/v0.1.1
