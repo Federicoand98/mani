@@ -188,6 +188,7 @@ type ObservabilitySpec struct {
 
 type JournalSpec struct {
 	Enabled   bool   `yaml:"enabled"`
+	Backend   string `yaml:"backend"` // jsonl (default) | sqlite
 	Path      string `yaml:"path"`
 	Retention int    `yaml:"retention"` // ring buffer
 }
@@ -381,6 +382,17 @@ func (s RuntimeSpec) Validate() error {
 			}
 			seenTrigger[t.Name] = true
 		}
+	}
+
+	// --- observability ---
+	switch backend := strings.ToLower(strings.TrimSpace(s.Observability.Journal.Backend)); backend {
+	case "", "jsonl":
+	case "sqlite":
+		if s.Observability.Journal.Enabled && s.Observability.Journal.Path == "" {
+			return fmt.Errorf("[manifest]: observability.journal: sqlite backend requires path")
+		}
+	default:
+		return fmt.Errorf("[manifest]: observability.journal.backend: unsupported backend %q (jsonl|sqlite)", s.Observability.Journal.Backend)
 	}
 
 	return nil

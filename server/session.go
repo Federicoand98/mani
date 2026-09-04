@@ -107,6 +107,20 @@ func (sm *sessionManager) sweep() {
 	}
 }
 
+func (sm *sessionManager) close() {
+	sm.mu.Lock()
+	runtimes := make([]*app.Runtime, 0, len(sm.m))
+	for id, s := range sm.m {
+		runtimes = append(runtimes, s.rt)
+		delete(sm.m, id)
+	}
+	sm.mu.Unlock()
+
+	for _, rt := range runtimes {
+		rt.Close()
+	}
+}
+
 func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

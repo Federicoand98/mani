@@ -409,12 +409,17 @@ func (r *Runtime) Cancel() {
 	}
 }
 
-// Close closes all MCP sessions and clears the session list.
+// Close closes all MCP sessions, the journal adapter, and clears the session list.
 func (r *Runtime) Close() {
 	for _, s := range r.mcpSessions {
 		_ = s.Close()
 	}
 	r.mcpSessions = nil
+
+	if c, ok := r.journal.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
+	r.journal = nil
 }
 
 // LastResponse returns the last response from the agent in the current session

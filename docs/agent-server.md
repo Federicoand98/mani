@@ -120,7 +120,9 @@ The run journal. `GET /runs` accepts `?session=`, `?limit=`, `?status=` (`ok` | 
 including the event list.
 
 Both return `501 Not Implemented` unless `observability.journal.path` is configured — the
-cross-session view is served from the shared directory on disk, so a path is required.
+cross-session view is served from the shared journal path, so a path is required. Set
+`observability.journal.backend: sqlite` to use a shared SQLite database instead of the default
+JSONL directory.
 
 ```bash
 curl -s -H "Authorization: Bearer $MANI_SERVER_TOKEN" "http://localhost:9000/runs?limit=5"

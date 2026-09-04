@@ -125,6 +125,11 @@ mani runs --config agent.yaml --json | jq '.[].summary.blocked'
 mani runs --path ./runs                        # a journal directory directly
 ```
 
+The manifest journal uses JSONL by default. Set `observability.journal.backend: sqlite` and
+point `path` at a database file when run history should be queried from one compact, indexed store;
+the same backend is used by the server and by `mani runs --config`. `retention` limits stored runs
+for either backend.
+
 ```
 ID            STATUS  STARTED              DURATION  TOKENS   TOOLS  BLOCKED
 82fdb6ffaa1b  ok      2026-08-31 18:06:10  3.6s      681/96   2      1
