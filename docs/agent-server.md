@@ -271,12 +271,27 @@ curl -s -XDELETE -H "Authorization: Bearer $MANI_SERVER_TOKEN" \
 
 ---
 
+## Session lifetime
+
+A session is created by `POST /sessions` and lives until `DELETE`, until the process exits, or
+until it has been idle for **30 minutes**. A session is idle when no request is touching it: an
+open WebSocket counts as in use for as long as it stays connected, so a client that holds a socket
+and says nothing is never collected out from under its next turn.
+
+The sweep runs when a new session is created — the moment memory starts to be needed — so a server
+that stops receiving traffic keeps what it has rather than waking up to collect it.
+
+## Permission timeout
+
+If a turn raises a `permission_request` and the client never answers, the request resolves to
+**deny** after 10 minutes and the turn continues with the tool refused. Disconnecting denies every
+pending request immediately. Both are fail-closed: an unanswered question is never an approval.
+
 ## Current limitations
 
-- **No permission timeout:** if you start a turn, receive a `permission_request` and never answer
-  (without disconnecting), the turn stays suspended.
 - **One `Runtime` per session:** concurrent turns on the same session are not supported — the
   socket rejects a second `input` while one is running. Use separate sessions for parallelism.
-- **No session garbage collection:** sessions live until `DELETE` or process exit.
 - **Journal requires a path:** `GET /runs` needs `observability.journal.path`; the in-memory
   journal is per-session and cannot serve a unified view.
+- **Neither timeout is configurable:** the session TTL and the permission timeout are constants.
+  If you need different ones, say so in an issue — the natural home is a flag on `mani serve`.
