@@ -64,8 +64,8 @@ func (s *Server) Close() error {
 	if s.mgr != nil {
 		s.mgr.close()
 	}
-	if c, ok := s.journal.(interface{ Close() error }); ok {
-		return c.Close()
+	if s.journal != nil {
+		return s.journal.Close()
 	}
 	return nil
 }

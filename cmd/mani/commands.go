@@ -157,9 +157,7 @@ func runRuns(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if c, ok := j.(interface{ Close() error }); ok {
-		defer c.Close()
-	}
+	defer j.Close()
 
 	if id := fs.Arg(0); id != "" {
 		full, err := resolveRunID(j, id)

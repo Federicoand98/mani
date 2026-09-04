@@ -383,9 +383,7 @@ func TestOpenJournal_FromSQLiteManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openJournal: %v", err)
 	}
-	if c, ok := j.(interface{ Close() error }); ok {
-		defer c.Close()
-	}
+	defer j.Close()
 	got, err := j.Get("sqlite-run")
 	if err != nil {
 		t.Fatalf("Get from SQLite manifest: %v", err)

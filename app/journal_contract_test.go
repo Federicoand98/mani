@@ -56,6 +56,17 @@ func TestJournalContract(t *testing.T) {
 				Data: map[string]any{"is_error": true}}); err != nil {
 				t.Fatalf("Append tool result: %v", err)
 			}
+			// Blocked and Masked have been wrong twice, both times because a
+			// producer and a counter disagreed on the word. They are only
+			// compared across adapters if the fixture actually contains them.
+			if err := j.Append(RunEvent{RunID: "run", At: base.Add(3 * time.Second), Kind: EvGuardrail,
+				Data: map[string]any{"tool": "bash", "action": "deny"}}); err != nil {
+				t.Fatalf("Append guardrail deny: %v", err)
+			}
+			if err := j.Append(RunEvent{RunID: "run", At: base.Add(4 * time.Second), Kind: EvGuardrail,
+				Data: map[string]any{"tool": "read", "action": "mask"}}); err != nil {
+				t.Fatalf("Append guardrail mask: %v", err)
+			}
 			if err := j.Finish("run", "error"); err != nil {
 				t.Fatalf("Finish: %v", err)
 			}
@@ -69,6 +80,9 @@ func TestJournalContract(t *testing.T) {
 			}
 			if rec.Summary.LLMCalls != 1 || rec.Summary.ToolCalls != 1 || rec.Summary.InTokens != 3 || rec.Summary.OutTokens != 2 || rec.Summary.Errors != 1 {
 				t.Fatalf("summary = %+v", rec.Summary)
+			}
+			if rec.Summary.Blocked != 1 || rec.Summary.Masked != 1 {
+				t.Fatalf("guardrail counters = blocked %d, masked %d, want 1 and 1", rec.Summary.Blocked, rec.Summary.Masked)
 			}
 
 			metas, err := j.List(ListFilter{SessionID: "session", Status: "error", Since: base.Add(-time.Second), Limit: 1})

@@ -416,8 +416,8 @@ func (r *Runtime) Close() {
 	}
 	r.mcpSessions = nil
 
-	if c, ok := r.journal.(interface{ Close() error }); ok {
-		_ = c.Close()
+	if r.journal != nil {
+		_ = r.journal.Close()
 	}
 	r.journal = nil
 }

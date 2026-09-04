@@ -233,9 +233,7 @@ func TestJournalBackendSelection(t *testing.T) {
 	if _, ok := reader.(*SQLiteJournal); !ok {
 		t.Fatalf("OpenJournalReader returned %T, want *SQLiteJournal", reader)
 	}
-	if c, ok := reader.(interface{ Close() error }); ok {
-		defer c.Close()
-	}
+	defer reader.Close()
 
 	built, err := buildJournal(spec.Observability.Journal)
 	if err != nil {
