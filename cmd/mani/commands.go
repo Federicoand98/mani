@@ -146,7 +146,7 @@ func runValidate(ctx context.Context, args []string) error {
 func runRuns(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("runs", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to the YAML manifest")
-	path := fs.String("path", "", "journal directory (overrides the manifest)")
+	path := fs.String("path", "", "journal location: a JSONL directory or a SQLite file (overrides the manifest)")
 	limit := fs.Int("limit", 20, "maximum number of runs to list")
 	status := fs.String("status", "", "filter by run status (ok, error, cancelled)")
 	since := fs.String("since", "", "filter by runs since the given duration (e.g. 1h, 30m)")
