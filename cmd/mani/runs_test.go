@@ -577,3 +577,36 @@ func TestList_CorruptedFileIsSkipped(t *testing.T) {
 		t.Errorf("run trovate %d, attese 2", len(metas))
 	}
 }
+
+// --path takes either journal shape: a JSONL directory or a SQLite file.
+// Before, it always built a JSONL journal, so pointing it at a database failed
+// with "mkdir runs.db: not a directory".
+func TestOpenJournal_FromSQLitePath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "runs.db")
+	seed, err := app.NewSQLiteJournal(dbPath, 10)
+	if err != nil {
+		t.Fatalf("NewSQLiteJournal: %v", err)
+	}
+	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := seed.Finish("sqlite-run", "ok"); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	j, err := openJournal("", dbPath)
+	if err != nil {
+		t.Fatalf("openJournal: %v", err)
+	}
+	defer j.Close()
+
+	if _, ok := j.(*app.SQLiteJournal); !ok {
+		t.Fatalf("openJournal returned %T, want *app.SQLiteJournal", j)
+	}
+	if _, err := j.Get("sqlite-run"); err != nil {
+		t.Errorf("Get on the seeded run: %v", err)
+	}
+}

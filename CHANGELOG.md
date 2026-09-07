@@ -9,6 +9,41 @@ While the version is `0.x`, breaking changes may land in any minor release.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-09-07
+
+One feature: the run journal can be a SQLite database instead of a directory of
+JSONL files. The port did not change, so nothing else had to.
+
+### Added
+
+- **SQLite journal backend.** `observability.journal.backend: sqlite` stores the
+  run history in one indexed database; `path` then names a file instead of a
+  directory. Everything else is unchanged: the same `Journal` port, the same
+  `mani runs`, the same `GET /runs` and the same filters.
+
+  Listing stops scanning every run. On 200 runs of 25 events, `List(limit=20)`
+  takes **0.09 ms** against JSONL's 23.55 ms, because run headers live in their
+  own table with an index on `(started_at, run_id)` instead of being recomputed
+  from the events. Writes cost about 0.2 ms per event against JSONL's 0.014 —
+  the price of a transaction, invisible next to a model call.
+
+  The driver is `modernc.org/sqlite`, pure Go: releases still cross-compile to
+  five targets with `CGO_ENABLED=0`. It costs about 5.7 MB of binary, and it is
+  linked whether or not you use it.
+
+  Contributed by @mikemikimike.
+
+- **`mani runs --path` accepts either journal shape.** A directory is read as
+  JSONL, a file as SQLite. Before, a database path failed with
+  `mkdir runs.db: not a directory`.
+
+### Changed
+
+- **`Journal` gained `Close() error`.** Breaking for anyone implementing the
+  port outside the repo: `InMemoryJournal` and `JSONLJournal` return nil, the
+  SQLite adapter releases its handle. Previously four owners type-asserted for
+  an optional `Close`, which is a contract every new caller had to remember.
+
 ## [0.1.4] - 2026-09-03
 
 Bug-fix release. Three features of 0.1.3 turned out not to do what they said:
@@ -183,7 +218,8 @@ A published version cannot be withdrawn from the module proxy, only marked.
 
 Use `0.1.2` or later.
 
-[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/Federicoand98/mani/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/Federicoand98/mani/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Federicoand98/mani/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Federicoand98/mani/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Federicoand98/mani/releases/tag/v0.1.2

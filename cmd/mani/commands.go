@@ -190,6 +190,9 @@ func runRuns(ctx context.Context, args []string) error {
 
 func openJournal(configPath, dir string) (app.Journal, error) {
 	if dir != "" {
+		if st, err := os.Stat(dir); err == nil && !st.IsDir() {
+			return app.NewSQLiteJournal(dir, 0)
+		}
 		return app.NewJSONLJournal(dir)
 	}
 
