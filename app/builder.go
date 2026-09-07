@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Federicoand98/mani/config"
@@ -274,17 +275,20 @@ func resolvePolicy(policy map[string]RiskPolicy, name string) RiskPolicy {
 }
 
 func buildJournal(spec JournalSpec) (Journal, error) {
-	retention := spec.Retention
-	if retention <= 0 {
-		retention = 100
-	}
-	mem := NewInMemoryJournal(retention)
+	mem := NewInMemoryJournal(journalRetention(spec.Retention))
 
 	if spec.Path == "" {
-		return mem, nil // solo RAM
+		switch strings.ToLower(strings.TrimSpace(spec.Backend)) {
+		case "", "jsonl":
+			return mem, nil // solo RAM
+		case "sqlite":
+			return nil, fmt.Errorf("sqlite journal requires path")
+		default:
+			return nil, fmt.Errorf("unsupported journal backend %q (jsonl|sqlite)", spec.Backend)
+		}
 	}
 
-	disk, err := NewJSONLJournal(spec.Path)
+	disk, err := newPersistentJournal(spec)
 	if err != nil {
 		return nil, err
 	}

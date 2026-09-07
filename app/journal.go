@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,10 @@ type Journal interface {
 	Finish(runID, status string) error
 	Get(runID string) (RunRecord, error)
 	List(f ListFilter) ([]RunMeta, error)
+	// Close releases whatever the adapter holds. Adapters that hold nothing
+	// return nil: the alternative is every owner type-asserting for it, which
+	// is a contract each caller has to remember.
+	Close() error
 }
 
 type ListFilter struct {
@@ -263,6 +268,9 @@ func (j *InMemoryJournal) Get(runID string) (RunRecord, error) {
 	return cp, nil
 }
 
+// Close: nothing to release, the ring buffer dies with the process.
+func (j *InMemoryJournal) Close() error { return nil }
+
 func (j *InMemoryJournal) List(f ListFilter) ([]RunMeta, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -391,6 +399,9 @@ func (j *JSONLJournal) Get(runID string) (RunRecord, error) {
 	return j.readRun(runID)
 }
 
+// Close: nothing to release, each event opens and closes its own file.
+func (j *JSONLJournal) Close() error { return nil }
+
 func (j *JSONLJournal) List(f ListFilter) ([]RunMeta, error) {
 	entries, err := os.ReadDir(j.dir)
 	if err != nil {
@@ -469,6 +480,16 @@ func (m *MultiJournal) Get(runID string) (RunRecord, error) {
 
 func (m *MultiJournal) List(f ListFilter) ([]RunMeta, error) {
 	return m.sinks[0].List(f)
+}
+
+func (m *MultiJournal) Close() error {
+	var firstErr error
+	for _, j := range m.sinks {
+		if err := j.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // ======================================================
@@ -555,12 +576,30 @@ func RegisterJournal(rt *Runtime, j Journal) {
 	attachJournalHooks(rt.agent.Hooks(), j)
 }
 
+func journalRetention(retention int) int {
+	if retention <= 0 {
+		return 100
+	}
+	return retention
+}
+
+func newPersistentJournal(spec JournalSpec) (Journal, error) {
+	switch backend := strings.ToLower(strings.TrimSpace(spec.Backend)); backend {
+	case "", "jsonl":
+		return NewJSONLJournal(spec.Path)
+	case "sqlite":
+		return NewSQLiteJournal(spec.Path, journalRetention(spec.Retention))
+	default:
+		return nil, fmt.Errorf("unsupported journal backend %q (jsonl|sqlite)", spec.Backend)
+	}
+}
+
 func OpenJournalReader(spec RuntimeSpec) (Journal, bool) {
 	js := spec.Observability.Journal
 	if !js.Enabled || js.Path == "" {
 		return nil, false
 	}
-	j, err := NewJSONLJournal(js.Path)
+	j, err := newPersistentJournal(js)
 	if err != nil {
 		return nil, false
 	}

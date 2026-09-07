@@ -90,6 +90,7 @@ Every run is recorded — which tools ran, tokens spent, what got blocked or mas
 observability:
   journal:
     enabled: true
+    backend: jsonl        # jsonl (default) or sqlite
     path: ./runs         # one file per run, plain JSON lines
     retention: 200
 ```

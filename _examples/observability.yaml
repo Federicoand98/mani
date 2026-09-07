@@ -25,5 +25,11 @@ run:
 observability:
   journal:
     enabled: true
-    path: ./runs
+    backend: jsonl                # jsonl (default) | sqlite
+    path: ./runs                  # a directory for jsonl, a file for sqlite
     retention: 200                # last 200 runs also kept in memory
+
+    # One indexed database instead of a directory of files. Same port, same
+    # `mani runs`, same GET /runs — listing stops scanning every run:
+    #   backend: sqlite
+    #   path: ./runs.db

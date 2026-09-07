@@ -121,7 +121,7 @@ Unknown keys are a **hard error**, never a silent no-op.
 | Policy: allow/ask/deny, risk levels incl. `network`, rules, redaction, per-run limits | ✅ |
 | Triggers (every / daily / webhook) + durable queue that survives crashes | ✅ |
 | Structured output (typed response schema) | ✅ |
-| Run journal / audit trail (`mani runs`, `GET /runs`) | ✅ |
+| Run journal / audit trail (`mani runs`, `GET /runs`), JSONL or SQLite | ✅ |
 | Agent server (REST + WebSocket, bearer auth) | ✅ |
 | Sessions, planning, subagents, hooks, tracing, compaction, image input | ✅ |
 | MCP **server** mode (expose an agent as a tool) | 🚧 next |
@@ -152,7 +152,7 @@ Interfaces are defined in the **consuming** package (Go idiom): `LLMClient`, `Me
 
 Governance and observability are **pure composition over hooks** — policy rules, limits and the
 journal add zero lines to `core/`. The journal writes append-only JSONL (one file per run) behind
-a `Journal` port, so SQLite/Redis are drop-in adapters later.
+a `Journal` port; a SQLite adapter is a drop-in alternative behind one manifest key.
 
 ```bash
 go build ./... && go test ./...

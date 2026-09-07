@@ -122,8 +122,14 @@ Every run leaves a record; `mani runs` reads it without a server running.
 mani runs --config agent.yaml                  # the last 20 runs
 mani runs --config agent.yaml --status error --since 24h
 mani runs --config agent.yaml --json | jq '.[].summary.blocked'
-mani runs --path ./runs                        # a journal directory directly
+mani runs --path ./runs                        # a JSONL journal directory
+mani runs --path ./runs.db                     # or a SQLite journal file
 ```
+
+The manifest journal uses JSONL by default. Set `observability.journal.backend: sqlite` and
+point `path` at a database file when run history should be queried from one compact, indexed store;
+the same backend is used by the server and by `mani runs --config`. `retention` limits stored runs
+for either backend.
 
 ```
 ID            STATUS  STARTED              DURATION  TOKENS   TOOLS  BLOCKED
