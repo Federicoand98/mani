@@ -55,6 +55,32 @@ Config lives in `~/.config/mani/config.json`; credentials never touch a manifest
 `$XDG_DATA_HOME/mani/auth.json` (default `~/.local/share/mani/auth.json`, mode 0600), managed
 with `/login` in the TUI.
 
+## Inside your editor
+
+`mani mcp` serves a manifest as an MCP server over stdio, so any MCP client — Claude Desktop,
+Claude Code, an IDE, another agent — can call it. The whole agent is **one tool**: its name is
+`identity.name`, its description is `identity.description`, and if the manifest declares
+`output.schema` the client sees that too.
+
+```json
+{
+  "mcpServers": {
+    "reviewer": {
+      "command": "mani",
+      "args": ["mcp", "--config", "/absolute/path/to/reviewer.yaml"]
+    }
+  }
+}
+```
+
+```bash
+claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
+```
+
+Policy, limits and the journal still apply, because they live in the runtime and not in the
+transport. **An agent called from inside an editor leaves the same audit trail** as one started
+by a trigger — `mani runs --config reviewer.yaml` lists its runs with source `mcp`.
+
 ## One block, one question
 
 A manifest has eight top-level blocks, and each answers exactly one question. That is the whole
@@ -114,17 +140,18 @@ Unknown keys are a **hard error**, never a silent no-op.
 | Area | State |
 |---|---|
 | Declarative manifest (8 blocks) + headless `run` | ✅ |
-| CLI: `init`, `validate`, `run`, `runs`, `serve`, `tui`, `--version` | ✅ |
+| CLI: `init`, `validate`, `run`, `runs`, `serve`, `mcp`, `tui`, `--version` | ✅ |
 | Providers: Ollama, OpenAI, Anthropic, GitHub Copilot, OpenRouter | ✅ |
 | Tools: `read` `write` `edit` `delete` `glob` `grep` `bash` `fetch` `planning` `delegate` | ✅ |
 | MCP client, subprocess tools in any language | ✅ |
+| MCP **server** mode: the agent as one tool, over stdio | ✅ |
 | Policy: allow/ask/deny, risk levels incl. `network`, rules, redaction, per-run limits | ✅ |
 | Triggers (every / daily / webhook) + durable queue that survives crashes | ✅ |
 | Structured output (typed response schema) | ✅ |
 | Run journal / audit trail (`mani runs`, `GET /runs`), JSONL or SQLite | ✅ |
 | Agent server (REST + WebSocket, bearer auth) | ✅ |
 | Sessions, planning, subagents, hooks, tracing, compaction, image input | ✅ |
-| MCP **server** mode (expose an agent as a tool) | 🚧 next |
+| Batch mode · provenance on results · external vocabularies | 🚧 next |
 | Python SDK · container images | 🗺️ roadmap |
 
 ## Architecture
@@ -133,10 +160,11 @@ Hexagonal (Ports & Adapters). The single invariant: **`core/` has zero external 
 Dependency arrows always point inward.
 
 ```
-cmd/mani/      composition root — TUI, run, serve, init, validate
+cmd/mani/      composition root — TUI, run, serve, mcp, init, validate, runs
 app/           application service — Runtime, events, manifest, policy, limits,
                journal, task queue, subagents, triggers
 server/        driving adapter — REST + WebSocket
+server/mcpserver/  driving adapter — MCP server over stdio (the agent as one tool)
 tui/           driving adapter — terminal UI (BubbleTea)
 core/          domain — Agent, Memory, LLMClient port, hooks, types
 llm/*/         driven adapters — ollama, openai, anthropic, copilot, openrouter
@@ -160,8 +188,8 @@ go build ./... && go test ./...
 
 ## Roadmap
 
-1. **MCP server mode** — expose a manifest-defined agent as a tool to any MCP client, so a
-   governed agent can live inside an IDE and still leave an audit trail.
+1. **Batch mode** — run one agent over a set of inputs, with the durable queue's concurrency,
+   retries and resumability ([#19](https://github.com/Federicoand98/mani/issues/19)).
 2. **Manifest composition** — reference a manifest as a tool, composing independently governed units.
 3. **Python SDK** — drive the runtime over the agent server.
 

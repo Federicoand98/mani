@@ -20,8 +20,8 @@ Adds an ability → `capabilities`. Changes who reasons → `identity`.
 
 ```yaml
 identity:
-  name: nightly-maintainer       # identifies the agent
-  description: "..."             # what it is for
+  name: nightly-maintainer       # identifies the agent; the tool name under `mani mcp`
+  description: "..."             # what it is for; what an MCP client's model reads
   provider: anthropic            # ollama | openai | anthropic | copilot | openrouter
   model: claude-sonnet-5
   prompt: "..."                  # the system prompt
@@ -87,6 +87,16 @@ observability:
     path: ./runs                # directory for jsonl; file for sqlite
     retention: 200
 ```
+
+## `identity.name` and `identity.description`
+
+Optional everywhere except under `mani mcp`, where they become the public contract of the agent:
+the name is the MCP tool name, and the description is what the calling model reads to decide
+whether to use it. A vague description is an agent nobody calls, so write it for a model.
+
+Under `mani mcp` the name is required and must be 1-64 characters from `a-z A-Z 0-9 _ -`.
+That is stricter than MCP itself allows: clients pass tool names on to the model APIs, which
+refuse anything else — and the failure would surface in the client, far from the manifest.
 
 ## Built-in tools
 

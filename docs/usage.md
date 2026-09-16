@@ -10,6 +10,7 @@ mani init                 scaffold a commented agent.yaml
 mani validate --config    check a manifest without running anything
 mani run --config         one task, or the trigger daemon
 mani serve --config       expose the agent over HTTP/WebSocket
+mani mcp   --config       expose the agent to MCP clients over stdio
 mani runs   --config      list past runs, or replay one as a timeline
 mani tui                  the interactive chat, named explicitly
 mani --help  --version
@@ -193,7 +194,69 @@ The WebSocket carries `token` / `thinking` / `tool_call` / `tool_result` / `usag
 frames, plus `permission_request` — the client answers with a `request_id` and a decision, so
 approvals work over the wire. Full protocol in [agent-server.md](agent-server.md).
 
-## 6. Subprocess tools
+## 6. MCP server
+
+```bash
+mani mcp --config agent.yaml
+```
+
+Serves the manifest to an MCP client over stdio. You rarely run this by hand: the client
+launches it. In Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "reviewer": {
+      "command": "mani",
+      "args": ["mcp", "--config", "/absolute/path/to/reviewer.yaml"]
+    }
+  }
+}
+```
+
+In Claude Code:
+
+```bash
+claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
+```
+
+**What the client sees.** One tool, and it is the whole agent — not the agent's own tools, which
+would hand the client the capabilities while leaving the policy behind.
+
+| Manifest | MCP |
+|---|---|
+| `identity.name` | the tool name — 1-64 characters from `a-z A-Z 0-9 _ -` |
+| `identity.description` | the tool description, and the server instructions: this is what the calling model reads to decide whether to use the agent, so write it for a model |
+| — | input: `{"task": "..."}` |
+| `output.schema` | the tool's output schema; the result comes back as structured content *and* as its JSON in text, for clients that only read text |
+
+**How a call runs.**
+
+- **Every call is a fresh run.** No memory carries over between calls: a tool is a function,
+  not a conversation.
+- **Permissions are fail-closed.** A client has no way to answer an `ask`, so `ask` resolves to
+  deny and the run continues with the tool refused. Design manifests for MCP with
+  `allow`/`deny`.
+- **A failed run is a tool error, not a protocol error.** The calling model sees the reason and
+  can react. The same goes for a missing or malformed `task`.
+- **Policy, limits and the journal apply unchanged.** Runs are journaled with source `mcp`, so
+  `mani runs --config agent.yaml` shows what was done from inside the editor.
+
+**Things that bite.**
+
+- **Use absolute paths.** The client decides the working directory, not you. That applies to
+  `--config` and, more importantly, to `capabilities.workspace`: left empty it defaults to the
+  working directory, which under a client may be anywhere — set it explicitly.
+- **Environment variables come from the client.** `${VAR}` in the manifest resolves against the
+  environment the client launches mani with, which is usually not your shell's. Most clients
+  accept an `env` map next to `args`.
+- **stdout is the protocol.** Logs go to stderr, which is where clients collect them. A tool that
+  prints to stdout cannot break the stream: tool output is captured, never inherited.
+
+Only stdio is implemented. MCP over HTTP, subagents exposed as separate tools, and answering
+`ask` through MCP elicitation are deliberately deferred.
+
+## 7. Subprocess tools
 
 A tool is any executable: mani writes the JSON input on **stdin**, reads the result from
 **stdout** (stderr on a non-zero exit becomes the error the model sees). Declare `risk`
@@ -217,7 +280,7 @@ capabilities:
 A worked example, eight lines of Python: [`_examples/demo/disk.py`](../_examples/demo/disk.py)
 with [`_examples/demo-polyglot.yaml`](../_examples/demo-polyglot.yaml).
 
-## 7. Library usage
+## 8. Library usage
 
 `mani` is importable — skip the CLI and wire a `Runtime` yourself:
 

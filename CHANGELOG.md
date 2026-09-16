@@ -9,6 +9,37 @@ While the version is `0.x`, breaking changes may land in any minor release.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server mode.** `mani mcp --config agent.yaml` serves a manifest to any MCP
+  client over stdio — Claude Desktop, Claude Code, an IDE, another agent. The
+  whole agent is one tool: `identity.name` is its name, `identity.description`
+  is what the calling model reads, and `output.schema`, when declared, becomes
+  the tool's output schema, with the result returned both as structured content
+  and as its JSON in text.
+
+  Every call is a fresh run. Permissions are fail-closed, since a client cannot
+  answer an `ask`. A failed run, or a missing or malformed `task`, comes back as a
+  tool error the calling model can read rather than a protocol error it cannot.
+  Policy, limits and the journal apply unchanged, and runs are journaled with
+  source `mcp`: an agent called from inside an editor leaves the same audit trail
+  as one started by a trigger.
+
+  Under `mani mcp`, `identity.name` is required and must match
+  `^[a-zA-Z0-9_-]{1,64}$` — stricter than MCP, because clients pass the name on
+  to model APIs that refuse anything else.
+
+  stdout carries only the protocol: an end-to-end test runs the real binary with
+  debug logging and fails on any non JSON-RPC line.
+
+### Fixed
+
+- **Tool schemas no longer contain `null`.** Unset JSON Schema keywords
+  (`items`, `required`, `enum`, `properties`, `description`) were serialised as
+  `null`, which no keyword accepts. Providers were unaffected — each adapter
+  converts the schema into its own types — but it would have reached MCP clients
+  as an invalid output schema. They are now omitted.
+
 ## [0.1.5] - 2026-09-07
 
 One feature: the run journal can be a SQLite database instead of a directory of
