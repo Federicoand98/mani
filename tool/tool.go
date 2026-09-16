@@ -23,17 +23,17 @@ type ToolSchema struct {
 
 type InputSchema struct {
 	Type       string                    `json:"type"`
-	Properties map[string]PropertySchema `json:"properties"`
-	Required   []string                  `json:"required"`
+	Properties map[string]PropertySchema `json:"properties,omitempty"`
+	Required   []string                  `json:"required,omitempty"`
 }
 
 type PropertySchema struct {
 	Type        string                    `json:"type"`
-	Description string                    `json:"description"`
-	Items       *PropertySchema           `json:"items"`
-	Properties  map[string]PropertySchema `json:"properties"`
-	Required    []string                  `json:"required"`
-	Enum        []string                  `json:"enum"`
+	Description string                    `json:"description,omitempty"`
+	Items       *PropertySchema           `json:"items,omitempty"`
+	Properties  map[string]PropertySchema `json:"properties,omitempty"`
+	Required    []string                  `json:"required,omitempty"`
+	Enum        []string                  `json:"enum,omitempty"`
 }
 
 type Tool interface {

@@ -6,18 +6,30 @@
 // function over MCP just as it is over HTTP.
 //
 // Transport is stdio, which means stdout carries the JSON-RPC stream: nothing else
+// may ever be written there.
 package mcpserver
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/session"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var toolNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
+func validToolName(name string) error {
+	if !toolNamePattern.MatchString(name) {
+		return fmt.Errorf("must be 1-64 characters from a-z, A-Z, 0-9, '_' and '-'")
+	}
+	return nil
+}
 
 type Server struct {
 	rt   *app.Runtime
@@ -31,9 +43,9 @@ func New(ctx context.Context, spec app.RuntimeSpec, version string) (*Server, er
 		return nil, fmt.Errorf("mcp: identity.name is required to expose the agent as an MCP tool")
 	}
 
-	// if err := validToolName(name); err != nil {
-	// 	return nil, fmt.Errorf("mcp: identity.name: %q %w", name, err)
-	// }
+	if err := validToolName(name); err != nil {
+		return nil, fmt.Errorf("mcp: identity.name %q: %w", name, err)
+	}
 
 	rt, err := app.Build(ctx, spec)
 	if err != nil {
@@ -46,7 +58,7 @@ func New(ctx context.Context, spec app.RuntimeSpec, version string) (*Server, er
 		&mcp.Implementation{Name: "mani", Version: version},
 		&mcp.ServerOptions{
 			Instructions: spec.Identity.Description,
-			// Logger:       std,
+			Logger: slog.Default(),
 		},
 	)
 
@@ -87,15 +99,15 @@ func (s *Server) handleCall(ctx context.Context, req *mcp.CallToolRequest) (*mcp
 	}
 
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
+		return toolError(fmt.Errorf("invalid arguments, want an object with a string \"task\": %w", err)), nil
 	}
 	if strings.TrimSpace(args.Task) == "" {
-		return nil, fmt.Errorf("argument 'task' is required")
+		return toolError(fmt.Errorf("argument \"task\" is required")), nil
 	}
 
 	sess := session.New(s.rt.ModelName())
 
-	ch, cancel := s.rt.ExecuteIn(ctx, sess, args.Task)
+	ch, cancel := s.rt.ExecuteIn(app.WithSource(ctx, "mcp"), sess, args.Task)
 	defer cancel()
 
 	var (
@@ -121,17 +133,25 @@ func (s *Server) handleCall(ctx context.Context, req *mcp.CallToolRequest) (*mcp
 	}
 
 	if runErr != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: runErr.Error()}},
-		}, nil
+		return toolError(runErr), nil
 	}
 
-	res := &mcp.CallToolResult{}
-	if structured != nil {
-		res.StructuredContent = structured
-	} else {
-		res.Content = []mcp.Content{&mcp.TextContent{Text: text}}
+	if structured == nil {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 	}
-	return res, nil
+
+	b, err := json.Marshal(structured)
+	if err != nil {
+		return toolError(fmt.Errorf("encode structured result: %w", err)), nil
+	}
+	return &mcp.CallToolResult{
+		StructuredContent: structured,
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}, nil
+}
+
+func toolError(err error) *mcp.CallToolResult {
+	res := &mcp.CallToolResult{}
+	res.SetError(err)
+	return res
 }

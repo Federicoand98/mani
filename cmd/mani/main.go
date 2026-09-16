@@ -48,6 +48,8 @@ func main() {
 		} else {
 			dest = "discard"
 		}
+	case "mcp":
+		dest = "stderr"
 	}
 	app.SetupLogging(cfg.LogLevel, dest)
 

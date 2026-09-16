@@ -31,6 +31,7 @@ var commands = []command{
 	{"validate", "check a manifest without running it", runValidate},
 	{"runs", "list or inspect past runs from the journal", runRuns},
 	{"tui", "start the interactive terminal chat", runTUICommand},
+	{"mcp", "start the agent as an MCP server over stdio", runMCP},
 }
 
 func lookupCommand(name string) (command, bool) {
