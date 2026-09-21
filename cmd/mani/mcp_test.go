@@ -21,6 +21,11 @@ import (
 // re-executes itself this way, so it exercises the real process — flag parsing,
 // logging setup, stdio — without a separate go build.
 func TestMain(m *testing.M) {
+	// Checked first: a flow's run: step inherits MANI_TEST_RUN_MAIN from the
+	// mani process that launches it, so the argument is what tells them apart.
+	if len(os.Args) > 1 && os.Args[1] == scriptArg {
+		os.Exit(flowScript(os.Args[2:]))
+	}
 	if os.Getenv("MANI_TEST_RUN_MAIN") == "1" {
 		main()
 		os.Exit(0)

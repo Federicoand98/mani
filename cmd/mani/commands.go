@@ -26,6 +26,7 @@ type command struct {
 
 var commands = []command{
 	{"run", "run an agent from manifest (single task or trigger deamon)", runFromManifest},
+	{"batch", "run an agent over a JSONL file of tasks", runBatch},
 	{"serve", "expose an agent over HTTP/websocket", runServer},
 	{"init", "scaffold a new agent manifest in the current directory", runInit},
 	{"validate", "check a manifest without running it", runValidate},
@@ -126,6 +127,17 @@ func runValidate(ctx context.Context, args []string) error {
 
 	if *configPath == "" {
 		return usagef("--config is required")
+	}
+
+	if isFlow, err := app.IsFlowFile(*configPath); err != nil {
+		return usagef("%v", err)
+	} else if isFlow {
+		f, err := app.LoadFlow(*configPath)
+		if err != nil {
+			return usagef("%v", err)
+		}
+		printFlow(os.Stdout, *configPath, f)
+		return nil
 	}
 
 	spec, err := app.LoadManifest(*configPath)
@@ -390,5 +402,32 @@ func resolveRunID(j app.Journal, prefix string) (string, error) {
 		return hits[0], nil
 	default:
 		return "", fmt.Errorf("%q is ambiguous: %s", prefix, strings.Join(hits, ", "))
+	}
+}
+
+func printFlow(w io.Writer, path string, f app.FlowSpec) {
+	fmt.Fprintf(w, "%s: ok\n  %s — %s\n", path, f.Flow, f.About)
+	if f.Input != "" {
+		fmt.Fprintf(w, "  input: %s (--in)\n", f.Input)
+	}
+	for i, st := range f.Steps {
+		what := "agent " + st.Agent
+		if st.Agent == "" {
+			what = "run " + strings.Join(st.Run, " ")
+		}
+		switch {
+		case st.ForEach != "":
+			what += ", for each record of " + st.ForEach
+			if st.Jobs > 1 {
+				what += fmt.Sprintf(" (%d at a time)", st.Jobs)
+			}
+		case st.FromAll != "":
+			what += ", on all the records of " + st.FromAll
+		}
+		fmt.Fprintf(w, "  %d. %-18s %s\n%s%s\n", i+1, st.Step, what, strings.Repeat(" ", 24), st.Does)
+	}
+	fmt.Fprintf(w, "  result: %s\n", f.Result)
+	if f.Limits.Tokens > 0 {
+		fmt.Fprintf(w, "  limits: %d tokens for the whole flow\n", f.Limits.Tokens)
 	}
 }

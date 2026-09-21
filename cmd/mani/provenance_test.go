@@ -213,3 +213,36 @@ observability:
 		t.Errorf("result = %+v, want the text under \"response\"", got.Result)
 	}
 }
+
+// --image used to be declared after flag parsing, so the flag did not exist
+// and the run died with "flag provided but not defined".
+func TestRun_ImageFlagIsAccepted(t *testing.T) {
+	llm := fakeProvider(t, "", nil)
+	home := cliHome(t, llm.URL)
+	manifest := writeManifestBody(t, `
+identity:
+  name: plain
+  provider: ollama
+  model: test-model
+  prompt: "answer"
+context:
+  inject: false
+observability:
+  tracing: false
+`)
+	img := filepath.Join(t.TempDir(), "dot.png")
+	// The smallest valid PNG: 1×1, one pixel.
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89" +
+		"\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82")
+	if err := os.WriteFile(img, png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := mani(t, home, "run", "--config", manifest, "--task", "describe", "--image", img)
+	if err != nil {
+		t.Fatalf("mani run --image: %v", err)
+	}
+	if !strings.Contains(out, "una risposta in testo") {
+		t.Errorf("stdout = %q", out)
+	}
+}

@@ -18,15 +18,34 @@ func runFromManifest(ctx context.Context, args []string) error {
 	task := fs.String("task", "", "run a single task headlessly; without it, the manifest triggers are started")
 	insecure := fs.Bool("insecure", false, "start webhook triggers without authentication (dev only)")
 	provenance := fs.Bool("provenance", false, "wrap the results with the run that produced it")
+	in := fs.String("in", "", `flow only: JSONL records for the flow's input, or "-" for stdin`)
+	out := fs.String("out", "", `flow only: directory that keeps every step's records, which makes the flow resumable`)
+	limit := fs.Int("limit", 0, "flow only: at most this many new agent runs per step (0=all)")
 	_ = fs.Bool("verbose", false, "print logs to the terminal (default: quiet)")
 	_ = fs.Bool("debug", false, "alias for --verbose")
-	_ = fs.Parse(args)
-
 	var images stringList
 	fs.Var(&images, "image", "attach an image to the task (repeatable)")
+	_ = fs.Parse(args)
 
 	if *configPath == "" {
 		return usagef("--config is required")
+	}
+
+	isFlow, err := app.IsFlowFile(*configPath)
+	if err != nil {
+		return usagef("%v", err)
+	}
+
+	if isFlow {
+		if bad := setFlag(fs, "task", "image", "provenance", "insecure"); bad != "" {
+			return usagef("--%s does not apply to a flow: it takes its records from --in or from its first step", bad)
+		}
+
+		return runFlow(ctx, *configPath, *in, *out, *limit)
+	}
+
+	if bad := setFlag(fs, "in", "out", "limit"); bad != "" {
+		return usagef("--%s does not apply to a manifest: it is only for flows", bad)
 	}
 
 	spec, err := app.LoadManifest(*configPath)
@@ -83,7 +102,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 	if *provenance {
 		out := map[string]any{
 			"result": res.payload(),
-			"run":    res.envelope(rt, *configPath, started, time.Now()),
+			"run":    res.envelope(rt, "cli", *configPath, started, time.Now()),
 		}
 		b, _ := json.MarshalIndent(out, "", "\t")
 		fmt.Println(string(b))

@@ -63,10 +63,10 @@ func (t turnResult) payload() map[string]any {
 	return map[string]any{"response": t.Text}
 }
 
-func (t turnResult) envelope(rt *app.Runtime, manifest string, started, ended time.Time) runEnvelope {
+func (t turnResult) envelope(rt *app.Runtime, source, manifest string, started, ended time.Time) runEnvelope {
 	return runEnvelope{
 		ID:        t.RunID,
-		Source:    "cli",
+		Source:    source,
 		Provider:  rt.Provider(),
 		Model:     rt.ModelName(),
 		Manifest:  manifest,
