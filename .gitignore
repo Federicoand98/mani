@@ -35,13 +35,14 @@ memory
 guide
 CLAUDE.md
 build
-_examples/tools/
 
 # binari compilati degli esempi (go build dentro _examples/<dir>/)
 _examples/custom-tool/custom-tool
 _examples/headless-agent/headless-agent
 _examples/hooks/hooks
 _examples/aiws/
+_examples/tools/
+_examples/idea_letters/
 
 # artefatti di goreleaser
 dist/
