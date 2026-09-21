@@ -52,7 +52,7 @@ func seedJournal(t *testing.T) string {
 			"tool": "bash", "action": "deny", "label": "recursive delete",
 		}),
 	)
-	if err := j.Finish("aaaa11112222", "ok"); err != nil {
+	if err := j.Finish("aaaa11112222", app.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func seedJournal(t *testing.T) string {
 	if err := j.Start(app.RunRecord{ID: "bbbb33334444", Source: "trigger", StartedAt: old}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := j.Finish("bbbb33334444", "error"); err != nil {
+	if err := j.Finish("bbbb33334444", app.RunOutcome{Status: "error"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 
@@ -364,7 +364,7 @@ func TestOpenJournal_FromSQLiteManifest(t *testing.T) {
 	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := seed.Finish("sqlite-run", "ok"); err != nil {
+	if err := seed.Finish("sqlite-run", app.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 	if err := seed.Close(); err != nil {
@@ -590,7 +590,7 @@ func TestOpenJournal_FromSQLitePath(t *testing.T) {
 	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := seed.Finish("sqlite-run", "ok"); err != nil {
+	if err := seed.Finish("sqlite-run", app.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 	if err := seed.Close(); err != nil {

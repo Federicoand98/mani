@@ -21,13 +21,18 @@ import (
 type Journal interface {
 	Start(rec RunRecord) error
 	Append(ev RunEvent) error
-	Finish(runID, status string) error
+	Finish(runID string, out RunOutcome) error
 	Get(runID string) (RunRecord, error)
 	List(f ListFilter) ([]RunMeta, error)
 	// Close releases whatever the adapter holds. Adapters that hold nothing
 	// return nil: the alternative is every owner type-asserting for it, which
 	// is a contract each caller has to remember.
 	Close() error
+}
+
+type RunOutcome struct {
+	Status string         // "ok" | "error" | "cancelled"
+	Result map[string]any // the structured result of the run
 }
 
 type ListFilter struct {
@@ -87,14 +92,15 @@ type Summary struct {
 
 // RunRecord: header + logs
 type RunRecord struct {
-	ID        string     `json:"id"`
-	SessionID string     `json:"session_id,omitempty"`
-	Source    string     `json:"source"`
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   time.Time  `json:"ended_at,omitempty"`
-	Status    string     `json:"status"`
-	Summary   Summary    `json:"summary"`
-	Events    []RunEvent `json:"events,omitempty"`
+	ID        string         `json:"id"`
+	SessionID string         `json:"session_id,omitempty"`
+	Source    string         `json:"source"`
+	StartedAt time.Time      `json:"started_at"`
+	EndedAt   time.Time      `json:"ended_at,omitempty"`
+	Status    string         `json:"status"`
+	Summary   Summary        `json:"summary"`
+	Results   map[string]any `json:"results,omitempty"`
+	Events    []RunEvent     `json:"events,omitempty"`
 }
 
 // RunMeta: header without Events: useful for List()
@@ -158,6 +164,10 @@ func (r *RunRecord) apply(ev RunEvent) {
 		r.EndedAt = ev.At
 		if s, ok := ev.Data["status"].(string); ok {
 			r.Status = s
+		}
+
+		if res, ok := ev.Data["result"].(map[string]any); ok {
+			r.Results = res
 		}
 	}
 }
@@ -240,7 +250,7 @@ func (j *InMemoryJournal) Append(ev RunEvent) error {
 	return nil
 }
 
-func (j *InMemoryJournal) Finish(runID, status string) error {
+func (j *InMemoryJournal) Finish(runID string, out RunOutcome) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
@@ -250,7 +260,8 @@ func (j *InMemoryJournal) Finish(runID, status string) error {
 	}
 
 	rec.EndedAt = time.Now()
-	rec.Status = status
+	rec.Status = out.Status
+	rec.Results = out.Result
 	return nil
 }
 
@@ -352,11 +363,13 @@ func (j *JSONLJournal) Append(ev RunEvent) error {
 	return j.writeEvent(ev)
 }
 
-func (j *JSONLJournal) Finish(runID, status string) error {
-	return j.writeEvent(RunEvent{
-		RunID: runID, At: time.Now(), Kind: EvRunEnd,
-		Data: map[string]any{"status": status},
-	})
+func (j *JSONLJournal) Finish(runID string, out RunOutcome) error {
+	data := map[string]any{"status": out.Status}
+	if out.Result != nil {
+		data["result"] = out.Result
+	}
+
+	return j.writeEvent(RunEvent{RunID: runID, At: time.Now(), Kind: EvRunEnd, Data: data})
 }
 
 func (j *JSONLJournal) readRun(runID string) (RunRecord, error) {
@@ -467,9 +480,9 @@ func (m *MultiJournal) Append(ev RunEvent) error {
 	return nil
 }
 
-func (m *MultiJournal) Finish(runID, status string) error {
+func (m *MultiJournal) Finish(runID string, out RunOutcome) error {
 	for _, j := range m.sinks {
-		_ = j.Finish(runID, status)
+		_ = j.Finish(runID, out)
 	}
 	return nil
 }

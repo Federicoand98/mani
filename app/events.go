@@ -35,7 +35,8 @@ type ToolCallResultPayload struct {
 }
 
 type ErrorPayload struct {
-	Err error
+	RunID string
+	Err   error
 }
 
 type PermissionRequestPayload struct {
@@ -52,6 +53,7 @@ type UsagePayload struct {
 }
 
 type DonePayload struct {
+	RunID  string
 	Result map[string]any
 	Text   string
 }

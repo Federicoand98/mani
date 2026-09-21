@@ -364,15 +364,16 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 		switch {
 		case errors.Is(err, context.Canceled):
 			_ = r.store.Save(sess)
-			r.finishRun(runID, "cancelled")
+			r.finishRun(runID, "cancelled", nil)
 			ch <- Event{Type: EventCancelled}
 		case err != nil:
-			r.finishRun(runID, "error")
-			ch <- Event{Type: EventError, Payload: ErrorPayload{Err: err}}
+			r.finishRun(runID, "error", nil)
+			ch <- Event{Type: EventError, Payload: ErrorPayload{RunID: runID, Err: err}}
 		default:
 			_ = r.store.Save(sess)
-			r.finishRun(runID, "ok")
+			r.finishRun(runID, "ok", res.FinalResult)
 			ch <- Event{Type: EventDone, Payload: DonePayload{
+				RunID:  runID,
 				Result: res.FinalResult,
 				Text:   res.Text,
 			}}
@@ -392,9 +393,9 @@ func (r *Runtime) Execute(ctx context.Context, input string, attachments ...core
 	return ch
 }
 
-func (r *Runtime) finishRun(runID string, status string) {
+func (r *Runtime) finishRun(runID string, status string, result map[string]any) {
 	if r.journal != nil {
-		_ = r.journal.Finish(runID, status)
+		_ = r.journal.Finish(runID, RunOutcome{Status: status, Result: result})
 	}
 }
 

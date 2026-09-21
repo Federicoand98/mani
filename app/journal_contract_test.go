@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -67,7 +69,7 @@ func TestJournalContract(t *testing.T) {
 				Data: map[string]any{"tool": "read", "action": "mask"}}); err != nil {
 				t.Fatalf("Append guardrail mask: %v", err)
 			}
-			if err := j.Finish("run", "error"); err != nil {
+			if err := j.Finish("run", RunOutcome{Status: "error", Result: map[string]any{"label": "positive"}}); err != nil {
 				t.Fatalf("Finish: %v", err)
 			}
 
@@ -85,9 +87,36 @@ func TestJournalContract(t *testing.T) {
 				t.Fatalf("guardrail counters = blocked %d, masked %d, want 1 and 1", rec.Summary.Blocked, rec.Summary.Masked)
 			}
 
+			// The audit trail has to answer "what did the agent reply", not only
+			// "did it work". The result rides in the run_end event, so every
+			// adapter that folds events gets it: this is what stops one of them
+			// from quietly dropping it.
+			if rec.Results["label"] != "positive" {
+				t.Fatalf("result = %+v, want the structured result of the run", rec.Results)
+			}
+
 			metas, err := j.List(ListFilter{SessionID: "session", Status: "error", Since: base.Add(-time.Second), Limit: 1})
 			if err != nil || len(metas) != 1 || metas[0].ID != "run" || metas[0].Summary != rec.Summary {
 				t.Fatalf("List = %+v, err=%v", metas, err)
+			}
+
+			// A run that answered in text has no structured result: the field is
+			// absent, and the JSON of the record must not carry a null for it.
+			if err := j.Start(RunRecord{ID: "plain", SessionID: "session", Source: "test", StartedAt: base}); err != nil {
+				t.Fatalf("Start(plain): %v", err)
+			}
+			if err := j.Finish("plain", RunOutcome{Status: "ok"}); err != nil {
+				t.Fatalf("Finish(plain): %v", err)
+			}
+			plain, err := j.Get("plain")
+			if err != nil {
+				t.Fatalf("Get(plain): %v", err)
+			}
+			if plain.Results != nil {
+				t.Errorf("result = %+v, want none", plain.Results)
+			}
+			if b, _ := json.Marshal(plain); bytes.Contains(b, []byte(`"results":null`)) {
+				t.Errorf("record JSON carries a null result: %s", b)
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/core"
@@ -16,6 +17,7 @@ func runFromManifest(ctx context.Context, args []string) error {
 	configPath := fs.String("config", "", "path to the YAML manifest")
 	task := fs.String("task", "", "run a single task headlessly; without it, the manifest triggers are started")
 	insecure := fs.Bool("insecure", false, "start webhook triggers without authentication (dev only)")
+	provenance := fs.Bool("provenance", false, "wrap the results with the run that produced it")
 	_ = fs.Bool("verbose", false, "print logs to the terminal (default: quiet)")
 	_ = fs.Bool("debug", false, "alias for --verbose")
 	_ = fs.Parse(args)
@@ -68,23 +70,32 @@ func runFromManifest(ctx context.Context, args []string) error {
 	}
 
 	// turno singolo headless
-	for ev := range rt.Execute(ctx, *task, attachments...) {
-		switch ev.Type {
-		case app.EventPermissionRequest:
-			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny // fail-closed
-		case app.EventDone:
-			p := ev.Payload.(app.DonePayload)
-			if p.Result != nil {
-				b, _ := json.MarshalIndent(p.Result, "", "\t")
-				fmt.Println(string(b))
-			} else {
-				fmt.Println(p.Text)
-			}
-		case app.EventError:
-			if p, ok := ev.Payload.(app.ErrorPayload); ok {
-				return p.Err
-			}
-		}
+
+	started := time.Now()
+	ch, cancel := rt.ExecuteIn(app.WithSource(ctx, "cli"), rt.CurrentSession(), *task, attachments...)
+	defer cancel()
+
+	res := consume(ch)
+	if res.Err != nil {
+		return res.Err
 	}
+
+	if *provenance {
+		out := map[string]any{
+			"result": res.payload(),
+			"run":    res.envelope(rt, *configPath, started, time.Now()),
+		}
+		b, _ := json.MarshalIndent(out, "", "\t")
+		fmt.Println(string(b))
+		return nil
+	}
+
+	if res.Result != nil {
+		b, _ := json.MarshalIndent(res.Result, "", "\t")
+		fmt.Println(string(b))
+	} else {
+		fmt.Println(res.Text)
+	}
+
 	return nil
 }

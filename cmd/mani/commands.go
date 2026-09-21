@@ -276,6 +276,12 @@ func printRun(w io.Writer, rec app.RunRecord, asJSON bool) error {
 			ev.Kind,
 			describe(ev))
 	}
+
+	if rec.Results != nil {
+		b, _ := json.Marshal(rec.Results)
+		fmt.Fprintf(w, "\nresult %s\n", truncate(string(b), 120))
+	}
+
 	return nil
 }
 

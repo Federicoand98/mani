@@ -129,11 +129,12 @@ func (j *SQLiteJournal) Append(ev RunEvent) error {
 	return j.writeEvent(ev)
 }
 
-func (j *SQLiteJournal) Finish(runID, status string) error {
-	return j.writeEvent(RunEvent{
-		RunID: runID, At: time.Now(), Kind: EvRunEnd,
-		Data: map[string]any{"status": status},
-	})
+func (j *SQLiteJournal) Finish(runID string, out RunOutcome) error {
+	data := map[string]any{"status": out.Status}
+	if out.Result != nil {
+		data["result"] = out.Result
+	}
+	return j.writeEvent(RunEvent{RunID: runID, At: time.Now(), Kind: EvRunEnd, Data: data})
 }
 
 func (j *SQLiteJournal) writeEvent(ev RunEvent) error {
