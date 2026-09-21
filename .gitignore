@@ -42,7 +42,7 @@ _examples/headless-agent/headless-agent
 _examples/hooks/hooks
 _examples/aiws/
 _examples/tools/
-_examples/idea_letters/
+_examples/idea-letters/
 
 # artefatti di goreleaser
 dist/
