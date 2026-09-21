@@ -1,0 +1,25 @@
+# One review in, one label out. Runs alone too:
+#   mani run --config classify.yaml --task "the lid broke after two weeks"
+
+identity:
+  name: review-classifier
+  description: "Classifies the sentiment of one customer review"
+  provider: ollama
+  model: qwen3.6-35b-a3b
+  prompt: |
+    Classify the sentiment of the customer review given by the user.
+    If it is negative, name the problem in a few words; otherwise leave the problem empty.
+
+context:
+  inject: false
+
+output:
+  schema:
+    type: object
+    properties:
+      sentiment: { type: string, enum: [positive, negative, neutral] }
+      problem: { type: string }
+    required: [sentiment, problem]
+
+observability:
+  tracing: false

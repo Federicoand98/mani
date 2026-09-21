@@ -1,0 +1,41 @@
+# Provenance: a result that says which run produced it.
+#
+#   mani run --config _examples/provenance.yaml --task "the parcel never arrived"
+#   → {"sentiment": "negative", "score": 0.1}            the declared shape, nothing else
+#
+#   mani run --config _examples/provenance.yaml --task "the parcel never arrived" --provenance
+#   → {"result": {...}, "run": {"id": "8f2a1c…", "model": "…", "in_tokens": …}}
+#
+#   mani runs --path ./runs                              the same runs, from the journal
+#   mani runs --path ./runs 8f2a1c                       …and the answer it gave
+#
+# Two ways to the same fact. The bare result stays the default because
+# output.schema declares what a run returns: wrapping it by default would make
+# the manifest describe a sub-object, and would break every `| jq '.sentiment'`.
+# The journal has the provenance either way — the flag is for when the result
+# travels somewhere else and has to carry it along.
+
+identity:
+  name: sentiment-classifier
+  description: "Classifies the sentiment of a text"
+  provider: ollama
+  model: qwen3.6-35b-a3b
+  prompt: "Classify the sentiment of the text given by the user."
+
+context:
+  inject: false
+
+output:
+  schema:
+    type: object
+    properties:
+      sentiment: { type: string, enum: [positive, negative, neutral] }
+      score: { type: number }
+    required: [sentiment, score]
+
+observability:
+  tracing: false
+  journal:
+    enabled: true
+    path: ./runs # `mani runs --path ./runs` reads it without a server
+    retention: 50
