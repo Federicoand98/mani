@@ -58,7 +58,7 @@ func New(ctx context.Context, spec app.RuntimeSpec, version string) (*Server, er
 		&mcp.Implementation{Name: "mani", Version: version},
 		&mcp.ServerOptions{
 			Instructions: spec.Identity.Description,
-			Logger: slog.Default(),
+			Logger:       slog.Default(),
 		},
 	)
 

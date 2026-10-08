@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,11 +83,13 @@ type fakeLLM struct {
 
 	mu    sync.Mutex
 	tasks []string
+	body  string // the last request, verbatim: what the provider really received
 
 	inFlight, maxInFlight atomic.Int64
 	delay                 time.Duration
 	failing               atomic.Bool
-	fail                  func(task string) bool // HTTP 500 when failing is set and this returns true
+	fail                  func(task string) bool           // HTTP 500 when failing is set and this returns true
+	reply                 func(task string) map[string]any // respond arguments; the default labels the task
 }
 
 func newFakeLLM(t *testing.T) *fakeLLM {
@@ -119,7 +122,8 @@ func (f *fakeLLM) serve(w http.ResponseWriter, r *http.Request) {
 			Content string `json:"content"`
 		} `json:"messages"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	raw, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(raw, &req)
 	task := ""
 	for _, m := range req.Messages {
 		if m.Role == "user" {
@@ -128,6 +132,7 @@ func (f *fakeLLM) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.tasks = append(f.tasks, task)
+	f.body = string(raw)
 	f.mu.Unlock()
 
 	if f.failing.Load() && f.fail != nil && f.fail(task) {
@@ -135,14 +140,24 @@ func (f *fakeLLM) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	args := map[string]any{"label": "L:" + task}
+	if f.reply != nil {
+		args = f.reply(task)
+	}
 	msg := map[string]any{"role": "assistant", "content": "", "tool_calls": []map[string]any{
-		{"function": map[string]any{"name": "respond", "arguments": map[string]any{"label": "L:" + task}}},
+		{"function": map[string]any{"name": "respond", "arguments": args}},
 	}}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"message": msg, "done": true, "done_reason": "stop",
 		"prompt_eval_count": 11, "eval_count": 7,
 	})
+}
+
+func (f *fakeLLM) lastBody() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.body
 }
 
 func (f *fakeLLM) seen() []string {

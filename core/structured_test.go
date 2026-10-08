@@ -82,3 +82,57 @@ func TestAgent_FinalTool_NotExecuted(t *testing.T) {
 		t.Errorf("il final tool non deve essere eseguito, calls=%d", exec.calls)
 	}
 }
+
+// The point of the deep validation: a nested violation must stop the run just
+// like a missing top-level field, or a declared shape is a suggestion.
+func TestAgent_FinalTool_RetriesOnNestedViolation(t *testing.T) {
+	schema := ToolInputSchema{
+		Type: "object",
+		Properties: map[string]ToolProperty{
+			"letters": {Type: "array", Items: &ToolProperty{
+				Type: "object",
+				Properties: map[string]ToolProperty{
+					"place": {Type: "string", Enum: []string{"Mantova", "Ferrara"}},
+					"year":  {Type: "integer"},
+				},
+				Required: []string{"place"},
+			}},
+		},
+		Required: []string{"letters"},
+	}
+
+	cases := []struct {
+		name string
+		bad  map[string]any
+	}{
+		{"item of the wrong type", map[string]any{"letters": []any{"Mantova"}}},
+		{"nested required missing", map[string]any{"letters": []any{map[string]any{"year": 1495.0}}}},
+		{"nested value outside the enum", map[string]any{"letters": []any{map[string]any{"place": "Milano"}}}},
+		{"nested integer not integer", map[string]any{"letters": []any{map[string]any{"place": "Mantova", "year": 1495.5}}}},
+	}
+	good := map[string]any{"letters": []any{map[string]any{"place": "Mantova", "year": 1495.0}}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewMock(
+				RespToolCall("1", "respond", tc.bad),
+				RespToolCall("2", "respond", good),
+			)
+			a := NewAgent(client)
+			a.AddTool(ToolDefinition{Name: "respond", InputSchema: schema}, &mockToolExecutor{name: "respond"})
+			a.SetFinalTool("respond")
+
+			res, err := a.Run(context.Background(), NewInMemory(), "x", nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			letters, _ := res.FinalResult["letters"].([]any)
+			if len(letters) != 1 {
+				t.Fatalf("FinalResult = %v, want the retried answer", res.FinalResult)
+			}
+			if first, _ := letters[0].(map[string]any); first["place"] != "Mantova" {
+				t.Errorf("FinalResult = %v, want the invalid answer refused and the retry kept", res.FinalResult)
+			}
+		})
+	}
+}

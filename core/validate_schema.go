@@ -60,7 +60,7 @@ func checkType(name string, v any, prop ToolProperty) error {
 		}
 
 		for i, item := range items {
-			if err := checkType(fmt.Sprintf("%s[%d]", name, i), item, *&prop.Items); err != nil {
+			if err := checkType(fmt.Sprintf("%s[%d]", name, i), item, *prop.Items); err != nil {
 				return err
 			}
 		}

@@ -210,7 +210,7 @@ func sentimentSchema() tool.InputSchema {
 	return tool.InputSchema{
 		Type: "object",
 		Properties: map[string]tool.PropertySchema{
-			"label": {Type: "string", Enum: []string{"positive", "negative"}},
+			"label": {Type: "string", Enum: &tool.EnumValues{Values: []string{"positive", "negative"}}},
 			"score": {Type: "number"},
 		},
 		Required: []string{"label", "score"},
