@@ -153,6 +153,11 @@ func runValidate(ctx context.Context, args []string) error {
 	if spec.Output.Schema.Type != "" {
 		fmt.Printf("  output:       structured\n")
 	}
+
+	for _, w := range spec.Warnings() {
+		fmt.Fprintf(os.Stderr, " warning: %s\n", w)
+	}
+
 	return nil
 }
 

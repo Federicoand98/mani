@@ -33,7 +33,7 @@ type PropertySchema struct {
 	Items       *PropertySchema           `json:"items,omitempty"`
 	Properties  map[string]PropertySchema `json:"properties,omitempty"`
 	Required    []string                  `json:"required,omitempty"`
-	Enum        []string                  `json:"enum,omitempty"`
+	Enum        *EnumValues               `json:"enum,omitempty"`
 }
 
 type Tool interface {

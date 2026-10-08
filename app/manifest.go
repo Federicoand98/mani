@@ -481,7 +481,90 @@ func (s *RuntimeSpec) resolveIncludes(baseDir string) error {
 		}
 		s.Identity.Prompt = text
 	}
+
+	if err := resolveSchemaIncludes(baseDir, "output.schema", &s.Output.Schema); err != nil {
+		return err
+	}
+	for i := range s.Capabilities.Tools {
+		where := fmt.Sprintf("capabilities.tools[%d].schema", i)
+		if err := resolveSchemaIncludes(baseDir, where, &s.Capabilities.Tools[i].Schema); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func resolveSchemaIncludes(baseDir, where string, schema *tool.InputSchema) error {
+	for name, prop := range schema.Properties {
+		// map values are copies: resolve, then put it back
+		if err := resolvePropIncludes(baseDir, where+"."+name, &prop); err != nil {
+			return err
+		}
+		schema.Properties[name] = prop
+	}
+	return nil
+}
+
+func resolvePropIncludes(baseDir, where string, p *tool.PropertySchema) error {
+	if p.Enum != nil && p.Enum.Include != "" {
+		content, err := readInclude(baseDir, p.Enum.Include)
+		if err != nil {
+			return fmt.Errorf("%s.enum: %w", where, err)
+		}
+		values, err := parseEnumFile(p.Enum.Include, content)
+		if err != nil {
+			return fmt.Errorf("%s.enum: %w", where, err)
+		}
+		p.Enum = &tool.EnumValues{Values: values}
+	}
+
+	if p.Items != nil {
+		if err := resolvePropIncludes(baseDir, where+"[]", p.Items); err != nil {
+			return err
+		}
+	}
+	for name, sub := range p.Properties {
+		if err := resolvePropIncludes(baseDir, where+"."+name, &sub); err != nil {
+			return err
+		}
+		p.Properties[name] = sub
+	}
+	return nil
+}
+
+func parseEnumFile(name, content string) ([]string, error) {
+	var values []string
+
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".json", ".yaml", ".yml":
+		// YAML is a superset of JSON: one parser covers both.
+		if err := yaml.Unmarshal([]byte(content), &values); err != nil {
+			return nil, fmt.Errorf("!include %q: expected a list of strings: %w", name, err)
+		}
+	default:
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			values = append(values, line)
+		}
+	}
+
+	if len(values) == 0 {
+		return nil, fmt.Errorf("!include %q: no values", name)
+	}
+	seen := make(map[string]bool, len(values))
+	for _, v := range values {
+		if v == "" {
+			return nil, fmt.Errorf("!include %q: contains an empty value", name)
+		}
+		if seen[v] {
+			return nil, fmt.Errorf("!include %q: duplicate value %q", name, v)
+		}
+		seen[v] = true
+	}
+	return values, nil
 }
 
 func readInclude(baseDir, rel string) (string, error) {
@@ -578,5 +661,37 @@ func (r RiskName) toCore() core.RiskLevel {
 		return core.RiskExecute
 	default:
 		return core.RiskNone
+	}
+}
+
+const enumWarnThreshold = 200
+
+// Warnings reports what is legal but probably a mistake. It never fails a load.
+func (s RuntimeSpec) Warnings() []string {
+	var out []string
+	walkSchema("output.schema", s.Output.Schema, &out)
+	for i, ref := range s.Capabilities.Tools {
+		walkSchema(fmt.Sprintf("capabilities.tools[%d].schema", i), ref.Schema, &out)
+	}
+	return out
+}
+
+func walkSchema(where string, schema tool.InputSchema, out *[]string) {
+	for name, prop := range schema.Properties {
+		walkProp(where+"."+name, prop, out)
+	}
+}
+
+func walkProp(where string, p tool.PropertySchema, out *[]string) {
+	if p.Enum != nil && len(p.Enum.Values) > enumWarnThreshold {
+		*out = append(*out, fmt.Sprintf(
+			"%s.enum has %d values: the schema is sent on every call, consider a lookup tool instead",
+			where, len(p.Enum.Values)))
+	}
+	if p.Items != nil {
+		walkProp(where+"[]", *p.Items, out)
+	}
+	for name, sub := range p.Properties {
+		walkProp(where+"."+name, sub, out)
 	}
 }
