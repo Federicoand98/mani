@@ -81,6 +81,67 @@ Policy, limits and the journal still apply, because they live in the runtime and
 transport. **An agent called from inside an editor leaves the same audit trail** as one started
 by a trigger — `mani runs --config reviewer.yaml` lists its runs with source `mcp`.
 
+## More than one agent
+
+A file that declares `flow:` wires manifests into a pipeline, and the same command runs it. Each
+step is an agent or a plain command that already works on its own — the flow adds no behaviour of
+its own, it only says who reads whose output.
+
+```yaml
+# letters.flow.yaml
+flow: idea_letters
+about: "Rebuilds the timeline of a busta from its transcribed letters"
+
+steps:
+  - step: fetch_letters
+    does: "Downloads the transcribed letters of the busta"
+    run: python fetch.py --busta ${BUSTA}
+
+  - step: extract_facts
+    does: "Reads one letter and extracts sender, recipient, place and date"
+    agent: extract.yaml
+    for_each: fetch_letters      # one run per record, 4 at a time
+    jobs: 4
+
+  - step: build_timeline
+    does: "Resolves people and places and orders the letters in time"
+    run: python merge.py
+    from_all: extract_facts      # one run, over every record
+
+result: build_timeline
+limits: { tokens: 2000000 }      # a ceiling for the whole pipeline
+```
+
+```bash
+mani validate --config letters.flow.yaml   # the flow read aloud: what each step does, and reads
+mani run --config letters.flow.yaml --out runs/
+```
+
+A step may only read the steps **above** it, so the graph is acyclic by construction and the file
+reads top to bottom. What travels between steps is a record — `{"id": …, "task": …}` plus any
+fields of your own, which ride along untouched — so one agent's structured answer becomes the
+next one's task with no glue in between, and there is no template language to learn. A `run:`
+step is argv with no shell: JSONL in, JSONL out.
+
+**Resuming is make's rule.** Every step keeps its records under `--out`, and a record newer than
+what it was made from is not made again: rerunning a finished pipeline calls no model at all, one
+more input costs one more run, and a step that produces identical output leaves everything
+downstream alone. A record that fails stops the flow before the next step — so nothing ever
+computes on half its input — and the next run retries only what failed.
+
+One agent over a file of tasks is the same machinery with one step, so it gets a shortcut:
+
+```bash
+mani batch --config classify.yaml --in reviews.jsonl --out out/ --jobs 4
+```
+
+Every record carries the run that produced it — id, model, manifest, tokens — and `mani run
+--provenance` adds the same envelope to a single run, so a result that travels somewhere else can
+still be traced back to the journal.
+
+It is deliberately **not** LangGraph: no shared mutable state, no cycles, no conditional edges.
+Where judgement is needed you use an agent; where the shape is known you use a flow.
+
 ## One block, one question
 
 A manifest has eight top-level blocks, and each answers exactly one question. That is the whole
@@ -130,7 +191,8 @@ Unknown keys are a **hard error**, never a silent no-op.
 |---|---|
 | [Introduction](docs/introduction.md) | for everyone — no Go, no programming |
 | [Manifest reference](docs/manifest.md) | every block, every key, the built-in tools |
-| [Usage](docs/usage.md) | CLI, trigger daemon, agent server, subprocess tools, library |
+| [Usage](docs/usage.md) | CLI, batch, flows, trigger daemon, agent server, subprocess tools, library |
+| [Flows](docs/flow.md) | the pipeline file: steps, records, resuming, budget |
 | [Agent server](docs/agent-server.md) | the REST + WebSocket protocol in full |
 | [Agentic loop](docs/agentic-loop.md) | where hooks fire, where permissions gate |
 | [`_examples/`](_examples/) | runnable manifests |
@@ -140,7 +202,7 @@ Unknown keys are a **hard error**, never a silent no-op.
 | Area | State |
 |---|---|
 | Declarative manifest (8 blocks) + headless `run` | ✅ |
-| CLI: `init`, `validate`, `run`, `runs`, `serve`, `mcp`, `tui`, `--version` | ✅ |
+| CLI: `init`, `validate`, `run`, `batch`, `runs`, `serve`, `mcp`, `tui`, `--version` | ✅ |
 | Providers: Ollama, OpenAI, Anthropic, GitHub Copilot, OpenRouter | ✅ |
 | Tools: `read` `write` `edit` `delete` `glob` `grep` `bash` `fetch` `planning` `delegate` | ✅ |
 | MCP client, subprocess tools in any language | ✅ |
@@ -151,7 +213,11 @@ Unknown keys are a **hard error**, never a silent no-op.
 | Run journal / audit trail (`mani runs`, `GET /runs`), JSONL or SQLite | ✅ |
 | Agent server (REST + WebSocket, bearer auth) | ✅ |
 | Sessions, planning, subagents, hooks, tracing, compaction, image input | ✅ |
-| Batch mode · provenance on results · external vocabularies | 🚧 next |
+| Flows: a pipeline of manifests, resumable, with a budget for the whole run | ✅ |
+| `mani batch`: one agent over a JSONL file, resumable, with `--jobs` | ✅ |
+| Provenance on results (`--provenance`) + the result in the journal | ✅ |
+| Vocabularies from a file (`enum: !include`) + deep schema validation | ✅ |
+| Asynchronous human approval · notification channels | 🚧 next |
 | Python SDK · container images | 🗺️ roadmap |
 
 ## Architecture
@@ -160,9 +226,10 @@ Hexagonal (Ports & Adapters). The single invariant: **`core/` has zero external 
 Dependency arrows always point inward.
 
 ```
-cmd/mani/      composition root — TUI, run, serve, mcp, init, validate, runs
-app/           application service — Runtime, events, manifest, policy, limits,
-               journal, task queue, subagents, triggers
+cmd/mani/      composition root — TUI, run, batch, serve, mcp, init, validate, runs,
+               and the flow executor (one engine: a batch is a flow of one step)
+app/           application service — Runtime, events, manifest + flow spec, policy,
+               limits, journal, task queue, subagents, triggers
 server/        driving adapter — REST + WebSocket
 server/mcpserver/  driving adapter — MCP server over stdio (the agent as one tool)
 tui/           driving adapter — terminal UI (BubbleTea)
@@ -188,9 +255,11 @@ go build ./... && go test ./...
 
 ## Roadmap
 
-1. **Batch mode** — run one agent over a set of inputs, with the durable queue's concurrency,
-   retries and resumability ([#19](https://github.com/Federicoand98/mani/issues/19)).
-2. **Manifest composition** — reference a manifest as a tool, composing independently governed units.
+1. **Asynchronous human approval** — an unattended agent pauses on a sensitive action and waits
+   for an ok, instead of having to choose `allow` or `deny` up front. The feature that makes
+   triggers usable for work that matters.
+2. **Manifest composition** — one agent as a tool of another, where the *model* decides. Flows
+   cover the case where the shape is known in advance; this covers the case where it is not.
 3. **Python SDK** — drive the runtime over the agent server.
 
 Feature filter: does it deepen manifest expressiveness, safe autonomy, or operability as a

@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 While the version is `0.x`, breaking changes may land in any minor release.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-09
+
+The agent stops being something you chat with and becomes something that
+processes data: a result that says which run produced it, one agent over a file
+of tasks, and a flow that wires manifests into a pipeline. Plus the agent as a
+tool for any MCP client.
+
+The flow file is the newest part of the declarative surface, and the part most
+likely to move before 1.0: conditional steps, declared parameters and joining
+two branches are all deferred, and all of them touch the grammar. Manifests are
+not affected — a flow is a separate file.
 
 ### Added
 
@@ -32,7 +42,164 @@ While the version is `0.x`, breaking changes may land in any minor release.
   stdout carries only the protocol: an end-to-end test runs the real binary with
   debug logging and fails on any non JSON-RPC line.
 
+- **Flows: a pipeline of manifests.** A file that declares `flow:` is run by the
+  same command as an agent — `mani run --config letters.flow.yaml` — and `mani
+  run`/`mani validate` tell the two apart by what the file says, not by its
+  name. A flow has no behaviour of its own: every step is a manifest or a
+  command that already runs by itself.
+
+  ```yaml
+  flow: idea_letters
+  about: "Rebuilds the timeline of a busta from its transcribed letters"
+
+  steps:
+    - step: fetch_letters
+      does: "Downloads the transcribed letters of the busta"
+      run: python pipeline.py letters --busta ${BUSTA}
+
+    - step: extract_facts
+      does: "Reads one letter and extracts sender, recipient, place and date"
+      agent: extract.yaml
+      for_each: fetch_letters
+      jobs: 4
+
+    - step: build_timeline
+      does: "Resolves people and places and orders the letters in time"
+      run: python pipeline.py timeline
+      from_all: extract_facts
+
+  result: build_timeline
+  limits: { tokens: 2000000 }
+  ```
+
+  The steps run in the order written, and a step may only read the steps above
+  it: the graph is acyclic by construction, and the file reads top to bottom.
+  `for_each` runs one agent per record, `jobs` at a time; `from_all` runs once
+  over every record. A `run:` step is argv with no shell — JSONL records on
+  stdin, its own records on stdout — so reshaping data stays the job of a
+  script, and a flow needs no template language. `agent:` paths and commands
+  resolve against the flow's directory, `${VAR}` expands as in a manifest, and
+  the records of the `result:` step are printed on stdout as JSONL, with
+  progress on stderr.
+
+  Records are the edges: `{"id": …, "task": …}` plus any fields of your own,
+  which travel untouched from step to step — the shelfmark that went in comes
+  back out next to the synthesis. An agent receives the upstream `task`, or the
+  `result` of the agent before it, as JSON when it is not a string: one agent's
+  structured answer is the next one's task, with no glue in between.
+
+  **Resuming is make's rule.** With `--out` every step keeps its records in
+  `<out>/<step>/<id>.json`, and a record that exists and is newer than what it
+  was made from is not made again. Rerunning a finished flow calls no model at
+  all; one more letter costs one extraction. A step that reruns and produces
+  identical files does not move their time, so nothing downstream reruns either.
+  A record that fails lands in `<out>/<step>/errors.jsonl`, leaves no result
+  file, and stops the flow before the next step — so no step ever computes on
+  half its input — and the next run retries only what failed. `--limit N` caps
+  the new agent runs per step and lets the rest of the flow proceed, which is
+  how you try a pipeline on a sample. Without `--out` the flow still runs, in a
+  temporary directory it removes at the end.
+
+  `limits.tokens` caps the whole flow across every run, checked before each one
+  starts: runs already in flight finish, so the total can pass the cap by at
+  most `jobs` runs. The totals are printed at the end either way.
+
+  `mani validate` reads a flow aloud — what each step does, what it reads, in
+  which order — so the file can be checked without running it, and `about:` and
+  `does:` are required for the same reason.
+
+- **`mani batch`: one agent over a file of tasks.** JSONL in, one record out per
+  task:
+
+  ```bash
+  mani batch --config classify.yaml --in reviews.jsonl --out out/ --jobs 4
+  ```
+
+  A batch is a flow of one step, so it is the same executor and the same rules:
+  resume by skipping what is already there, `errors.jsonl` for the failures,
+  exit 1 when any task failed, and extras carried through to the result. With
+  `--out` each result is its own file; without it they stream to stdout as they
+  finish, so a batch fits in a pipe. The whole input is validated before the
+  first model call: a malformed line, a missing or repeated `id`, or an `id`
+  that cannot be a file name fails immediately rather than two thousand runs
+  later. A `task` that is not a string is sent as JSON.
+
+- **Provenance on results.** `mani run --provenance` wraps the result with the
+  run that produced it, instead of returning it bare:
+
+  ```json
+  {
+    "result": {"sentiment": "negative"},
+    "run": {"id": "8f2a1c…", "source": "cli", "provider": "ollama",
+            "model": "qwen3.5:9b", "manifest": "./classify.yaml",
+            "started_at": "…", "ended_at": "…", "in_tokens": 412, "out_tokens": 23}
+  }
+  ```
+
+  The bare result stays the default, because `output.schema` declares what a run
+  returns and wrapping it would make every manifest describe a sub-object. The
+  records of a batch or a flow always carry it, under `run`.
+
+- **The journal records the structured result.** `run_end` now carries it, so
+  `RunRecord.Results` holds what the agent answered and the audit trail says
+  what was decided, not only that something was. It arrives in all three
+  adapters at once, with no schema change — the fold over events does the work —
+  and `mani runs <id>` shows it.
+
+- **Vocabularies from a file.** An enum can be loaded instead of written out:
+
+  ```yaml
+  person: { type: string, enum: !include ./people.txt }
+  ```
+
+  One value per line, with blank lines and `#` comments allowed, or a list in a
+  `.json`, `.yaml` or `.yml` file — the extension decides. It works anywhere in
+  a schema, including the items of an array, a nested object and a subprocess
+  tool's own schema, and the path is relative to the manifest, like
+  `identity.prompt`. An empty file, a duplicate value or a malformed list is an
+  error naming the field, and an absolute path is refused. Above 200 values
+  `mani validate` warns on stderr — the schema travels on every call — without
+  ever failing the load.
+
+
+### Changed
+
+- **Structured output is validated in depth.** The validator only looked at the
+  top level: an array of objects, or an object inside an object, passed with
+  whatever it contained. It now recurses into array items and nested
+  properties, checking types, `required` and `enum` at every level, and names
+  the offending element — `letters[1].places[1] must be a string`. An answer
+  that used to pass now gets the usual retry, so a manifest with a nested
+  schema may see one more model call than before, and a result that was never
+  the declared shape stops being accepted.
+
+- **`Journal.Finish` takes a `RunOutcome`.** Breaking for anyone implementing
+  the port outside the repo: `Finish(runID string, out RunOutcome)` replaces
+  `Finish(runID, status string)`, where `RunOutcome` carries the status and the
+  result.
+
+- **`tool.PropertySchema.Enum` is a `*tool.EnumValues`.** Breaking for library
+  users who build schemas in Go: a plain `[]string` becomes
+  `&tool.EnumValues{Values: []string{…}}`. The JSON stays a plain array, so
+  nothing changes for providers or MCP clients. The type is what carries a
+  deferred `!include`.
+
+- **`mani run` dispatches on the file.** `--in`, `--out` and `--limit` apply to
+  a flow, `--task`, `--image`, `--provenance` and `--insecure` to an agent;
+  using one on the other is a usage error that names the flag instead of being
+  ignored.
+
 ### Fixed
+
+- **A second concurrent run could crash the process.** The session store is one
+  map shared by every run of a `Runtime`, and nothing guarded it: two runs at
+  once — `mani batch --jobs 2`, or two triggers of the same manifest firing
+  together — could end in `fatal error: concurrent map writes`. It is now
+  locked, and the race detector covers it.
+
+- **`mani run --image` never worked.** The flag was registered after the
+  command line was parsed, so every use of it died with `flag provided but not
+  defined: -image`.
 
 - **Tool schemas no longer contain `null`.** Unset JSON Schema keywords
   (`items`, `required`, `enum`, `properties`, `description`) were serialised as
