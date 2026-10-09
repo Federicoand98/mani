@@ -50,8 +50,12 @@ func toProp(rs rawSchema) tool.PropertySchema {
 		Type:        rs.Type,
 		Description: rs.Description,
 		Required:    rs.Required,
-		Enum:        enumStrings(rs.Enum),
 	}
+
+	if vs := enumStrings(rs.Enum); len(vs) > 0 {
+		p.Enum = &tool.EnumValues{Values: vs}
+	}
+
 	if rs.Items != nil {
 		it := toProp(*rs.Items)
 		p.Items = &it

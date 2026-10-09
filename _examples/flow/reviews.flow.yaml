@@ -1,0 +1,40 @@
+# A flow: three pieces that each run alone, wired together.
+#
+#   mani validate --config _examples/flow/reviews.flow.yaml
+#   → the flow read aloud: what each step does, what it reads, in which order
+#
+#   mani run --config _examples/flow/reviews.flow.yaml --in _examples/flow/reviews.jsonl --out /tmp/reviews
+#   → stdout: the team note (the `result` step), progress on stderr
+#
+# Then try what makes it a flow and not a script:
+#   run it again                          → nothing runs, zero model calls
+#   add a line to reviews.jsonl, rerun    → one classification, then tally and note again
+#   rm /tmp/reviews/classify/r02.json     → that review alone is redone; the note only if the
+#                                           tally came out different (identical files are not rewritten)
+#   ls /tmp/reviews/*/                    → every step's records, one file each
+#
+# Paths (agent:, run:) are relative to this file, so it runs from anywhere.
+
+flow: reviews
+about: "Classifies customer reviews and writes a note for the product team"
+input: "One review per line: {id, product, task}"
+
+steps:
+  - step: classify
+    does: "Reads one review and labels its sentiment and problem"
+    agent: classify.yaml
+    for_each: input
+    jobs: 3
+
+  - step: tally
+    does: "Counts the labels and collects the complaints by product"
+    run: python3 tally.py
+    from_all: classify
+
+  - step: note
+    does: "Writes a short note for the team from the tally"
+    agent: summarize.yaml
+    for_each: tally
+
+result: note
+limits: { tokens: 50000 }

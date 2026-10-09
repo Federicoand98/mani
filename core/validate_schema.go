@@ -50,13 +50,37 @@ func checkType(name string, v any, prop ToolProperty) error {
 		}
 
 	case "array":
-		if _, ok := v.([]any); !ok {
+		items, ok := v.([]any)
+		if !ok {
 			return fmt.Errorf("field %s must be an array", name)
 		}
 
+		if prop.Items == nil {
+			return nil
+		}
+
+		for i, item := range items {
+			if err := checkType(fmt.Sprintf("%s[%d]", name, i), item, *prop.Items); err != nil {
+				return err
+			}
+		}
+
 	case "object":
-		if _, ok := v.(map[string]any); !ok {
+		obj, ok := v.(map[string]any)
+		if !ok {
 			return fmt.Errorf("field %s must be an object", name)
+		}
+		for _, req := range prop.Required {
+			if _, ok := obj[req]; !ok {
+				return fmt.Errorf("field %s: required field %s is missing", name, req)
+			}
+		}
+		for key, sub := range prop.Properties {
+			if val, ok := obj[key]; ok {
+				if err := checkType(name+"."+key, val, sub); err != nil {
+					return err
+				}
+			}
 		}
 	}
 

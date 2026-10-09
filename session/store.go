@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -23,7 +24,10 @@ type Meta struct {
 
 // adapter in memory
 
+// InMemoryStore is shared by every run of a Runtime, and runs are concurrent
+// (triggers, server clients, batch jobs): the map needs its lock.
 type InMemoryStore struct {
+	mu       sync.RWMutex
 	sessions map[string]*Session
 }
 
@@ -32,12 +36,16 @@ func NewInMemoryStore() *InMemoryStore {
 }
 
 func (s *InMemoryStore) Save(session *Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	session.touch()
 	s.sessions[session.ID] = session
 	return nil
 }
 
 func (s *InMemoryStore) Load(id string) (*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	session, ok := s.sessions[id]
 	if !ok {
 		return nil, fmt.Errorf("session not found: %s", id)
@@ -46,6 +54,8 @@ func (s *InMemoryStore) Load(id string) (*Session, error) {
 }
 
 func (s *InMemoryStore) List() ([]Meta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]Meta, 0, len(s.sessions))
 
 	for _, session := range s.sessions {
@@ -56,6 +66,8 @@ func (s *InMemoryStore) List() ([]Meta, error) {
 }
 
 func (s *InMemoryStore) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.sessions, id)
 	return nil
 }

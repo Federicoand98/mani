@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -475,19 +476,60 @@ func TestBuiltinTools_ManifestKeyMatchesRuntimeName(t *testing.T) {
 // Gli esempi del repo devono restare validi (in fase 30 ne erano rotti tre)
 // ---------------------------------------------------------------------------
 
+// Every example in the tree must load, subdirectories included: an example
+// that no longer parses is worse than no example, and the ones under
+// _examples/flow and _examples/idea-letters were invisible to this test.
+// A *.flow.yaml is loaded as a flow, which also loads the agents it names.
 func TestExamples_AllLoad(t *testing.T) {
-	paths, err := filepath.Glob("../_examples/*.yaml")
+	var manifests, flows []string
+	err := filepath.WalkDir("../_examples", func(path string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir():
+			return nil
+		}
+		switch {
+		case strings.HasSuffix(path, ".flow.yaml"):
+			flows = append(flows, path)
+		case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
+			manifests = append(manifests, path)
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("glob: %v", err)
+		t.Fatalf("walk: %v", err)
 	}
-	if len(paths) == 0 {
-		t.Fatal("nessun esempio trovato in ../_examples")
+	if len(manifests) == 0 || len(flows) == 0 {
+		t.Fatalf("found %d manifests and %d flows under ../_examples", len(manifests), len(flows))
 	}
 
-	for _, p := range paths {
-		t.Run(filepath.Base(p), func(t *testing.T) {
-			if _, err := LoadManifest(p); err != nil {
-				t.Errorf("%s non carica: %v", filepath.Base(p), err)
+	name := func(p string) string {
+		rel, err := filepath.Rel("../_examples", p)
+		if err != nil {
+			return filepath.Base(p)
+		}
+		return rel
+	}
+
+	for _, p := range manifests {
+		t.Run(name(p), func(t *testing.T) {
+			spec, err := LoadManifest(p)
+			if err != nil {
+				t.Fatalf("does not load: %v", err)
+			}
+			// A warning in an example is a bad example: whatever it suggests,
+			// someone will copy it.
+			if w := spec.Warnings(); len(w) > 0 {
+				t.Errorf("loads with warnings: %q", w)
+			}
+		})
+	}
+
+	for _, p := range flows {
+		t.Run(name(p), func(t *testing.T) {
+			if _, err := LoadFlow(p); err != nil {
+				t.Errorf("does not load: %v", err)
 			}
 		})
 	}

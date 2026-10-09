@@ -25,7 +25,11 @@ func ToDefinition(t Tool) core.ToolDefinition {
 
 func toCoreProp(p PropertySchema) core.ToolProperty {
 	cp := core.ToolProperty{
-		Type: p.Type, Description: p.Description, Required: p.Required, Enum: p.Enum,
+		Type: p.Type, Description: p.Description, Required: p.Required,
+	}
+
+	if p.Enum != nil {
+		cp.Enum = p.Enum.Values
 	}
 
 	if p.Items != nil {

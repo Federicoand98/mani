@@ -138,6 +138,11 @@ func (cn *conn) runTurn(ctx context.Context, input string) {
 	}
 }
 
+// permissionTimeout: a connected but silent client must not hold a tool call
+// forever. Not configurable, and a package variable only so a test can shorten
+// it: a flag on `mani serve` the day someone needs a different wait.
+var permissionTimeout = 10 * time.Minute
+
 // forwardPermission: salva il canale Respond sotto un req_id e manda req al client
 func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 	p := ev.Payload.(app.PermissionRequestPayload)
@@ -147,7 +152,6 @@ func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 	conn.pending[reqID] = p.Respond
 	conn.mu.Unlock()
 
-	const permissionTimeout = 10 * time.Minute
 	time.AfterFunc(permissionTimeout, func() {
 		conn.routeDecision(reqID, "deny")
 	})

@@ -8,8 +8,10 @@ Every surface runs the *same* manifest. The transport is a command, not a rewrit
 mani                      interactive terminal chat (the default)
 mani init                 scaffold a commented agent.yaml
 mani validate --config    check a manifest without running anything
-mani run --config         one task, or the trigger daemon
+mani run --config         one task, the trigger daemon, or a flow
+mani batch --config       one agent over a JSONL file of tasks
 mani serve --config       expose the agent over HTTP/WebSocket
+mani mcp   --config       expose the agent to MCP clients over stdio
 mani runs   --config      list past runs, or replay one as a timeline
 mani tui                  the interactive chat, named explicitly
 mani --help  --version
@@ -40,11 +42,125 @@ Prints the final text, or pretty-printed JSON when the manifest declares an `out
 Permission requests are **fail-closed** (auto-denied) in headless mode — design manifests for
 unattended use with `allow`/`deny`, not `ask`.
 
+`--provenance` wraps the result with the run that produced it, instead of returning it bare:
+
+```bash
+mani run --config classify.yaml --task "the parcel never arrived" --provenance
+```
+
+```json
+{
+  "result": {"sentiment": "negative"},
+  "run": {"id": "8f2a1c4b7e90", "source": "cli", "provider": "ollama",
+          "model": "qwen3.5:9b", "manifest": "classify.yaml",
+          "in_tokens": 412, "out_tokens": 23}
+}
+```
+
+The bare result stays the default, because `output.schema` declares what a run returns: wrapping
+it by default would make every manifest describe a sub-object, and break every `| jq '.sentiment'`
+ever written. The journal holds the provenance either way — the flag is for when the result
+travels somewhere else and has to carry it along. `run.id` is what `mani runs <id>` takes.
+
 If the manifest names a provider that cannot be used — missing credentials, no base URL — the
 run **fails**. It never falls back to another model behind your back: cost and privacy are the
 opposite of what you declared, and finding out afterwards is worse than not running.
 
-## 3. Trigger daemon (long-lived)
+## 3. Many tasks at once: `mani batch`
+
+One agent over a JSONL file: one line in, one record out.
+
+```bash
+mani batch --config classify.yaml --in reviews.jsonl --out out/ --jobs 4
+mani batch --config classify.yaml --in - < reviews.jsonl | jq -c '.result'
+```
+
+```json
+{"id": "r01", "task": "Boils fast and looks great on the counter.", "product": "kettle"}
+{"id": "r02", "task": "The lid broke after two weeks.", "product": "kettle"}
+```
+
+`id` is required, must be unique and usable as a file name — it becomes one under `--out`. Any
+other field travels through to the result untouched, so a shelfmark or a ticket number comes back
+next to the answer. A `task` that is not a string is sent to the model as JSON.
+
+```json
+{"id": "r02", "product": "kettle", "result": {"sentiment": "negative"},
+ "run": {"id": "8f2a1c4b7e90", "source": "batch", "model": "qwen3.5:9b", "in_tokens": 412}}
+```
+
+| Flag | Meaning |
+|---|---|
+| `--in FILE` | the tasks; `-` reads stdin |
+| `--out DIR` | one `<id>.json` per task, which is what makes it resumable; without it, records stream to stdout as they finish |
+| `--jobs N` | tasks at a time (default 1) |
+| `--limit N` | stop after this many new tasks |
+
+What it does when things go wrong, which is the whole reason to use it on a long list:
+
+- the **entire input is checked before the first model call** — a malformed line, a missing or
+  repeated `id`, an `id` that could escape the directory — so a bad file fails now, not two
+  thousand runs later;
+- a failed task writes **no result file** and appends the reason to `<out>/errors.jsonl`; the exit
+  code is 1;
+- rerunning **skips** what is already in `--out` and retries only the failures, so an interrupted
+  batch is resumed by the same command that started it;
+- `Ctrl-C` cancels the tasks in flight, starts none of the pending ones, and keeps what was
+  already written.
+
+For twenty items a single agent with subagents is simpler, and worth preferring. `mani batch`
+earns its place when the list is long or the work has to be resumable: a master agent pays the
+context of every item on **every** call, and when compaction trims it forgets what it already
+did — without failing.
+
+A batch is a flow of one step. When one agent is not enough, the next section is the same
+machinery with more.
+
+## 4. Pipelines: flows
+
+A file that declares `flow:` wires manifests into a pipeline, and the same `mani run` executes it:
+
+```yaml
+# letters.flow.yaml
+flow: idea_letters
+about: "Rebuilds the timeline of a busta from its transcribed letters"
+
+steps:
+  - step: fetch_letters
+    does: "Downloads the transcribed letters of the busta"
+    run: python fetch.py --busta ${BUSTA}
+
+  - step: extract_facts
+    does: "Reads one letter and extracts sender, recipient, place and date"
+    agent: extract.yaml
+    for_each: fetch_letters
+    jobs: 4
+
+  - step: build_timeline
+    does: "Resolves people and places and orders the letters in time"
+    run: python merge.py
+    from_all: extract_facts
+
+result: build_timeline
+limits: { tokens: 2000000 }
+```
+
+```bash
+mani validate --config letters.flow.yaml        # the flow read aloud: steps, data, order
+mani run --config letters.flow.yaml --out runs/
+```
+
+Steps run in the order written and may only read the steps **above** them, so the graph is acyclic
+by construction. `for_each` runs one agent per record, `jobs` at a time; `from_all` runs once over
+every record; a `run:` step is argv with no shell, reading JSONL on stdin and printing JSONL on
+stdout. Every step keeps its records under `--out`, and a record newer than what it was made from
+is not made again — so rerunning a finished flow calls no model at all, and one more input costs
+one more run.
+
+The flags are `--out`, `--in`, `--limit` and `--verbose`; `--task`, `--image` and `--provenance`
+belong to an agent and are refused on a flow. Full reference in [flow.md](flow.md).
+
+## 5. Trigger daemon (long-lived)
 
 Omit `--task` and the manifest's triggers drive the runtime. The scheduler is **in-process**, so
 the same binary and the same manifest work on Linux, macOS and Windows — no systemd/cron needed.
@@ -114,7 +230,7 @@ Workers start on their own — there is nothing to declare to consume the queue.
 
 See [`_examples/demo/unattended.tape`](../_examples/demo/) for this happening under a `SIGKILL`.
 
-## 4. Inspecting the journal
+## 6. Inspecting the journal
 
 Every run leaves a record; `mani runs` reads it without a server running.
 
@@ -159,7 +275,7 @@ source: trigger:every   tokens: 681 in / 96 out   tools: 2   blocked: 1
 Subagent events are indented: the journal is a flat log *read* as a tree, which is why
 every event carries a depth.
 
-## 5. Agent server (REST + WebSocket)
+## 7. Agent server (REST + WebSocket)
 
 ```bash
 export MANI_SERVER_TOKEN=secret
@@ -193,7 +309,69 @@ The WebSocket carries `token` / `thinking` / `tool_call` / `tool_result` / `usag
 frames, plus `permission_request` — the client answers with a `request_id` and a decision, so
 approvals work over the wire. Full protocol in [agent-server.md](agent-server.md).
 
-## 6. Subprocess tools
+## 8. MCP server
+
+```bash
+mani mcp --config agent.yaml
+```
+
+Serves the manifest to an MCP client over stdio. You rarely run this by hand: the client
+launches it. In Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "reviewer": {
+      "command": "mani",
+      "args": ["mcp", "--config", "/absolute/path/to/reviewer.yaml"]
+    }
+  }
+}
+```
+
+In Claude Code:
+
+```bash
+claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
+```
+
+**What the client sees.** One tool, and it is the whole agent — not the agent's own tools, which
+would hand the client the capabilities while leaving the policy behind.
+
+| Manifest | MCP |
+|---|---|
+| `identity.name` | the tool name — 1-64 characters from `a-z A-Z 0-9 _ -` |
+| `identity.description` | the tool description, and the server instructions: this is what the calling model reads to decide whether to use the agent, so write it for a model |
+| — | input: `{"task": "..."}` |
+| `output.schema` | the tool's output schema; the result comes back as structured content *and* as its JSON in text, for clients that only read text |
+
+**How a call runs.**
+
+- **Every call is a fresh run.** No memory carries over between calls: a tool is a function,
+  not a conversation.
+- **Permissions are fail-closed.** A client has no way to answer an `ask`, so `ask` resolves to
+  deny and the run continues with the tool refused. Design manifests for MCP with
+  `allow`/`deny`.
+- **A failed run is a tool error, not a protocol error.** The calling model sees the reason and
+  can react. The same goes for a missing or malformed `task`.
+- **Policy, limits and the journal apply unchanged.** Runs are journaled with source `mcp`, so
+  `mani runs --config agent.yaml` shows what was done from inside the editor.
+
+**Things that bite.**
+
+- **Use absolute paths.** The client decides the working directory, not you. That applies to
+  `--config` and, more importantly, to `capabilities.workspace`: left empty it defaults to the
+  working directory, which under a client may be anywhere — set it explicitly.
+- **Environment variables come from the client.** `${VAR}` in the manifest resolves against the
+  environment the client launches mani with, which is usually not your shell's. Most clients
+  accept an `env` map next to `args`.
+- **stdout is the protocol.** Logs go to stderr, which is where clients collect them. A tool that
+  prints to stdout cannot break the stream: tool output is captured, never inherited.
+
+Only stdio is implemented. MCP over HTTP, subagents exposed as separate tools, and answering
+`ask` through MCP elicitation are deliberately deferred.
+
+## 9. Subprocess tools
 
 A tool is any executable: mani writes the JSON input on **stdin**, reads the result from
 **stdout** (stderr on a non-zero exit becomes the error the model sees). Declare `risk`
@@ -217,7 +395,7 @@ capabilities:
 A worked example, eight lines of Python: [`_examples/demo/disk.py`](../_examples/demo/disk.py)
 with [`_examples/demo-polyglot.yaml`](../_examples/demo-polyglot.yaml).
 
-## 7. Library usage
+## 10. Library usage
 
 `mani` is importable — skip the CLI and wire a `Runtime` yourself:
 

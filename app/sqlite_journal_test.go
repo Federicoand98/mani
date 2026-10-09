@@ -37,7 +37,7 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Append(guardrail): %v", err)
 	}
-	if err := j.Finish("run-a", "error"); err != nil {
+	if err := j.Finish("run-a", RunOutcome{Status: "error"}); err != nil {
 		t.Fatalf("Finish(run-a): %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 	if err := j.Start(RunRecord{ID: "run-b", SessionID: "session-b", Source: "trigger", StartedAt: base.Add(time.Minute)}); err != nil {
 		t.Fatalf("Start(run-b): %v", err)
 	}
-	if err := j.Finish("run-b", "ok"); err != nil {
+	if err := j.Finish("run-b", RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish(run-b): %v", err)
 	}
 

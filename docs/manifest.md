@@ -20,8 +20,8 @@ Adds an ability → `capabilities`. Changes who reasons → `identity`.
 
 ```yaml
 identity:
-  name: nightly-maintainer       # identifies the agent
-  description: "..."             # what it is for
+  name: nightly-maintainer       # identifies the agent; the tool name under `mani mcp`
+  description: "..."             # what it is for; what an MCP client's model reads
   provider: anthropic            # ollama | openai | anthropic | copilot | openrouter
   model: claude-sonnet-5
   prompt: "..."                  # the system prompt
@@ -45,7 +45,11 @@ context:
   compaction: { enabled: true, keep: 20 }
 
 output:
-  schema: { type: object, properties: {...}, required: [...] }
+  schema:                        # the declared shape of the answer
+    type: object
+    properties:
+      person: { type: string, enum: !include ./people.txt }   # a vocabulary from a file
+    required: [person]
 
 policy:
   tools:                         # allow | ask | deny; `default` sets the fallback
@@ -87,6 +91,16 @@ observability:
     path: ./runs                # directory for jsonl; file for sqlite
     retention: 200
 ```
+
+## `identity.name` and `identity.description`
+
+Optional everywhere except under `mani mcp`, where they become the public contract of the agent:
+the name is the MCP tool name, and the description is what the calling model reads to decide
+whether to use it. A vague description is an agent nobody calls, so write it for a model.
+
+Under `mani mcp` the name is required and must be 1-64 characters from `a-z A-Z 0-9 _ -`.
+That is stricter than MCP itself allows: clients pass tool names on to the model APIs, which
+refuse anything else — and the failure would surface in the client, far from the manifest.
 
 ## Built-in tools
 
@@ -136,6 +150,56 @@ The rules are deliberately narrow:
 
 `mani validate` resolves them, so a missing variable fails in CI rather than at 3am.
 
+## `output.schema`
+
+A declared schema turns the agent into a typed function: the model answers through a synthetic
+`respond` tool, the runtime **validates** the payload, and an invalid answer is fed back for a
+retry instead of being returned. A run with a schema prints JSON, so it drops into a pipeline:
+
+```bash
+mani run --config classify.yaml --task "the parcel never arrived" | jq -r '.sentiment'
+```
+
+Validation is **deep**: it recurses into array items and nested objects, checking `type`,
+`required` and `enum` at every level, and the error names the element it refused —
+`letters[1].places[1] must be a string`. A shape that is declared is therefore a shape that is
+enforced, not a suggestion; the price is that a nested schema can cost one extra model call when
+the first answer does not fit.
+
+### Vocabularies: `enum: !include`
+
+An `enum` can be loaded from a file instead of being written inline — a list of people, places or
+product codes does not belong in the middle of a manifest:
+
+```yaml
+person: { type: string, enum: !include ./people.txt }
+```
+
+| File | Read as |
+|---|---|
+| anything else (e.g. `.txt`) | one value per line; blank lines and `#` comments are skipped, values are trimmed |
+| `.json`, `.yaml`, `.yml` | a list of strings |
+
+It works **anywhere** a schema does: on a property, on the `items` of an array, inside a nested
+object, and in the schema of a subprocess tool. Paths follow the same rules as
+`identity.prompt`: relative to the manifest, absolute refused, 256 KB cap.
+
+An empty file, a duplicate value or a malformed list is an **error** that names the field —
+`output.schema.person.enum: !include "./people.txt": duplicate value "Isabella"` — because a
+vocabulary that half-loaded would constrain the answer to the wrong set, in silence.
+
+Above **200 values** `mani validate` prints a warning on stderr, and never fails:
+
+```
+ warning: output.schema.person.enum has 1204 values: the schema is sent on every call,
+ consider a lookup tool instead
+```
+
+The threshold is advice about cost, not a limit. An `enum` constrains the **output** and travels
+with every request; a lookup tool (a [subprocess tool](usage.md#9-subprocess-tools) over the same
+list) adds a **capability** and costs one extra call only when the model uses it. Small closed
+sets want the enum; a registry of ten thousand names wants the tool.
+
 ## `!include`
 
 A real system prompt is a hundred lines, and YAML is a bad place for it:
@@ -163,3 +227,4 @@ Runnable manifests in [`_examples/`](../_examples/):
 | `observability.yaml` | journal + trigger |
 | `queue.yaml` | durable scheduler |
 | `demo-triage.yaml` `demo-unattended.yaml` `demo-polyglot.yaml` | the three recorded demos |
+| `flow/reviews.flow.yaml` | a pipeline: two agents and a Python step (see [flow.md](flow.md)) |

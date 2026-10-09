@@ -139,6 +139,20 @@ mani run --config sentiment.yaml --task "The delivery was late but support was g
 
 That makes the agent a **typed function** you can pipe into other programs.
 
+## Use it from inside your editor
+
+The same file can become a tool inside Claude Desktop, Claude Code, or any editor that speaks
+MCP. Point the editor at it:
+
+```bash
+claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
+```
+
+The editor sees one new tool — your whole agent, with the name and description you wrote in
+`identity`. Everything else keeps working: the rules still block what they block, the limits
+still stop what they stop, and every call is recorded in the journal. You can still read the
+next morning what the agent did while it lived inside someone's editor.
+
 ## Long prompts live in their own file
 
 A serious system prompt is a hundred lines, and YAML is a miserable place to write one. Keep it
