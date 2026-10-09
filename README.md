@@ -8,6 +8,9 @@ headless, as a service, or on triggers — with policy, limits and an audit trai
 > Learning project (`github.com/Federicoand98/mani`): every piece exists for a reason. Minimal,
 > hexagonal, `core/` has zero external dependencies — readable end to end.
 
+**Documentation: [federicoand98.github.io/mani](https://federicoand98.github.io/mani/)** —
+install, first agent, CLI and manifest reference.
+
 ## Why mani
 
 The thesis is **agents as configuration, not code**.
@@ -30,7 +33,8 @@ a unix pipeline like any other command:
 
 ![An agent returning typed JSON, piped into jq](_examples/demo/triage.gif)
 
-Two more in [`_examples/demo/`](_examples/demo/), with the tapes they were recorded from:
+Two more on the [demos page](https://federicoand98.github.io/mani/docs/demos/), with the tapes
+they were recorded from in [`_examples/demo/`](_examples/demo/):
 
 - [`unattended.gif`](_examples/demo/unattended.gif) — no `--task`: the agent starts itself on a
   trigger, gets `SIGKILL`ed mid-work, and **resumes the same task** on restart. The journal shows
@@ -57,38 +61,23 @@ with `/login` in the TUI.
 
 ## Inside your editor
 
-`mani mcp` serves a manifest as an MCP server over stdio, so any MCP client — Claude Desktop,
-Claude Code, an IDE, another agent — can call it. The whole agent is **one tool**: its name is
-`identity.name`, its description is `identity.description`, and if the manifest declares
-`output.schema` the client sees that too.
-
-```json
-{
-  "mcpServers": {
-    "reviewer": {
-      "command": "mani",
-      "args": ["mcp", "--config", "/absolute/path/to/reviewer.yaml"]
-    }
-  }
-}
-```
+`mani mcp --config agent.yaml` serves a manifest as an MCP server over stdio, so Claude Desktop,
+Claude Code, an IDE or another agent can call it. The whole agent is **one tool**: its name is
+`identity.name` and its description is what the calling model reads.
 
 ```bash
 claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
 ```
 
 Policy, limits and the journal still apply, because they live in the runtime and not in the
-transport. **An agent called from inside an editor leaves the same audit trail** as one started
-by a trigger — `mani runs --config reviewer.yaml` lists its runs with source `mcp`.
+transport — an agent called from inside an editor leaves the same audit trail as one started by a
+trigger. Guide: [use it from your editor](https://federicoand98.github.io/mani/docs/guides/editor-mcp/).
 
 ## More than one agent
 
-A file that declares `flow:` wires manifests into a pipeline, and the same command runs it. Each
-step is an agent or a plain command that already works on its own — the flow adds no behaviour of
-its own, it only says who reads whose output.
+A file that declares `flow:` wires manifests into a pipeline, and the same `mani run` executes it:
 
 ```yaml
-# letters.flow.yaml
 flow: idea_letters
 about: "Rebuilds the timeline of a busta from its transcribed letters"
 
@@ -100,7 +89,7 @@ steps:
   - step: extract_facts
     does: "Reads one letter and extracts sender, recipient, place and date"
     agent: extract.yaml
-    for_each: fetch_letters      # one run per record, 4 at a time
+    for_each: fetch_letters      # one run per record, four at a time
     jobs: 4
 
   - step: build_timeline
@@ -112,40 +101,24 @@ result: build_timeline
 limits: { tokens: 2000000 }      # a ceiling for the whole pipeline
 ```
 
-```bash
-mani validate --config letters.flow.yaml   # the flow read aloud: what each step does, and reads
-mani run --config letters.flow.yaml --out runs/
-```
-
-A step may only read the steps **above** it, so the graph is acyclic by construction and the file
-reads top to bottom. What travels between steps is a record — `{"id": …, "task": …}` plus any
-fields of your own, which ride along untouched — so one agent's structured answer becomes the
-next one's task with no glue in between, and there is no template language to learn. A `run:`
-step is argv with no shell: JSONL in, JSONL out.
-
-**Resuming is make's rule.** Every step keeps its records under `--out`, and a record newer than
-what it was made from is not made again: rerunning a finished pipeline calls no model at all, one
-more input costs one more run, and a step that produces identical output leaves everything
-downstream alone. A record that fails stops the flow before the next step — so nothing ever
-computes on half its input — and the next run retries only what failed.
-
-One agent over a file of tasks is the same machinery with one step, so it gets a shortcut:
+Steps run in the order written and may only read the steps above them, so the graph is acyclic by
+construction. Resuming follows make's rule: a record newer than what it was made from is not made
+again, so rerunning a finished pipeline calls no model and one more input costs one more run. One
+agent over a file of tasks is the same machinery with one step, and gets a shortcut:
 
 ```bash
 mani batch --config classify.yaml --in reviews.jsonl --out out/ --jobs 4
 ```
 
-Every record carries the run that produced it — id, model, manifest, tokens — and `mani run
---provenance` adds the same envelope to a single run, so a result that travels somewhere else can
-still be traced back to the journal.
-
-It is deliberately **not** LangGraph: no shared mutable state, no cycles, no conditional edges.
-Where judgement is needed you use an agent; where the shape is known you use a flow.
+It is deliberately not LangGraph: no shared mutable state, no cycles, no conditional edges. Where
+judgement is needed you use an agent; where the shape is known you use a flow. Guides:
+[build a pipeline](https://federicoand98.github.io/mani/docs/guides/flows/) ·
+[process a file of tasks](https://federicoand98.github.io/mani/docs/guides/batch/).
 
 ## One block, one question
 
 A manifest has eight top-level blocks, and each answers exactly one question. That is the whole
-mental model — and it tells you where anything new belongs.
+mental model, and it tells you where anything new belongs.
 
 | Block | Question | |
 |---|---|---|
@@ -158,44 +131,21 @@ mental model — and it tells you where anything new belongs.
 | `run` | when does it start, and how? | triggers, scheduler |
 | `observability` | what does it leave behind? | tracing, journal |
 
-```yaml
-identity:
-  provider: anthropic
-  model: claude-sonnet-5
-  prompt: !include ./prompts/maintainer.md
-
-capabilities:
-  tools: [read, grep, bash]
-
-policy:
-  tools:
-    bash: allow
-  rules:
-    - { tool: bash, pattern: 'rm\s+-rf', action: deny, label: "recursive delete" }
-
-run:
-  triggers:
-    - { type: daily, at: "02:00", prompt: "Summarize anomalies in today's logs." }
-  scheduler:
-    path: ./queue          # the queue survives restarts
-
-observability:
-  journal: { enabled: true, path: ./runs }
-```
-
-Unknown keys are a **hard error**, never a silent no-op.
+Unknown keys are a **hard error**, never a silent no-op. Every key, with defaults, is in the
+[manifest reference](https://federicoand98.github.io/mani/docs/reference/manifest/).
 
 ## Documentation
 
-| | |
-|---|---|
-| [Introduction](docs/introduction.md) | for everyone — no Go, no programming |
-| [Manifest reference](docs/manifest.md) | every block, every key, the built-in tools |
-| [Usage](docs/usage.md) | CLI, batch, flows, trigger daemon, agent server, subprocess tools, library |
-| [Flows](docs/flow.md) | the pipeline file: steps, records, resuming, budget |
-| [Agent server](docs/agent-server.md) | the REST + WebSocket protocol in full |
-| [Agentic loop](docs/agentic-loop.md) | where hooks fire, where permissions gate |
-| [`_examples/`](_examples/) | runnable manifests |
+Everything is on the site: [federicoand98.github.io/mani](https://federicoand98.github.io/mani/).
+
+- [Getting started](https://federicoand98.github.io/mani/docs/getting-started/) — install, then an
+  agent that returns typed JSON
+- [CLI reference](https://federicoand98.github.io/mani/docs/reference/cli/) — every command and flag
+- [Manifest reference](https://federicoand98.github.io/mani/docs/reference/manifest/) — every block
+  and key
+- [`_examples/`](_examples/) — runnable manifests, flows and demos
+- [CONTRIBUTING.md](CONTRIBUTING.md) — scope filter, invariants, how to send a change
+- [CHANGELOG.md](CHANGELOG.md) — what changed, release by release
 
 ## Status
 

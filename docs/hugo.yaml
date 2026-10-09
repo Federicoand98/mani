@@ -1,0 +1,64 @@
+# The docs site. Hugo + Hextra, its own Hugo module: nothing here is part of
+# mani's Go module, and `go build ./...` in the repo root does not see it.
+baseURL: https://federicoand98.github.io/mani/
+title: mani
+languageCode: en
+
+enableRobotsTXT: true
+enableGitInfo: true
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+  mounts:
+    - source: content
+      target: content
+    - source: layouts
+      target: layouts
+    - source: assets
+      target: assets
+    # The manifests on this site are the ones in the repo, read at build time by
+    # the `repofile` shortcode. Copies would drift.
+    - source: ../_examples
+      target: assets/examples
+    # The recorded demos, served as-is on the Demos page.
+    - source: ../_examples/demo
+      target: static/demo
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 2
+      params:
+        type: search
+    - name: GitHub
+      weight: 3
+      url: https://github.com/Federicoand98/mani
+      params:
+        icon: github
+
+params:
+  navbar:
+    displayTitle: true
+    displayLogo: false
+  theme:
+    default: system
+    displayToggle: true
+  footer:
+    displayCopyright: false
+    displayPoweredBy: false
+  editURL:
+    enable: true
+    base: https://github.com/Federicoand98/mani/edit/master/docs/content
+  page:
+    width: normal

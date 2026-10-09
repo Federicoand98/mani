@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     branches: [master]
+    # A docs merge must not run a five-target snapshot build. Tags are not
+    # filtered: a tag always releases.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "LICENSE"
     tags: ["v*"]
 
 concurrency:

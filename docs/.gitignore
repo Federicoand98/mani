@@ -1,0 +1,9 @@
+# Hugo build output and module cache
+public/
+resources/
+.hugo_build.lock
+
+# Personal working documents, deliberately untracked: a `git add docs` must not
+# pick them up now that they live in this directory.
+backlog.md
+features.md

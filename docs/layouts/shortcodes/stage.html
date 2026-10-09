@@ -1,0 +1,15 @@
+{{- /*
+  stage: one numbered step of the home page's sequence.
+
+    {{% stage num="01" title="Declare" %}}
+    markdown body
+    {{% /stage %}}
+
+  Called with %-delimiters so the body is processed as Markdown, which is what
+  lets a code fence live inside it.
+*/ -}}
+<section class="stage">
+  <p class="stage-num">{{ .Get "num" }}</p>
+  <h2 class="stage-title">{{ .Get "title" }}</h2>
+  <div class="stage-body">{{ .Inner }}</div>
+</section>

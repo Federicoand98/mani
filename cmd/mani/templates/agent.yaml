@@ -36,7 +36,7 @@ limits:                      # how much may it consume?
 
 # run:                       # when does it start, and how?
 #   triggers:
-#     - type: cron
+#     - type: every
 #       every: 30m
 #       prompt: check the inbox
 
