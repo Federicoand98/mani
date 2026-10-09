@@ -1,0 +1,177 @@
+/* Hallmark · genre: modern-minimal · macrostructure: Narrative Workflow
+ * theme: Hextra default (preserved) · enrichment: none · nav: theme · footer: theme
+ * Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4
+ *
+ * The only custom stylesheet on the site. It styles the home page and nothing
+ * else: every other page uses the theme as it ships. Hextra loads this file
+ * automatically from assets/css/custom.css.
+ */
+
+:root {
+  /* The accent is the theme's own primary, rebuilt from its hue variables, so
+     it follows the theme in light and dark instead of hardcoding a blue. */
+  --home-accent: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness));
+  --home-accent-strong: hsl(var(--primary-hue) var(--primary-saturation) calc(var(--primary-lightness) - 8%));
+  --home-ink: oklch(21% 0.006 285);
+  --home-muted: oklch(52% 0.012 285);
+  --home-rule: oklch(92% 0.004 285);
+  --home-measure: 44rem;
+  --home-gap: clamp(2.25rem, 5vw, 3.5rem);
+}
+
+.dark {
+  --home-ink: oklch(96% 0.003 285);
+  --home-muted: oklch(72% 0.01 285);
+  --home-rule: oklch(30% 0.008 285);
+}
+
+.home {
+  /* The home layout is a flex column with items-start, so the width has to be
+     claimed explicitly or the hero shrinks to its longest line — and the
+     column has to be centred by hand, or it hugs the left edge. */
+  width: 100%;
+  max-width: var(--home-measure);
+  margin-inline: auto;
+  color: var(--home-ink);
+}
+
+/* Hero: left-aligned, one statement, one lede, two actions. */
+
+.home-hero {
+  padding-block: var(--home-gap) 0;
+}
+
+.home-hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2.125rem, 6.5vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  /* Long words must break rather than push the page sideways on a phone. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.home-lede {
+  margin: 0;
+  font-size: clamp(1.0625rem, 2.2vw, 1.25rem);
+  line-height: 1.55;
+  color: var(--home-muted);
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-block: 1.75rem 1rem;
+}
+
+.home-cta,
+.home-link {
+  text-decoration: none;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.home-cta {
+  padding: 0.75rem 1.25rem;
+  border-radius: 6px;
+  background: var(--home-accent);
+  color: #fff;
+  font-weight: 600;
+  /* A wrapped button is a mis-tapped button. */
+  white-space: nowrap;
+}
+
+.home-cta:hover {
+  background: var(--home-accent-strong);
+}
+
+.home-link {
+  color: var(--home-ink);
+  font-weight: 500;
+  border-bottom: 1px solid var(--home-rule);
+  white-space: nowrap;
+}
+
+.home-link:hover {
+  color: var(--home-accent);
+  border-bottom-color: var(--home-accent);
+}
+
+.home-cta:active,
+.home-link:active {
+  transform: translateY(1px);
+}
+
+.home-cta:focus-visible,
+.home-link:focus-visible {
+  outline: 2px solid var(--home-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.home-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--home-muted);
+}
+
+/* The four stages. The number sits above its heading, never beside it. */
+
+.stage {
+  margin-top: var(--home-gap);
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--home-rule);
+}
+
+.stage-num {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--home-accent);
+}
+
+.stage-title {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.375rem, 3.2vw, 1.75rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.stage-body > :first-child {
+  margin-top: 0;
+}
+
+.stage-body p {
+  color: var(--home-muted);
+  line-height: 1.6;
+}
+
+.stage-body code {
+  color: var(--home-ink);
+}
+
+/* Closing note: scope, stated plainly. */
+
+.home-scope {
+  margin-top: var(--home-gap);
+  padding: 1.25rem 0 1.25rem 1.25rem;
+  border-left: 2px solid var(--home-rule);
+}
+
+.home-scope p {
+  margin: 0;
+  color: var(--home-muted);
+  line-height: 1.6;
+}
+
+.home-scope p + p {
+  margin-top: 0.75rem;
+}

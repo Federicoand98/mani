@@ -1,0 +1,17 @@
+{{- /*
+  repofile: include a file from the repository, read at build time.
+
+    {{< repofile path="flow/reviews.flow.yaml" lang="yaml" >}}
+
+  `path` is relative to _examples/, mounted as assets/examples in hugo.yaml.
+  The site never holds a second copy of a manifest, so an example cannot be
+  stale here while being correct in the repo.
+*/ -}}
+{{- $rel := .Get "path" -}}
+{{- $lang := .Get "lang" | default "yaml" -}}
+{{- $res := resources.Get (printf "examples/%s" $rel) -}}
+{{- if not $res -}}
+  {{- errorf "repofile: _examples/%s not found (called from %s)" $rel .Page.Path -}}
+{{- end -}}
+{{- highlight (trim $res.Content "\n") $lang -}}
+<p class="hx:mt-2 hx:text-sm hx:text-gray-500"><a href="https://github.com/Federicoand98/mani/blob/master/_examples/{{ $rel }}">_examples/{{ $rel }}</a> in the repository</p>

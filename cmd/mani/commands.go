@@ -25,11 +25,11 @@ type command struct {
 }
 
 var commands = []command{
-	{"run", "run an agent from manifest (single task or trigger deamon)", runFromManifest},
+	{"run", "run an agent or a flow (single task, trigger daemon, or a flow file)", runFromManifest},
 	{"batch", "run an agent over a JSONL file of tasks", runBatch},
 	{"serve", "expose an agent over HTTP/websocket", runServer},
 	{"init", "scaffold a new agent manifest in the current directory", runInit},
-	{"validate", "check a manifest without running it", runValidate},
+	{"validate", "check a manifest or a flow without running it", runValidate},
 	{"runs", "list or inspect past runs from the journal", runRuns},
 	{"tui", "start the interactive terminal chat", runTUICommand},
 	{"mcp", "start the agent as an MCP server over stdio", runMCP},
