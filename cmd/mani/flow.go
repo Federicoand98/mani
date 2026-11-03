@@ -405,7 +405,7 @@ func (r *flowRun) command(ctx context.Context, st manifest.StepSpec, store *step
 	if store.done(up.newest) {
 		r.logf("%s: already done", st.Step)
 	} else {
-		r.logf("%s: running %s%s", st.Step, strings.Join(st.Run, " "), notMatching(up))
+		r.logf("%s: running %s%s", st.Step, argv(st.Run), notMatching(up))
 
 		var groups [][]record
 		if st.ForEach.Set() {

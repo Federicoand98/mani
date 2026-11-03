@@ -1,5 +1,5 @@
 # Counts and complaints in, a short note for the team out. Runs alone too:
-#   mani run --config summarize.yaml --task '{"total": 2, "negative": [{"product": "kettle", "problem": "lid broke"}]}'
+#   mani run --config summarize.yaml --task '{"team": "Kitchen", "total": 2, "negative": [{"product": "Kettle", "problem": "lid broke", "reply_drafted": true}]}'
 
 identity:
   name: review-summarizer
@@ -7,10 +7,12 @@ identity:
   provider: ollama
   model: qwen3.6-35b-a3b
   prompt: |
-    You receive a JSON tally of customer reviews: the counts per sentiment and the
-    problems reported in the negative ones, with their product.
-    Write a note of at most five sentences for the product team: what is going
-    well, which problems come back, and which product needs attention first.
+    You receive a JSON tally of customer reviews: the team it is for, the counts
+    per sentiment, the problems reported in the negative ones with their product
+    and whether a reply was drafted, and the products with the most complaints.
+    Write a note of at most five sentences addressed to that team: what is going
+    well, which problems come back, which product needs attention first, and how
+    many unhappy customers are still waiting for a reply.
 
 context:
   inject: false

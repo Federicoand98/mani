@@ -1,0 +1,25 @@
+# One classified complaint in, a draft reply out. Runs alone too:
+#   mani run --config reply.yaml --task '{"sentiment": "negative", "problem": "lid broke after two weeks"}'
+
+identity:
+  name: review-replier
+  description: "Drafts a short reply to an unhappy customer"
+  provider: ollama
+  model: qwen3.6-35b-a3b
+  prompt: |
+    You receive the problem a customer reported in a review. Draft a reply of
+    two or three sentences: acknowledge the specific problem, apologise once,
+    and say what happens next. No promises about refunds or dates.
+
+context:
+  inject: false
+
+output:
+  schema:
+    type: object
+    properties:
+      reply: { type: string }
+    required: [reply]
+
+observability:
+  tracing: false

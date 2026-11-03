@@ -439,7 +439,7 @@ func printFlow(w io.Writer, path string, f manifest.Flow) {
 	for i, st := range f.Steps {
 		what := "agent " + st.Agent
 		if st.Agent == "" {
-			what = "run " + strings.Join(st.Run, " ")
+			what = "run " + argv(st.Run)
 		}
 		switch {
 		case st.ForEach.Set():

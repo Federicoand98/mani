@@ -150,3 +150,26 @@ func TestValidate_ListsTheParams(t *testing.T) {
 		t.Errorf("validate --set must show the value and where it came from: exit %d\n%s", res.code, res.stdout)
 	}
 }
+
+// A value with a space stays one argument in the list form of run, and the log
+// and validate print it quoted so it reads as one.
+func TestFlow_AParamWithSpacesStaysOneArgument(t *testing.T) {
+	dir := project(t, map[string]string{"f.flow.yaml": paramsFlow})
+	flow := filepath.Join(dir, "f.flow.yaml")
+
+	res := runMani(t, t.TempDir(), "run", "--config", flow, "--set", "busta=Small appliances")
+	if res.code != 0 {
+		t.Fatalf("exit %d\n%s", res.code, res.stderr)
+	}
+	if recs := jsonLines(t, res.stdout); len(recs) != 1 || recs[0]["task"] != "busta=Small appliances since=1490" {
+		t.Errorf("stdout = %v", recs)
+	}
+	if !strings.Contains(res.stderr, `"busta=Small appliances"`) {
+		t.Errorf("the log does not quote the argument:\n%s", res.stderr)
+	}
+
+	res = runMani(t, t.TempDir(), "validate", "--config", flow, "--set", "busta=Small appliances")
+	if !strings.Contains(res.stdout, `"busta=Small appliances"`) {
+		t.Errorf("validate does not quote the argument:\n%s", res.stdout)
+	}
+}

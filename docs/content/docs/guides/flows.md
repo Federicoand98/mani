@@ -7,36 +7,72 @@ weight: 4
 Goal: several stages — fetch, classify, aggregate, write up — running as one command, where
 rerunning it after a change costs only the work that actually changed.
 
-Prerequisites: two manifests that each work on their own, and a script or two for the parts that
-are not model work.
+Prerequisites: manifests that each work on their own, and a script or two for the parts that are
+not model work.
 
 ## The worked example
 
-`_examples/flow/` in the repository is a complete pipeline: customer reviews in, a labelled
-record per review, a tally computed in Python, and a note for the team written by a second agent.
+`_examples/flow/` in the repository is a complete pipeline, and it uses every part of the flow
+grammar: customer reviews in, a product catalog fetched by a script, a label per review, a draft
+reply to every unhappy customer, a tally that joins all three, and a note for a product team.
 
 {{< repofile path="flow/reviews.flow.yaml" lang="yaml" >}}
 
+| Step | What it shows |
+|---|---|
+| `catalog` | a first step: a `run:` that reads nothing and fetches |
+| `classify` | `for_each: input`, one agent run per line of `--in`, `jobs: 3` at a time |
+| `reply` | `where: { sentiment: negative }`, checked against `classify.yaml`'s enum |
+| `tally` | a join with `from_all: [classify, reply, catalog]`, and `${params.team}` in a command |
+| `note` | an agent over a script's output: the tally object arrives as its task, in JSON |
+
+Around them: `input:` makes `--in` required, `params:` declares one required parameter and one with
+a default, `result:` picks what goes to stdout, and `limits.tokens` caps the whole pipeline.
+
 ```bash
-mani validate --config reviews.flow.yaml
-mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews
+mani validate --config reviews.flow.yaml --set team="Small appliances"
+mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews --set team="Small appliances"
 ```
 
 `validate` reads the flow back to you, which is the fastest way to catch a wrong wire:
 
 ```
 reviews.flow.yaml: ok
-  reviews — Classifies customer reviews and writes a note for the product team
+  reviews — Classifies customer reviews, drafts replies to the unhappy ones, and writes a note for a product team
   input: One review per line: {id, product, task} (--in)
-  1. classify           agent classify.yaml, for each record of input (3 at a time)
+  params:
+    team           Small appliances --set     The product team the note is addressed to
+    top            2                default   How many products the note ranks
+  1. catalog            run python3 catalog.py
+                        Reads the product catalog, one record per product
+  2. classify           agent classify.yaml, for each record of input (3 at a time)
                         Reads one review and labels its sentiment and problem
-  2. tally              run python3 tally.py, on all the records of classify
-                        Counts the labels and collects the complaints by product
-  3. note               agent summarize.yaml, for each record of tally
+  3. reply              agent reply.yaml, for each record of classify where sentiment is negative
+                        Drafts a short reply to each unhappy customer
+  4. tally              run python3 tally.py --team "Small appliances" --top 2, on all the records of classify, reply and catalog
+                        Counts the labels, collects complaints and drafted replies, and ranks the products
+  5. note               agent summarize.yaml, for each record of tally
                         Writes a short note for the team from the tally
   result: note
-  limits: 50000 tokens for the whole flow
+  limits: 80000 tokens for the whole flow
 ```
+
+The first run, with five reviews:
+
+```
+flow: catalog: running python3 catalog.py
+catalog: 2 products
+flow: classify: 5 to run, 0 already done
+flow: reply: 2 to run, 0 already done, 3 not matching where
+flow: tally: running python3 tally.py --team "Small appliances" --top 2
+tally: 5 reviews, 2 negative, 2 replies
+flow: note: 1 to run, 0 already done
+flow: tokens: 320 in, 80 out
+```
+
+Eight model calls: five classifications, two replies — the three positive and neutral reviews do
+not get one — and the note. The `catalog:` and `tally:` lines are the scripts' own stderr, passed
+through.
 
 ## How the pieces connect
 
@@ -51,7 +87,8 @@ the next one's task with nothing in between.
 
 **A `run:` step is argv with no shell.** Records arrive as JSONL on stdin, the script prints its
 own records as JSONL on stdout, and its stderr passes through to yours. That is where reshaping
-belongs: a flow has no template language on purpose. The tally step of the example, in full:
+belongs: a flow has no template language on purpose. The tally step of the example, in full — it
+tells its three sources apart by the `from` field the join adds:
 
 {{< repofile path="flow/tally.py" lang="python" >}}
 
@@ -61,25 +98,37 @@ With `--out`, every step keeps its records, and a record newer than what it was 
 made again.
 
 ```bash
-mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews
+mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews --set team="Small appliances"
 ```
 
 ```
+flow: catalog: already done
 flow: classify: 0 to run, 5 already done
+flow: reply: 0 to run, 2 already done, 3 not matching where
 flow: tally: already done
 flow: note: 0 to run, 1 already done
 flow: tokens: 0 in, 0 out
 ```
 
-Add a review to the input and rerun: one classification, then the tally and the note again,
-because their input changed. Delete one result and rerun: that review alone is redone, and the
-note follows only if the tally came out different. A step that reruns and produces identical
-records does not move their timestamps, so nothing downstream reruns.
+Add a review to the input and rerun: one classification, a reply only if it is negative, then the
+tally and the note again, because their input changed. Delete one result and rerun: that review
+alone is redone, and everything after it follows only if its output came out different. A step
+that reruns and produces identical records does not move their timestamps, so nothing downstream
+reruns.
 
-To make a first step fetch again, delete its `.done` marker, not its directory:
+The directory also remembers the parameters it was built with. The same command with
+`--set team=Kitchen` is refused rather than handing the kitchen team a note built for small
+appliances:
+
+```
+mani run: /tmp/reviews was built with team=Small appliances, and this run has team=Kitchen; use
+another --out, or remove the directory to rebuild it
+```
+
+To make the first step fetch again, delete its `.done` marker, not its directory:
 
 ```bash
-rm /tmp/reviews/classify/.done     # the step reruns; identical records stay put
+rm /tmp/reviews/catalog/.done      # the step reruns; identical records stay put
 ```
 
 Deleting the whole directory also works, but it throws away the timestamps and redoes everything
@@ -96,7 +145,7 @@ A `run:` step that exits non-zero stops the flow too, with its own stderr in the
 ## Try a sample end to end
 
 ```bash
-mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews --limit 1
+mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews --set team="Small appliances" --limit 1
 ```
 
 `--limit` caps the new agent runs per step and lets the rest of the flow proceed, so you see the

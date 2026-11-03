@@ -1,35 +1,64 @@
-# A flow: three pieces that each run alone, wired together.
+# A flow: five pieces that each run alone, wired together. It uses every part
+# of the flow grammar — input, parameters, a first step that fetches, a
+# parallel agent per record, a filter, a join, a reduce and a budget.
 #
 #   mani validate --config _examples/flow/reviews.flow.yaml
-#   → the flow read aloud: what each step does, what it reads, in which order
+#   → the flow read aloud: parameters, steps, what each one reads, the filter
 #
-#   mani run --config _examples/flow/reviews.flow.yaml --in _examples/flow/reviews.jsonl --out /tmp/reviews
-#   → stdout: the team note (the `result` step), progress on stderr
+#   mani run --config _examples/flow/reviews.flow.yaml \
+#       --in _examples/flow/reviews.jsonl --out /tmp/reviews --set team="Small appliances"
+#   → stdout: the team note (the `result` step); progress on stderr
 #
 # Then try what makes it a flow and not a script:
 #   run it again                          → nothing runs, zero model calls
-#   add a line to reviews.jsonl, rerun    → one classification, then tally and note again
-#   rm /tmp/reviews/classify/r02.json     → that review alone is redone; the note only if the
-#                                           tally came out different (identical files are not rewritten)
-#   ls /tmp/reviews/*/                    → every step's records, one file each
+#   add a line to reviews.jsonl, rerun    → one classification, a reply only if it is
+#                                           negative, then tally and note again
+#   rm /tmp/reviews/classify/r02.json     → that review alone is redone; the rest follows
+#                                           only if its output came out different
+#   --set team=Kitchen with the same --out → refused: /tmp/reviews was built for another team
+#   --set top=1                            → the same refusal: a default counts too
+#   leave out --set team                   → refused before anything starts, naming the parameter
+#   ls /tmp/reviews/*/                     → every step's records, one file each
 #
 # Paths (agent:, run:) are relative to this file, so it runs from anywhere.
+# On Windows, replace python3 with python.
 
 flow: reviews
-about: "Classifies customer reviews and writes a note for the product team"
+about: "Classifies customer reviews, drafts replies to the unhappy ones, and writes a note for a product team"
 input: "One review per line: {id, product, task}"
 
+params:
+  team: "The product team the note is addressed to"
+  top: { about: "How many products the note ranks", default: "2" }
+
 steps:
+  # A first step reads nothing: it is the one that fetches.
+  - step: catalog
+    does: "Reads the product catalog, one record per product"
+    run: python3 catalog.py
+
+  # One run per review, three at a time.
   - step: classify
     does: "Reads one review and labels its sentiment and problem"
     agent: classify.yaml
     for_each: input
     jobs: 3
 
+  # Only the negative reviews go on. `negative` is checked against the enum in
+  # classify.yaml's schema: a typo here fails `mani validate`, not the run.
+  - step: reply
+    does: "Drafts a short reply to each unhappy customer"
+    agent: reply.yaml
+    for_each: classify
+    where: { sentiment: negative }
+
+  # A join: every record arrives tagged with "from", the step it came from.
+  # The list form of run keeps "Small appliances" one argument; written as a
+  # string, the command would be split on its spaces after the value went in.
   - step: tally
-    does: "Counts the labels and collects the complaints by product"
-    run: python3 tally.py
-    from_all: classify
+    does: "Counts the labels, collects complaints and drafted replies, and ranks the products"
+    run: [python3, tally.py, --team, "${params.team}", --top, "${params.top}"]
+    from_all: [classify, reply, catalog]
 
   - step: note
     does: "Writes a short note for the team from the tally"
@@ -37,4 +66,4 @@ steps:
     for_each: tally
 
 result: note
-limits: { tokens: 50000 }
+limits: { tokens: 80000 }   # for the whole flow, across every run

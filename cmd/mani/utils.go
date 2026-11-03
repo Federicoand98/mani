@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -49,4 +50,18 @@ func parseSet(sets []string) (map[string]string, error) {
 func hasKey(m map[string]string, k string) bool {
 	_, ok := m[k]
 	return ok
+}
+
+// argv prints a command so that it can be read back: an argument with a space
+// is quoted, or "--team Small appliances" would look like two arguments when
+// it is one.
+func argv(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if a == "" || strings.ContainsAny(a, " \t\"'") {
+			a = strconv.Quote(a)
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
 }

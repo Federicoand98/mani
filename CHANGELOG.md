@@ -82,6 +82,8 @@ library.
   from the catalog, and a test keeps the two equal.
 - The `run` and `validate` command summaries did not mention flows, and `run` said "deamon". The
   scaffolded manifest suggested a trigger of `type: cron`, which does not exist.
+- The flow log and `mani validate` printed a command's arguments joined by spaces, so
+  `--team "Small appliances"` read as two arguments. An argument with a space is now quoted.
 
 ## [0.2.0] - 2026-10-09
 
