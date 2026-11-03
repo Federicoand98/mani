@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/session"
 )
 
 type flowRun struct {
-	flow   app.FlowSpec
+	flow   manifest.Flow
 	base   string        // dir that agent paths and run commands are relative to
 	out    string        // where the records live
 	flat   bool          // a single step writing straight to the output file
@@ -47,7 +48,7 @@ func (b *tokenBudget) spent() bool {
 var errBudget = errors.New("the flow's token budget (limits.tokens) is spent; raise it and run again to go on")
 
 // newFlowRun prepares the state directory.
-func newFlowRun(f app.FlowSpec, base, out, source string) (*flowRun, func(), error) {
+func newFlowRun(f manifest.Flow, base, out, source string) (*flowRun, func(), error) {
 	cleanup := func() {}
 	if out == "" {
 		tmp, err := os.MkdirTemp("", "mani-"+f.Flow+"-")
@@ -67,7 +68,7 @@ func newFlowRun(f app.FlowSpec, base, out, source string) (*flowRun, func(), err
 }
 
 func (r *flowRun) run(ctx context.Context) error {
-	outs := map[string]stepOutput{app.FlowInput: {records: r.input, field: "task"}}
+	outs := map[string]stepOutput{manifest.FlowInput: {records: r.input, field: "task"}}
 
 	for _, st := range r.flow.Steps {
 		if err := ctx.Err(); err != nil {
@@ -77,13 +78,15 @@ func (r *flowRun) run(ctx context.Context) error {
 		if err := os.MkdirAll(store.dir, 0o755); err != nil {
 			return err
 		}
-		up := outs[st.Upstream()]
+		up, err := r.upstream(st, outs)
+		if err != nil {
+			return fmt.Errorf("step %s: %w", st.Step, err)
+		}
 
 		var out stepOutput
-		var err error
 
 		switch {
-		case st.Agent != "" && st.ForEach != "":
+		case st.Agent != "" && st.ForEach.Set():
 			out, err = r.agentEach(ctx, st, store, up)
 		case st.Agent != "":
 			out, err = r.agentAll(ctx, st, store, up)
@@ -98,6 +101,73 @@ func (r *flowRun) run(ctx context.Context) error {
 	return nil
 }
 
+// upstream is what a step reads. One source: that step's records, or nothing
+// for a first step. A fan-in: every source's records, in the order the sources
+// are written, each tagged with the step it came from. Then the where filter.
+func (r *flowRun) upstream(st manifest.StepSpec, outs map[string]stepOutput) (stepOutput, error) {
+	if !st.FanIn() {
+		up := outs[st.Upstream()]
+		if len(st.Where) == 0 {
+			return up, nil
+		}
+		return filterWhere(st, up)
+	}
+
+	merged := stepOutput{stamp: map[string]time.Time{}}
+	replaced := 0
+	for _, from := range st.FromAll.Names {
+		src := outs[from]
+		for _, in := range src.records {
+			rec := make(record, len(in)+1)
+			for k, v := range in {
+				rec[k] = v
+			}
+			if old, ok := rec["from"]; ok && old != from {
+				replaced++
+			}
+			rec["from"] = from
+			merged.records = append(merged.records, rec)
+		}
+		if src.newest.After(merged.newest) {
+			merged.newest = src.newest
+		}
+	}
+	// "from" is an ordinary word — a letter has a sender — so overwriting it
+	// is said out loud rather than done in silence.
+	if replaced > 0 {
+		r.logf("%s: %d records already had a \"from\" field; the fan-in replaced it with the step they came from", st.Step, replaced)
+	}
+	return merged, nil
+}
+
+// filterWhere keeps the records whose payload passes the step's where. The
+// newest timestamp stays the one of every upstream record, kept or not: a
+// record that stopped matching changes what a whole-step run must produce,
+// so it has to make that step run again.
+func filterWhere(st manifest.StepSpec, up stepOutput) (stepOutput, error) {
+	kept := stepOutput{field: up.field, stamp: up.stamp, newest: up.newest}
+	for _, in := range up.records {
+		ok, err := st.Where.Matches(in[up.field])
+		if err != nil {
+			return stepOutput{}, fmt.Errorf("record %s: %s: %w", in.id(), up.field, err)
+		}
+		if ok {
+			kept.records = append(kept.records, in)
+		} else {
+			kept.filtered = append(kept.filtered, in.id())
+		}
+	}
+	return kept, nil
+}
+
+// notMatching is the log suffix for records a where left out.
+func notMatching(up stepOutput) string {
+	if len(up.filtered) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", %d not matching where", len(up.filtered))
+}
+
 func (r *flowRun) dir(step string) string {
 	if r.flat {
 		return r.out
@@ -106,7 +176,7 @@ func (r *flowRun) dir(step string) string {
 }
 
 // agentEach runs the agent once per upstream record, jobs at a time, on the records that are missing or older than the record they come from
-func (r *flowRun) agentEach(ctx context.Context, st app.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
+func (r *flowRun) agentEach(ctx context.Context, st manifest.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
 	ids := make([]string, 0, len(up.records))
 	var todo []record
 
@@ -127,12 +197,28 @@ func (r *flowRun) agentEach(ctx context.Context, st app.StepSpec, store *stepSto
 		todo = todo[:r.limit]
 	}
 
-	r.logf("%s: %d to run, %d already done", st.Step, len(todo), len(ids)-len(todo)-later)
+	r.logf("%s: %d to run, %d already done%s", st.Step, len(todo), len(ids)-len(todo)-later, notMatching(up))
+
+	// A record that matched before and no longer does leaves a result that is
+	// not this step's output any more. It goes, so the directory keeps meaning
+	// "the records of this step".
+	pruned := 0
+	for _, id := range up.filtered {
+		switch err := os.Remove(store.path(id)); {
+		case err == nil:
+			pruned++
+		case !errors.Is(err, os.ErrNotExist):
+			return stepOutput{}, err
+		}
+	}
+	if pruned > 0 {
+		r.logf("%s: removed %d results that no longer match where", st.Step, pruned)
+	}
 
 	var made sync.Map
 	if len(todo) > 0 {
-		manifest := app.AgentPath(r.base, st.Agent)
-		rt, err := r.build(ctx, manifest)
+		manifestPath := manifest.AgentPath(r.base, st.Agent)
+		rt, err := r.build(ctx, manifestPath)
 		if err != nil {
 			return stepOutput{}, err
 		}
@@ -140,7 +226,7 @@ func (r *flowRun) agentEach(ctx context.Context, st app.StepSpec, store *stepSto
 
 		var n atomic.Int64
 		started, failed := r.mapRecords(ctx, todo, st.Jobs, func(ctx context.Context, in record) error {
-			rec, err := r.runOne(ctx, rt, manifest, in, in[up.field])
+			rec, err := r.runOne(ctx, rt, manifestPath, in, in[up.field])
 			if err == nil {
 				err = store.put(rec)
 			}
@@ -211,9 +297,9 @@ func (r *flowRun) mapRecords(ctx context.Context, recs []record, jobs int, fn fu
 	return started, int(nFailed.Load())
 }
 
-// build loads the step's manifest and makes its Runtime
-func (r *flowRun) build(ctx context.Context, manifest string) (*app.Runtime, error) {
-	spec, err := app.LoadManifest(manifest)
+// build loads the step's manifestPath and makes its Runtime
+func (r *flowRun) build(ctx context.Context, manifestPath string) (*app.Runtime, error) {
+	spec, err := manifest.Load(manifestPath)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +309,7 @@ func (r *flowRun) build(ctx context.Context, manifest string) (*app.Runtime, err
 // runOne executes one task on a fresh session: a task is a function, not a
 // conversation. The Runtime is shared — the trigger daemon already runs tasks
 // concurrently on one Runtime, so reentrancy is not new here.
-func (r *flowRun) runOne(ctx context.Context, rt *app.Runtime, manifest string, in record, payload any) (record, error) {
+func (r *flowRun) runOne(ctx context.Context, rt *app.Runtime, manifestPath string, in record, payload any) (record, error) {
 	task, err := taskText(payload)
 	if err != nil {
 		return nil, err
@@ -247,11 +333,11 @@ func (r *flowRun) runOne(ctx context.Context, rt *app.Runtime, manifest string, 
 	out := in.carry()
 	out["id"] = in.id()
 	out["result"] = res.payload()
-	out["run"] = res.envelope(rt, r.source, manifest, started, time.Now())
+	out["run"] = res.envelope(rt, r.source, manifestPath, started, time.Now())
 	return out, nil
 }
 
-func (r *flowRun) emit(st app.StepSpec, rec record) {
+func (r *flowRun) emit(st manifest.StepSpec, rec record) {
 	if r.stream != nil && st.Step == r.flow.Result {
 		r.stream.write(rec)
 	}
@@ -270,11 +356,11 @@ func (r *flowRun) report() {
 // the JSON list of those records, so the agent can tell them apart by id. The
 // run bookkeeping is left out — it is not the agent's business, and it costs
 // tokens.
-func (r *flowRun) agentAll(ctx context.Context, st app.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
+func (r *flowRun) agentAll(ctx context.Context, st manifest.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
 	if store.done(up.newest) {
 		r.logf("%s: already done", st.Step)
 	} else {
-		r.logf("%s: 1 to run, on %d records", st.Step, len(up.records))
+		r.logf("%s: 1 to run, on %d records%s", st.Step, len(up.records), notMatching(up))
 		all := make([]record, 0, len(up.records))
 		for _, in := range up.records {
 			rec := make(record, len(in))
@@ -289,14 +375,14 @@ func (r *flowRun) agentAll(ctx context.Context, st app.StepSpec, store *stepStor
 		if r.tokens.spent() {
 			return stepOutput{}, errBudget
 		}
-		manifest := app.AgentPath(r.base, st.Agent)
-		rt, err := r.build(ctx, manifest)
+		manifestPath := manifest.AgentPath(r.base, st.Agent)
+		rt, err := r.build(ctx, manifestPath)
 		if err != nil {
 			return stepOutput{}, err
 		}
 		defer rt.Close()
 
-		rec, err := r.runOne(ctx, rt, manifest, record{"id": st.Step}, all)
+		rec, err := r.runOne(ctx, rt, manifestPath, record{"id": st.Step}, all)
 		if err != nil {
 			if ctx.Err() == nil {
 				_ = store.failed(st.Step, err)
@@ -315,14 +401,14 @@ func (r *flowRun) agentAll(ctx context.Context, st app.StepSpec, store *stepStor
 	return out, err
 }
 
-func (r *flowRun) command(ctx context.Context, st app.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
+func (r *flowRun) command(ctx context.Context, st manifest.StepSpec, store *stepStore, up stepOutput) (stepOutput, error) {
 	if store.done(up.newest) {
 		r.logf("%s: already done", st.Step)
 	} else {
-		r.logf("%s: running %s", st.Step, strings.Join(st.Run, " "))
+		r.logf("%s: running %s%s", st.Step, strings.Join(st.Run, " "), notMatching(up))
 
 		var groups [][]record
-		if st.ForEach != "" {
+		if st.ForEach.Set() {
 			for _, in := range up.records {
 				groups = append(groups, []record{in})
 			}
@@ -357,7 +443,7 @@ func (r *flowRun) command(ctx context.Context, st app.StepSpec, store *stepStore
 	return out, err
 }
 
-func (r *flowRun) exec(ctx context.Context, st app.StepSpec, in []record) ([]record, error) {
+func (r *flowRun) exec(ctx context.Context, st manifest.StepSpec, in []record) ([]record, error) {
 	var stdin bytes.Buffer
 	enc := json.NewEncoder(&stdin)
 	for _, rec := range in {
@@ -376,16 +462,19 @@ func (r *flowRun) exec(ctx context.Context, st app.StepSpec, in []record) ([]rec
 	return parseRecords(&stdout, st.Step+" (stdout)")
 }
 
-func (r *flowRun) emitAll(st app.StepSpec, out stepOutput) {
+func (r *flowRun) emitAll(st manifest.StepSpec, out stepOutput) {
 	for _, rec := range out.records {
 		r.emit(st, rec)
 	}
 }
 
 // runFlow is `mani run` on a flow file.
-func runFlow(ctx context.Context, path, in, out string, limit int) error {
-	f, err := app.LoadFlow(path)
+func runFlow(ctx context.Context, path, in, out string, limit int, set map[string]string) error {
+	f, err := manifest.LoadFlow(path, set)
 	if err != nil {
+		return usagef("%v", err)
+	}
+	if err := f.CheckParams(); err != nil {
 		return usagef("%v", err)
 	}
 
@@ -406,6 +495,15 @@ func runFlow(ctx context.Context, path, in, out string, limit int) error {
 		return err
 	}
 	defer cleanup()
+
+	// A state directory belongs to one set of parameters: rerunning busta=13
+	// in the directory of busta=12 would find every step "already done" and
+	// hand back busta 12's records.
+	if out != "" {
+		if err := checkParamsRecord(out, f.ParamValues()); err != nil {
+			return usagef("%v", err)
+		}
+	}
 
 	if out == "" && len(f.Steps) > 1 {
 		r.logf("no --out: the records live in a temporary directory, removed at the end — nothing to resume from")

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
 )
 
 // fakeProvider serves Ollama's /api/chat with a scripted reply: plain text, or
@@ -143,7 +143,7 @@ func TestRun_ProvenanceEnvelope(t *testing.T) {
 
 	// The whole point of the envelope: the id leads back to the run, and the
 	// journal holds the same answer.
-	j, err := app.NewJSONLJournal(runs)
+	j, err := journal.NewJSONL(runs)
 	if err != nil {
 		t.Fatalf("open journal: %v", err)
 	}

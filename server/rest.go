@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
 )
 
 type chatResponse struct {
@@ -109,7 +110,7 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	f := app.ListFilter{SessionID: q.Get("session"), Status: q.Get("status")}
+	f := journal.ListFilter{SessionID: q.Get("session"), Status: q.Get("status")}
 	if l := q.Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil {
 			f.Limit = n

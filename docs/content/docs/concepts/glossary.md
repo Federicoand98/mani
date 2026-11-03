@@ -15,6 +15,15 @@ commands, and each may only read the steps above it. See [reference](../../refer
 
 **Step** — one stage of a flow. Either `agent:` (a manifest) or `run:` (a command).
 
+**Parameter** — a value a flow declares under `params:` and receives with `--set`, referenced as
+`${params.name}`. The state directory remembers the values it was built with.
+
+**Filter** — a step's `where:`: only the records whose fields equal the listed values go through.
+Equality only, checked against the upstream agent's schema.
+
+**Join** — a step that reads several steps with `from_all: [a, b]`. Its records carry `from`, the
+step they came from.
+
 **Run** — one execution of one task. The unit mani records, counts and limits. In a flow, each
 record of each step is its own run.
 

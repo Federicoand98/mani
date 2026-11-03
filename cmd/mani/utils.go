@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"strings"
 )
 
@@ -25,4 +26,27 @@ func setFlag(fs *flag.FlagSet, names ...string) string {
 		}
 	}
 	return ""
+}
+
+// parseSet turns repeated --set name=value into a map. A name given twice is
+// an error: which one should win is not something to guess.
+func parseSet(sets []string) (map[string]string, error) {
+	out := make(map[string]string, len(sets))
+	for _, kv := range sets {
+		name, value, ok := strings.Cut(kv, "=")
+		name = strings.TrimSpace(name)
+		switch {
+		case !ok || name == "":
+			return nil, fmt.Errorf("--set %q: expected name=value", kv)
+		case hasKey(out, name):
+			return nil, fmt.Errorf("--set %s: given twice", name)
+		}
+		out[name] = value
+	}
+	return out, nil
+}
+
+func hasKey(m map[string]string, k string) bool {
+	_, ok := m[k]
+	return ok
 }

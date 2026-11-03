@@ -1,4 +1,4 @@
-package app
+package scheduler
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func countState(t *testing.T, dir, state string) int {
 }
 
 // claimNow reclama con un timeout corto: fallisce il test se non arriva nulla.
-func claimNow(t *testing.T, q TaskQueue) Task {
+func claimNow(t *testing.T, q Queue) Task {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -54,7 +54,7 @@ func claimNow(t *testing.T, q TaskQueue) Task {
 }
 
 // mustNotClaim verifica che entro `d` non venga consegnato nulla.
-func mustNotClaim(t *testing.T, q TaskQueue, d time.Duration, why string) {
+func mustNotClaim(t *testing.T, q Queue, d time.Duration, why string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
@@ -472,7 +472,7 @@ func TestInMemoryQueue_RetryRequeues(t *testing.T) {
 func TestTaskQueue_ContractIsShared(t *testing.T) {
 	fq, _ := newTestFileQueue(t, 10)
 
-	queues := map[string]TaskQueue{
+	queues := map[string]Queue{
 		"file":     fq,
 		"inmemory": NewInMemoryQueue(10),
 	}

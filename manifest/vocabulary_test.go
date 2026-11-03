@@ -1,4 +1,4 @@
-package app
+package manifest
 
 import (
 	"fmt"
@@ -38,7 +38,7 @@ func writeVocabulary(t *testing.T, manifest, vocabName, vocab string) string {
 	return path
 }
 
-func enumOf(t *testing.T, spec RuntimeSpec, prop string) []string {
+func enumOf(t *testing.T, spec Spec, prop string) []string {
 	t.Helper()
 	p, ok := spec.Output.Schema.Properties[prop]
 	if !ok {
@@ -58,9 +58,9 @@ func TestLoadManifest_EnumIncludeFromTextFile(t *testing.T) {
 		"people.txt",
 		"# the people of the busta\n\nIsabella d'Este\nFrancesco Gonzaga\n  Elisabetta Gonzaga  \n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	got := enumOf(t, spec, "person")
 	want := []string{"Isabella d'Este", "Francesco Gonzaga", "Elisabetta Gonzaga"}
@@ -80,9 +80,9 @@ func TestLoadManifest_EnumIncludeFromListFiles(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := writeVocabulary(t, fmt.Sprintf(vocabularyManifest, "./"+name), name, body)
 
-			spec, err := LoadManifest(path)
+			spec, err := Load(path)
 			if err != nil {
-				t.Fatalf("LoadManifest: %v", err)
+				t.Fatalf("Load: %v", err)
 			}
 			if got := enumOf(t, spec, "person"); strings.Join(got, "|") != "Isabella|Francesco" {
 				t.Errorf("enum = %q", got)
@@ -107,9 +107,9 @@ output:
       sentiment: { type: string, enum: [positive, negative] }
 `)
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if got := enumOf(t, spec, "sentiment"); strings.Join(got, "|") != "positive|negative" {
 		t.Errorf("enum = %q", got)
@@ -139,9 +139,9 @@ output:
           sender: { type: string, enum: !include ./places.txt }
 `, "places.txt", "Mantova\nFerrara\n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	places := spec.Output.Schema.Properties["places"]
 	if places.Items == nil || places.Items.Enum == nil || len(places.Items.Enum.Values) != 2 {
@@ -174,9 +174,9 @@ capabilities:
           person: { type: string, enum: !include ./people.txt }
 `, "people.txt", "Isabella\nFrancesco\n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	prop := spec.Capabilities.Tools[0].Schema.Properties["person"]
 	if prop.Enum == nil || len(prop.Enum.Values) != 2 {
@@ -199,9 +199,9 @@ func TestLoadManifest_EnumIncludeErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			path := writeVocabulary(t, fmt.Sprintf(vocabularyManifest, "./"+tc.file), tc.file, tc.body)
 
-			_, err := LoadManifest(path)
+			_, err := Load(path)
 			if err == nil {
-				t.Fatalf("LoadManifest = nil, want an error containing %q", tc.want)
+				t.Fatalf("Load = nil, want an error containing %q", tc.want)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %q, want it to contain %q", err, tc.want)
@@ -221,9 +221,9 @@ func TestLoadManifest_EnumIncludeErrors(t *testing.T) {
 func TestLoadManifest_EnumIncludeCoercesScalarsToText(t *testing.T) {
 	path := writeVocabulary(t, fmt.Sprintf(vocabularyManifest, "./years.json"), "years.json", `["1495", 1496]`)
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if got := enumOf(t, spec, "person"); strings.Join(got, "|") != "1495|1496" {
 		t.Errorf("enum = %q", got)
@@ -233,7 +233,7 @@ func TestLoadManifest_EnumIncludeCoercesScalarsToText(t *testing.T) {
 func TestLoadManifest_EnumIncludeMissingFile(t *testing.T) {
 	path := writeManifest(t, fmt.Sprintf(vocabularyManifest, "./nowhere.txt"))
 
-	_, err := LoadManifest(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "nowhere.txt") {
 		t.Errorf("err = %v, want it to name the missing file", err)
 	}
@@ -244,7 +244,7 @@ func TestLoadManifest_EnumIncludeMissingFile(t *testing.T) {
 func TestLoadManifest_EnumIncludeRefusesAbsolutePaths(t *testing.T) {
 	path := writeManifest(t, fmt.Sprintf(vocabularyManifest, "/etc/passwd"))
 
-	_, err := LoadManifest(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Errorf("err = %v, want absolute paths refused", err)
 	}
@@ -266,7 +266,7 @@ output:
 surprise: true
 `, "people.txt", "Isabella\n")
 
-	_, err := LoadManifest(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "surprise") || !strings.Contains(err.Error(), "line 11") {
 		t.Errorf("err = %v, want the unknown field with its line", err)
 	}
@@ -282,9 +282,9 @@ func TestWarnings_LargeEnum(t *testing.T) {
 		"people.txt",
 		strings.Join(big, "\n")+"\n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	warnings := spec.Warnings()
 	if len(warnings) != 1 {
@@ -308,9 +308,9 @@ func TestWarnings_AtTheThresholdIsQuiet(t *testing.T) {
 		"people.txt",
 		strings.Join(big, "\n")+"\n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if w := spec.Warnings(); len(w) != 0 {
 		t.Errorf("warnings = %q, want none at %d values", w, enumWarnThreshold)
@@ -349,9 +349,9 @@ capabilities:
           person: { type: string, enum: !include ./people.txt }
 `, "people.txt", strings.Join(big, "\n")+"\n")
 
-	spec, err := LoadManifest(path)
+	spec, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	warnings := strings.Join(spec.Warnings(), "\n")
 	for _, want := range []string{"output.schema.places[].enum", "capabilities.tools[0].schema.person.enum"} {
@@ -364,9 +364,9 @@ capabilities:
 // The example in _examples must keep loading: a vocabulary that only works in
 // a test is a vocabulary that does not work.
 func TestWarnings_NoneOnTheExamples(t *testing.T) {
-	spec, err := LoadManifest("../_examples/manifest.yaml")
+	spec, err := Load("../_examples/manifest.yaml")
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if w := spec.Warnings(); len(w) != 0 {
 		t.Errorf("warnings = %q, want none", w)

@@ -5,17 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Federicoand98/mani/internal/scheduler"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/session"
 )
 
@@ -27,7 +27,7 @@ const (
 	PolicyAllow
 )
 
-// type Task struct {
+// type scheduler.Task struct {
 // 	Source string // "cron" | "webhook
 // 	Prompt string
 // }
@@ -58,7 +58,7 @@ type webhookSpec struct {
 
 type Daemon struct {
 	rt          *Runtime
-	queue       TaskQueue
+	queue       scheduler.Queue
 	crons       []cronSpec
 	dailies     []dailySpec
 	webhooks    []webhookSpec
@@ -70,12 +70,9 @@ type Daemon struct {
 	state       *triggerState
 }
 
-const (
-	maxWebhookBody  = 64 << 10 // 64KB
-	defaultHookPath = "/hook"
-)
+const maxWebhookBody = 64 << 10 // 64KB
 
-func NewTrigger(rt *Runtime, q TaskQueue) *Daemon {
+func NewTrigger(rt *Runtime, q scheduler.Queue) *Daemon {
 	return &Daemon{
 		rt:          rt,
 		queue:       q,
@@ -96,7 +93,7 @@ func (d *Daemon) Every(id string, interval time.Duration, prompt, memory string)
 
 // Daily schedules a daily job that will prompt the agent at the specified time
 func (d *Daemon) Daily(id, clock, prompt, memory string, catchUp bool) *Daemon {
-	h, m, err := parseClock(clock)
+	h, m, err := manifest.ParseClock(clock)
 	if err != nil {
 		slog.Error("[daemon]: daily trigger disabled, invalid time", "trigger", id, "at", clock, "err", err)
 		return d
@@ -115,7 +112,7 @@ func (d *Daemon) Webhook(addr string, w webhookSpec) *Daemon {
 	// il default vive qui perche' e' l'imbuto: http.ServeMux va in panic su un
 	// pattern vuoto, e un manifest pre-0.1.4 non dichiara nessun path.
 	if w.path == "" {
-		w.path = defaultHookPath
+		w.path = manifest.DefaultHookPath
 	}
 	d.webhooks = append(d.webhooks, w)
 	return d
@@ -173,7 +170,7 @@ func (d *Daemon) worker(ctx context.Context, id int) {
 	}
 }
 
-func (d *Daemon) execute(ctx context.Context, t Task, worker int) {
+func (d *Daemon) execute(ctx context.Context, t scheduler.Task, worker int) {
 	slog.Info("[daemon]: task start", "id", t.ID, "trigger", t.Trigger, "attempt", t.Attempt, "worker", worker)
 
 	sess := session.New(d.rt.ModelName())
@@ -240,7 +237,7 @@ func (d *Daemon) runCron(ctx context.Context, c cronSpec) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			d.enqueue(Task{Source: "cron", Trigger: c.id, Prompt: c.prompt, Memory: c.memory})
+			d.enqueue(scheduler.Task{Source: "cron", Trigger: c.id, Prompt: c.prompt, Memory: c.memory})
 			d.state.mark(c.id, time.Now())
 		}
 	}
@@ -255,7 +252,7 @@ func (d *Daemon) runDaily(ctx context.Context, dl dailySpec) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			d.enqueue(Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
+			d.enqueue(scheduler.Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
 			d.state.mark(dl.id, time.Now())
 		}
 	}
@@ -309,7 +306,7 @@ func (d *Daemon) hookHandler(w webhookSpec) http.Handler {
 			return
 		}
 
-		if d.enqueue(Task{Source: "webhook", Trigger: w.id, Prompt: prompt, Memory: w.memory}) {
+		if d.enqueue(scheduler.Task{Source: "webhook", Trigger: w.id, Prompt: prompt, Memory: w.memory}) {
 			rw.WriteHeader(http.StatusAccepted)
 			_, _ = rw.Write([]byte("accepted\n"))
 		} else {
@@ -318,7 +315,7 @@ func (d *Daemon) hookHandler(w webhookSpec) http.Handler {
 	})
 }
 
-func (d *Daemon) enqueue(t Task) bool {
+func (d *Daemon) enqueue(t scheduler.Task) bool {
 	if t.ID == "" {
 		t.ID = newRunID()
 	}
@@ -343,51 +340,9 @@ func (d *Daemon) catchUp(ctx context.Context) {
 			continue // already run after the last expected occurrence
 		}
 		slog.Info("[daemon]: catch-up, missed trigger enqueued", "trigger", dl.id, "expected", prev)
-		d.enqueue(Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
+		d.enqueue(scheduler.Task{Source: "daily", Trigger: dl.id, Prompt: dl.prompt, Memory: dl.memory})
 		d.state.mark(dl.id, time.Now())
 	}
-}
-
-// parseClock reads an "HH:MM" wall-clock time in the local timezone.
-//
-// It is deliberately strict about trailing input: fmt.Sscanf ignores whatever
-// follows the pattern, so "09:00 UTC" used to parse as 09:00 local, silently
-// running the trigger at a time the manifest did not ask for.
-func parseClock(clock string) (int, int, error) {
-	invalid := func() (int, int, error) {
-		return 0, 0, fmt.Errorf("expected HH:MM in local time, found %q", clock)
-	}
-
-	hs, ms, ok := strings.Cut(clock, ":")
-	if !ok || !isDigits(hs) || !isDigits(ms) {
-		return invalid()
-	}
-
-	h, err := strconv.Atoi(hs)
-	if err != nil {
-		return invalid()
-	}
-	m, err := strconv.Atoi(ms)
-	if err != nil {
-		return invalid()
-	}
-
-	if h < 0 || h > 23 || m < 0 || m > 59 {
-		return 0, 0, fmt.Errorf("hour must be between 0 and 23, minute must be between 0 and 59, found %q", clock)
-	}
-	return h, m, nil
-}
-
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // occurrenceOn returns hour:minute on the day of t shifted by dayOffset days,
@@ -432,7 +387,7 @@ func renderWebhookPrompt(template, body string) string {
 	return template + "\n\n" + body
 }
 
-func triggerID(spec TriggerSpec) string {
+func triggerID(spec manifest.TriggerSpec) string {
 	if spec.Name != "" {
 		return spec.Name
 	}

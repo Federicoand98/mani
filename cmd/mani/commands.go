@@ -16,6 +16,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/journal/sqlite"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 type command struct {
@@ -122,25 +125,33 @@ func runInit(ctx context.Context, args []string) error {
 
 func runValidate(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to the YAML manifest")
+	configPath := fs.String("config", "", "path to the YAML manifest or flow")
+	var sets stringList
+	fs.Var(&sets, "set", "flow only: a parameter value, name=value (repeatable)")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {
 		return usagef("--config is required")
 	}
 
-	if isFlow, err := app.IsFlowFile(*configPath); err != nil {
+	if isFlow, err := manifest.IsFlowFile(*configPath); err != nil {
 		return usagef("%v", err)
 	} else if isFlow {
-		f, err := app.LoadFlow(*configPath)
+		set, err := parseSet(sets)
+		if err != nil {
+			return usagef("%v", err)
+		}
+		f, err := manifest.LoadFlow(*configPath, set)
 		if err != nil {
 			return usagef("%v", err)
 		}
 		printFlow(os.Stdout, *configPath, f)
 		return nil
+	} else if len(sets) > 0 {
+		return usagef("--set is for flows: a manifest takes its values from ${VAR}")
 	}
 
-	spec, err := app.LoadManifest(*configPath)
+	spec, err := manifest.Load(*configPath)
 	if err != nil {
 		return usagef("%v", err)
 	}
@@ -189,7 +200,7 @@ func runRuns(ctx context.Context, args []string) error {
 		return printRun(os.Stdout, rec, *asJSON)
 	}
 
-	f := app.ListFilter{Limit: *limit, Status: *status}
+	f := journal.ListFilter{Limit: *limit, Status: *status}
 	if *since != "" {
 		d, err := time.ParseDuration(*since)
 		if err != nil {
@@ -206,19 +217,19 @@ func runRuns(ctx context.Context, args []string) error {
 	return printRuns(os.Stdout, metas, *asJSON)
 }
 
-func openJournal(configPath, dir string) (app.Journal, error) {
+func openJournal(configPath, dir string) (journal.Journal, error) {
 	if dir != "" {
 		if st, err := os.Stat(dir); err == nil && !st.IsDir() {
-			return app.NewSQLiteJournal(dir, 0)
+			return sqlite.New(dir, 0)
 		}
-		return app.NewJSONLJournal(dir)
+		return journal.NewJSONL(dir)
 	}
 
 	if configPath == "" {
 		return nil, usagef("--config or --path is required")
 	}
 
-	spec, err := app.LoadManifest(configPath)
+	spec, err := manifest.Load(configPath)
 	if err != nil {
 		return nil, usagef("%v", err)
 	}
@@ -231,7 +242,7 @@ func openJournal(configPath, dir string) (app.Journal, error) {
 	return j, nil
 }
 
-func printRuns(w io.Writer, metas []app.RunMeta, asJSON bool) error {
+func printRuns(w io.Writer, metas []journal.RunMeta, asJSON bool) error {
 	if asJSON {
 		return json.NewEncoder(w).Encode(metas)
 	}
@@ -258,7 +269,7 @@ func printRuns(w io.Writer, metas []app.RunMeta, asJSON bool) error {
 	return tw.Flush()
 }
 
-func statusOrRunning(m app.RunMeta) string {
+func statusOrRunning(m journal.RunMeta) string {
 	if m.Status == "" {
 		return "running"
 	}
@@ -272,7 +283,7 @@ func duration(start, end time.Time) string {
 	return end.Sub(start).Round(100 * time.Millisecond).String()
 }
 
-func printRun(w io.Writer, rec app.RunRecord, asJSON bool) error {
+func printRun(w io.Writer, rec journal.RunRecord, asJSON bool) error {
 	if asJSON {
 		return json.NewEncoder(w).Encode(rec)
 	}
@@ -316,26 +327,26 @@ func indent(depth int) string {
 	return strings.Repeat("   ", depth-1) + "|- "
 }
 
-func describe(ev app.RunEvent) string {
+func describe(ev journal.RunEvent) string {
 	switch ev.Kind {
-	case app.EvRunStart:
+	case journal.EvRunStart:
 		return str(ev.Data, "source")
-	case app.EvLLMCall:
+	case journal.EvLLMCall:
 		return fmt.Sprintf("messages=%d tools=%d", num(ev.Data, "messages"), num(ev.Data, "tools"))
-	case app.EvLLMReponse:
+	case journal.EvLLMReponse:
 		return fmt.Sprintf("stop=%s in=%d out=%d",
 			str(ev.Data, "stop_reason"), num(ev.Data, "in_tokens"), num(ev.Data, "out_tokens"))
-	case app.EvToolCall:
+	case journal.EvToolCall:
 		return fmt.Sprintf("%-10s %s", str(ev.Data, "tool"), truncate(compact(ev.Data["input"]), 90))
-	case app.EvToolResult:
+	case journal.EvToolResult:
 		outcome := "ok"
 		if b, _ := ev.Data["is_error"].(bool); b {
 			outcome = "ERROR"
 		}
 		return fmt.Sprintf("%-10s %s  %d bytes", str(ev.Data, "tool"), outcome, num(ev.Data, "result_len"))
-	case app.EvGuardrail:
+	case journal.EvGuardrail:
 		return fmt.Sprintf("%-10s %s  %q", str(ev.Data, "tool"), str(ev.Data, "action"), str(ev.Data, "label"))
-	case app.EvRunEnd:
+	case journal.EvRunEnd:
 		return str(ev.Data, "status")
 	}
 	return compact(ev.Data)
@@ -383,12 +394,12 @@ func truncate(s string, max int) string {
 	return s[:cut] + "…"
 }
 
-func resolveRunID(j app.Journal, prefix string) (string, error) {
+func resolveRunID(j journal.Journal, prefix string) (string, error) {
 	if _, err := j.Get(prefix); err == nil {
 		return prefix, nil // id completo
 	}
 
-	metas, err := j.List(app.ListFilter{})
+	metas, err := j.List(journal.ListFilter{})
 	if err != nil {
 		return "", err
 	}
@@ -410,10 +421,20 @@ func resolveRunID(j app.Journal, prefix string) (string, error) {
 	}
 }
 
-func printFlow(w io.Writer, path string, f app.FlowSpec) {
+func printFlow(w io.Writer, path string, f manifest.Flow) {
 	fmt.Fprintf(w, "%s: ok\n  %s — %s\n", path, f.Flow, f.About)
 	if f.Input != "" {
 		fmt.Fprintf(w, "  input: %s (--in)\n", f.Input)
+	}
+	if len(f.Params) > 0 {
+		fmt.Fprintf(w, "  params:\n")
+		for _, p := range f.Params {
+			value, origin := p.Value, p.Origin
+			if origin == "" {
+				value, origin = "(not set)", "required"
+			}
+			fmt.Fprintf(w, "    %-14s %-16s %-9s %s\n", p.Name, value, origin, p.About)
+		}
 	}
 	for i, st := range f.Steps {
 		what := "agent " + st.Agent
@@ -421,13 +442,16 @@ func printFlow(w io.Writer, path string, f app.FlowSpec) {
 			what = "run " + strings.Join(st.Run, " ")
 		}
 		switch {
-		case st.ForEach != "":
-			what += ", for each record of " + st.ForEach
-			if st.Jobs > 1 {
-				what += fmt.Sprintf(" (%d at a time)", st.Jobs)
-			}
-		case st.FromAll != "":
-			what += ", on all the records of " + st.FromAll
+		case st.ForEach.Set():
+			what += ", for each record of " + st.ForEach.First()
+		case st.FromAll.Set():
+			what += ", on all the records of " + joinNames(st.FromAll.Names)
+		}
+		if len(st.Where) > 0 {
+			what += " where " + st.Where.String()
+		}
+		if st.ForEach.Set() && st.Jobs > 1 {
+			what += fmt.Sprintf(" (%d at a time)", st.Jobs)
 		}
 		fmt.Fprintf(w, "  %d. %-18s %s\n%s%s\n", i+1, st.Step, what, strings.Repeat(" ", 24), st.Does)
 	}
@@ -435,4 +459,15 @@ func printFlow(w io.Writer, path string, f app.FlowSpec) {
 	if f.Limits.Tokens > 0 {
 		fmt.Fprintf(w, "  limits: %d tokens for the whole flow\n", f.Limits.Tokens)
 	}
+}
+
+// joinNames reads a list aloud: "a", "a and b", "a, b and c".
+func joinNames(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/session"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,11 +34,11 @@ func validToolName(name string) error {
 
 type Server struct {
 	rt   *app.Runtime
-	spec app.RuntimeSpec
+	spec manifest.Spec
 	srv  *mcp.Server
 }
 
-func New(ctx context.Context, spec app.RuntimeSpec, version string) (*Server, error) {
+func New(ctx context.Context, spec manifest.Spec, version string) (*Server, error) {
 	name := spec.Identity.Name
 	if name == "" {
 		return nil, fmt.Errorf("mcp: identity.name is required to expose the agent as an MCP tool")

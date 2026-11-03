@@ -6,6 +6,8 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 )
 
@@ -53,8 +55,8 @@ func TestPolicyRules_DenyBlocksTool(t *testing.T) {
 	)
 	rt := testRuntime(t, client)
 	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
-	RegisterPolicyRules(rt, PolicySpec{
-		Rules: []RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`, Label: "rm ricorsivo"}},
+	RegisterPolicyRules(rt, manifest.PolicySpec{
+		Rules: []manifest.RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`, Label: "rm ricorsivo"}},
 	})
 
 	drain(rt.Execute(context.Background(), "cancella /tmp"))
@@ -73,8 +75,8 @@ func TestPolicyRules_DenyAllowsUnmatched(t *testing.T) {
 	)
 	rt := testRuntime(t, client)
 	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
-	RegisterPolicyRules(rt, PolicySpec{
-		Rules: []RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`}},
+	RegisterPolicyRules(rt, manifest.PolicySpec{
+		Rules: []manifest.RuleSpec{{Tool: "bash", Pattern: `rm\s+-rf`}},
 	})
 
 	drain(rt.Execute(context.Background(), "elenca"))
@@ -88,7 +90,7 @@ func TestPolicyRules_DenyAllowsUnmatched(t *testing.T) {
 func TestBudget_MaxTokensAborts(t *testing.T) {
 	client := core.NewMock(core.WithUsage(core.RespText("done"), 120000, 0))
 	rt := testRuntime(t, client)
-	RegisterBudget(rt, LimitsSpec{MaxTokens: 100000})
+	RegisterBudget(rt, manifest.LimitsSpec{MaxTokens: 100000})
 
 	if !drain(rt.Execute(context.Background(), "x")) {
 		t.Error("atteso EventError per max_tokens superato")
@@ -101,7 +103,7 @@ func TestBudget_PerRunReset(t *testing.T) {
 		return core.WithUsage(core.RespText("done"), 60000, 0)
 	})
 	rt := testRuntime(t, client)
-	RegisterBudget(rt, LimitsSpec{MaxTokens: 100000})
+	RegisterBudget(rt, manifest.LimitsSpec{MaxTokens: 100000})
 
 	for i := 0; i < 2; i++ {
 		if drain(rt.Execute(context.Background(), "x")) {
@@ -111,12 +113,12 @@ func TestBudget_PerRunReset(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Journal: the guardrail vocabulary is a contract between producer and counter
+// journal.Journal: the guardrail vocabulary is a contract between producer and counter
 // ---------------------------------------------------------------------------
 
-// Every producer of a guardrail event must use a word RunRecord.apply counts.
+// Every producer of a guardrail event must use a word journal.RunRecord.apply counts.
 // manifestPolicyHook used to write "denied" while apply counts "deny", so a tool
-// blocked by policy.tools was recorded but never showed up in Summary.Blocked —
+// blocked by policy.tools was recorded but never showed up in journal.Summary.Blocked —
 // the audit trail said the run was clean.
 func TestManifestPolicy_DenyIsCountedAsBlocked(t *testing.T) {
 	client := core.NewMock(
@@ -128,12 +130,12 @@ func TestManifestPolicy_DenyIsCountedAsBlocked(t *testing.T) {
 	ran := false
 	rt.WithTool(fakeTool("bash", core.RiskExecute, &ran))
 
-	j := NewInMemoryJournal(10)
+	j := journal.NewInMemory(10)
 	RegisterJournal(rt, j)
 
 	rt.permission = NewPermissionManager()
 	rt.agent.AddPreToolUseHook(manifestPolicyHook(
-		map[string]RiskPolicy{"bash": RiskPolicyDeny}, rt.permission, rt,
+		map[string]manifest.RiskPolicy{"bash": manifest.RiskPolicyDeny}, rt.permission, rt,
 	))
 
 	drain(rt.Execute(context.Background(), "list the files"))
@@ -142,7 +144,7 @@ func TestManifestPolicy_DenyIsCountedAsBlocked(t *testing.T) {
 		t.Error("policy.tools: deny did not block the tool")
 	}
 
-	metas, err := j.List(ListFilter{Limit: 10})
+	metas, err := j.List(journal.ListFilter{Limit: 10})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -155,6 +157,6 @@ func TestManifestPolicy_DenyIsCountedAsBlocked(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if rec.Summary.Blocked != 1 {
-		t.Errorf("Summary.Blocked = %d, want 1: a denied tool must be counted", rec.Summary.Blocked)
+		t.Errorf("journal.Summary.Blocked = %d, want 1: a denied tool must be counted", rec.Summary.Blocked)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/bash"
 	"github.com/Federicoand98/mani/tool/fetch"
@@ -15,7 +16,7 @@ import (
 type ToolDeps struct {
 	Workspace   string
 	Runtime     *Runtime
-	Subagents   []SubagentSpec
+	Subagents   []manifest.SubagentSpec
 	Depth       int
 	HostAllowed func(host string) bool
 }
@@ -67,9 +68,12 @@ var toolContructors = map[string]ToolConstructor{
 	},
 }
 
-// RegisterToolConstructor registers a tool constructor for the given name
+// RegisterToolConstructor registers a tool constructor for the given name, and
+// makes the name valid in a manifest: a tool a program adds to the catalog is
+// one its manifests may declare.
 func RegisterToolConstructor(name string, c ToolConstructor) {
 	toolContructors[name] = c
+	manifest.RegisterBuiltinTool(name)
 }
 
 func buildTool(name string, deps ToolDeps) (tool.Tool, error) {
@@ -80,12 +84,12 @@ func buildTool(name string, deps ToolDeps) (tool.Tool, error) {
 	return c(deps)
 }
 
-func buildToolRef(ref ToolRef, deps ToolDeps) (tool.Tool, error) {
-	if !ref.isSubprocess() {
+func buildToolRef(ref manifest.ToolRef, deps ToolDeps) (tool.Tool, error) {
+	if !ref.IsSubprocess() {
 		return buildTool(ref.Name, deps)
 	}
 
-	risk := ref.Risk.toCore()
+	risk := ref.Risk.Core()
 	if ref.Risk == "" {
 		risk = core.RiskExecute
 	}
@@ -97,9 +101,4 @@ func buildToolRef(ref ToolRef, deps ToolDeps) (tool.Tool, error) {
 	}
 
 	return subprocess.New(ref.Name, ref.Desc, ref.Command, ref.Args, ref.Env, schema, risk, deps.Workspace), nil
-}
-
-func knownTool(name string) bool {
-	_, ok := toolContructors[name]
-	return ok
 }

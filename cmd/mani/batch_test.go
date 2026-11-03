@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
 )
 
 const threeTasks = `{"id": "a", "task": "one", "shelf": "s1"}
@@ -41,7 +41,7 @@ func TestBatch_WritesOneFilePerTask(t *testing.T) {
 		t.Error("the batch wrote into a step directory: its files belong straight in --out")
 	}
 
-	j, err := app.NewJSONLJournal(filepath.Join(dir, "runs"))
+	j, err := journal.NewJSONL(filepath.Join(dir, "runs"))
 	if err != nil {
 		t.Fatal(err)
 	}

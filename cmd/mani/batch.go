@@ -5,7 +5,7 @@ import (
 	"flag"
 	"os"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 func runBatch(ctx context.Context, args []string) error {
@@ -27,7 +27,7 @@ func runBatch(ctx context.Context, args []string) error {
 		return usagef("--jobs must be at least 1")
 	}
 
-	if _, err := app.LoadManifest(*configPath); err != nil {
+	if _, err := manifest.Load(*configPath); err != nil {
 		return usagef("%v", err)
 	}
 
@@ -36,15 +36,15 @@ func runBatch(ctx context.Context, args []string) error {
 		return usagef("%v", err)
 	}
 
-	f := app.FlowSpec{
+	f := manifest.Flow{
 		Flow:  "batch",
 		About: "runs one agent over a file of tasks",
 		Input: "one task per line",
-		Steps: []app.StepSpec{{
+		Steps: []manifest.StepSpec{{
 			Step:    "tasks",
 			Does:    "runs the agent on each task",
 			Agent:   *configPath,
-			ForEach: app.FlowInput,
+			ForEach: manifest.One(manifest.FlowInput),
 			Jobs:    *jobs,
 		}},
 		Result: "tasks",

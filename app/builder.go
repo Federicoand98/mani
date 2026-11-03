@@ -11,6 +11,9 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/internal/scheduler"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/mcp"
 )
@@ -21,8 +24,8 @@ type daemonOptions struct {
 	insecure bool
 }
 
-// Build builds a new Runtime from the given RuntimeSpec.
-func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
+// Build builds a new Runtime from the given manifest.Spec.
+func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 	base, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("build: config: %w", err)
@@ -43,7 +46,7 @@ func Build(ctx context.Context, spec RuntimeSpec) (*Runtime, error) {
 
 	// i subagent vanno noti PRIMA di costruire il tool delegate (gli servono i nomi per l'enum)
 	if len(spec.Capabilities.Subagents) > 0 {
-		rt.subagents = make(map[string]SubagentSpec, len(spec.Capabilities.Subagents))
+		rt.subagents = make(map[string]manifest.SubagentSpec, len(spec.Capabilities.Subagents))
 		for _, sa := range spec.Capabilities.Subagents {
 			rt.subagents[sa.Name] = sa
 		}
@@ -154,7 +157,7 @@ func AllowInsecureWebhook() DaemonOption {
 	}
 }
 
-func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, error) {
+func BuildDaemon(rt *Runtime, spec manifest.Spec, opts ...DaemonOption) (*Daemon, error) {
 	var o daemonOptions
 	for _, opt := range opts {
 		opt(&o)
@@ -192,7 +195,7 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, 
 			}
 			d.Every(id, dur, t.Prompt, t.Memory)
 		case "daily":
-			if _, _, err := parseClock(t.At); err != nil {
+			if _, _, err := manifest.ParseClock(t.At); err != nil {
 				return nil, fmt.Errorf("build: trigger %q: %w", id, err)
 			}
 			d.Daily(id, t.At, t.Prompt, t.Memory, t.CatchUp)
@@ -215,14 +218,14 @@ func BuildDaemon(rt *Runtime, spec RuntimeSpec, opts ...DaemonOption) (*Daemon, 
 	return d, nil
 }
 
-func buildQueue(spec SchedulerSpec) (TaskQueue, error) {
+func buildQueue(spec manifest.SchedulerSpec) (scheduler.Queue, error) {
 	if spec.Path == "" {
-		return NewInMemoryQueue(spec.MaxPending), nil
+		return scheduler.NewInMemoryQueue(spec.MaxPending), nil
 	}
-	return NewFileQueue(spec.Path, spec.MaxPending)
+	return scheduler.NewFileQueue(spec.Path, spec.MaxPending)
 }
 
-func resolveRetry(r RetrySpec) RetrySpec {
+func resolveRetry(r manifest.RetrySpec) manifest.RetrySpec {
 	if r.MaxAttempts <= 0 {
 		r.MaxAttempts = 3
 	}
@@ -233,7 +236,7 @@ func resolveRetry(r RetrySpec) RetrySpec {
 }
 
 // mergeConfig merges spec > base config.
-func mergeConfig(base config.Config, spec RuntimeSpec) config.Config {
+func mergeConfig(base config.Config, spec manifest.Spec) config.Config {
 	c := base
 	if spec.Identity.Provider != "" {
 		c.Provider = spec.Identity.Provider
@@ -250,13 +253,13 @@ func mergeConfig(base config.Config, spec RuntimeSpec) config.Config {
 	return c
 }
 
-func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager, rt *Runtime) core.PreToolUseHook {
+func manifestPolicyHook(policy map[string]manifest.RiskPolicy, mgr *PermissionManager, rt *Runtime) core.PreToolUseHook {
 	return func(ctx context.Context, toolName string, level core.RiskLevel, input map[string]any) error {
 		switch resolvePolicy(policy, toolName) {
-		case RiskPolicyDeny:
+		case manifest.RiskPolicyDeny:
 			rt.recordGovernance(ctx, "deny", toolName, "permission")
 			return fmt.Errorf("permission: tool %q denied", toolName)
-		case RiskPolicyAsk:
+		case manifest.RiskPolicyAsk:
 			return mgr.check(ctx, toolName, level, input)
 		default:
 			return nil
@@ -264,18 +267,18 @@ func manifestPolicyHook(policy map[string]RiskPolicy, mgr *PermissionManager, rt
 	}
 }
 
-func resolvePolicy(policy map[string]RiskPolicy, name string) RiskPolicy {
+func resolvePolicy(policy map[string]manifest.RiskPolicy, name string) manifest.RiskPolicy {
 	if p, ok := policy[name]; ok {
 		return p
 	}
 	if d, has := policy["default"]; has {
 		return d
 	}
-	return RiskPolicyAllow
+	return manifest.RiskPolicyAllow
 }
 
-func buildJournal(spec JournalSpec) (Journal, error) {
-	mem := NewInMemoryJournal(journalRetention(spec.Retention))
+func buildJournal(spec manifest.JournalSpec) (journal.Journal, error) {
+	mem := journal.NewInMemory(journal.Retention(spec.Retention))
 
 	if spec.Path == "" {
 		switch strings.ToLower(strings.TrimSpace(spec.Backend)) {
@@ -293,5 +296,5 @@ func buildJournal(spec JournalSpec) (Journal, error) {
 		return nil, err
 	}
 	// InMemory primo → Get/List del daemon/CLI leggono dalla RAM.
-	return NewMultiJournal(mem, disk), nil
+	return journal.NewMulti(mem, disk), nil
 }

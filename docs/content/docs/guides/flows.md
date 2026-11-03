@@ -103,6 +103,59 @@ mani run --config reviews.flow.yaml --in reviews.jsonl --out /tmp/reviews --limi
 whole chain working on one record before paying for the full list. Rerun without the flag and
 only the missing records are computed.
 
+## Parameters, filters and joins
+
+Three additions turn the example into the shape most real pipelines have. All three are in the
+[flow file reference](../../reference/flow/); this is the short version.
+
+**Parameters**, for the values that change from one run to the next:
+
+```yaml
+params:
+  busta: "The busta to rebuild"
+  since: { about: "Earliest year to keep", default: "1490" }
+
+steps:
+  - step: fetch_letters
+    does: "Downloads the transcribed letters of the busta"
+    run: python fetch.py --busta ${params.busta} --since ${params.since}
+```
+
+```bash
+mani run --config letters.flow.yaml --set busta=12 --out runs/12/
+```
+
+A missing required parameter stops the run before anything starts. The state directory remembers
+the values it was built with, so pointing busta 13 at `runs/12/` is refused instead of quietly
+reusing busta 12's records — give each value its own `--out`.
+
+**A filter**, to send only some records down a step:
+
+```yaml
+  - step: review_doubtful
+    does: "Gives a second reading to the letters the extractor was unsure about"
+    agent: review.yaml
+    for_each: extract_facts
+    where: { confidence: low }
+```
+
+The extractor's schema declares `confidence: { enum: [low, medium, high] }`, so the agent decides
+which letters are doubtful and the flow only routes them. `mani validate` checks the filter against
+that schema, so `where: { confidence: lw }` fails at load time instead of filtering out every
+letter.
+
+**A join**, to bring branches back together:
+
+```yaml
+  - step: build_timeline
+    does: "Resolves people and places and orders the letters in time"
+    run: python merge.py
+    from_all: [extract_facts, review_doubtful, fetch_people]
+```
+
+Every record arrives with a `from` field naming its step, which is how `merge.py` tells the second
+reading of a letter from the first, and a person from a letter with the same id.
+
 ## Keep a ceiling on it
 
 ```yaml

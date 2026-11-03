@@ -1,4 +1,4 @@
-package app
+package scheduler
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type Task struct {
 	LastError string    `json:"last_error,omitempty"`
 }
 
-type TaskQueue interface {
+type Queue interface {
 	Enqueue(t Task) error
 	Claim(ctx context.Context) (Task, error)
 	Ack(t Task) error

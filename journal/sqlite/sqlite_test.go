@@ -1,4 +1,4 @@
-package app
+package sqlite
 
 import (
 	"database/sql"
@@ -6,38 +6,41 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/journal/journaltest"
 )
 
 func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "runs.db")
-	j, err := NewSQLiteJournal(dbPath, 2)
+	j, err := New(dbPath, 2)
 	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	if err := j.Start(RunRecord{ID: "run-a", SessionID: "session-a", Source: "cli", StartedAt: base}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "run-a", SessionID: "session-a", Source: "cli", StartedAt: base}); err != nil {
 		t.Fatalf("Start(run-a): %v", err)
 	}
-	if err := j.Append(RunEvent{
-		RunID: "run-a", At: base.Add(time.Second), Kind: EvLLMReponse,
+	if err := j.Append(journal.RunEvent{
+		RunID: "run-a", At: base.Add(time.Second), Kind: journal.EvLLMReponse,
 		Data: map[string]any{"in_tokens": 12, "out_tokens": 3},
 	}); err != nil {
 		t.Fatalf("Append(llm): %v", err)
 	}
-	if err := j.Append(RunEvent{
-		RunID: "run-a", At: base.Add(2 * time.Second), Kind: EvToolResult,
+	if err := j.Append(journal.RunEvent{
+		RunID: "run-a", At: base.Add(2 * time.Second), Kind: journal.EvToolResult,
 		Data: map[string]any{"tool": "read", "is_error": true},
 	}); err != nil {
 		t.Fatalf("Append(tool): %v", err)
 	}
-	if err := j.Append(RunEvent{
-		RunID: "run-a", At: base.Add(3 * time.Second), Kind: EvGuardrail,
+	if err := j.Append(journal.RunEvent{
+		RunID: "run-a", At: base.Add(3 * time.Second), Kind: journal.EvGuardrail,
 		Data: map[string]any{"action": "deny"},
 	}); err != nil {
 		t.Fatalf("Append(guardrail): %v", err)
 	}
-	if err := j.Finish("run-a", RunOutcome{Status: "error"}); err != nil {
+	if err := j.Finish("run-a", journal.RunOutcome{Status: "error"}); err != nil {
 		t.Fatalf("Finish(run-a): %v", err)
 	}
 
@@ -61,14 +64,14 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 		t.Fatalf("summary mismatch: %+v", got.Summary)
 	}
 
-	if err := j.Start(RunRecord{ID: "run-b", SessionID: "session-b", Source: "trigger", StartedAt: base.Add(time.Minute)}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "run-b", SessionID: "session-b", Source: "trigger", StartedAt: base.Add(time.Minute)}); err != nil {
 		t.Fatalf("Start(run-b): %v", err)
 	}
-	if err := j.Finish("run-b", RunOutcome{Status: "ok"}); err != nil {
+	if err := j.Finish("run-b", journal.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish(run-b): %v", err)
 	}
 
-	metas, err := j.List(ListFilter{SessionID: "session-b", Status: "ok", Since: base.Add(30 * time.Second), Limit: 1})
+	metas, err := j.List(journal.ListFilter{SessionID: "session-b", Status: "ok", Since: base.Add(30 * time.Second), Limit: 1})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -76,7 +79,7 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 		t.Fatalf("filtered list mismatch: %+v", metas)
 	}
 
-	if err := j.Start(RunRecord{ID: "run-c", SessionID: "session-c", Source: "trigger", StartedAt: base.Add(2 * time.Minute)}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "run-c", SessionID: "session-c", Source: "trigger", StartedAt: base.Add(2 * time.Minute)}); err != nil {
 		t.Fatalf("Start(run-c): %v", err)
 	}
 	if _, err := j.Get("run-a"); err == nil {
@@ -86,7 +89,7 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	reopened, err := NewSQLiteJournal(dbPath, 2)
+	reopened, err := New(dbPath, 2)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -98,9 +101,9 @@ func TestSQLiteJournal_RoundTripAndRetention(t *testing.T) {
 
 func TestSQLiteJournal_ConfiguresWALAndNormalSync(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.db")
-	j, err := NewSQLiteJournal(path, 10)
+	j, err := New(path, 10)
 	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer j.Close()
 
@@ -121,23 +124,23 @@ func TestSQLiteJournal_ConfiguresWALAndNormalSync(t *testing.T) {
 }
 
 func TestSQLiteJournal_RetainsEventsBeforeRunStart(t *testing.T) {
-	j, err := NewSQLiteJournal(filepath.Join(t.TempDir(), "runs.db"), 10)
+	j, err := New(filepath.Join(t.TempDir(), "runs.db"), 10)
 	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer j.Close()
 
-	if err := j.Append(RunEvent{RunID: "run", Kind: EvToolCall, Data: map[string]any{"tool": "read"}}); err != nil {
+	if err := j.Append(journal.RunEvent{RunID: "run", Kind: journal.EvToolCall, Data: map[string]any{"tool": "read"}}); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
 	got, err := j.Get("run")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if len(got.Events) != 1 || got.Events[0].Kind != EvToolCall {
+	if len(got.Events) != 1 || got.Events[0].Kind != journal.EvToolCall {
 		t.Fatalf("events = %+v, want the pre-start event", got.Events)
 	}
-	if metas, err := j.List(ListFilter{}); err != nil || len(metas) != 1 || metas[0].ID != "run" {
+	if metas, err := j.List(journal.ListFilter{}); err != nil || len(metas) != 1 || metas[0].ID != "run" {
 		t.Fatalf("List = %+v, err=%v", metas, err)
 	}
 }
@@ -162,12 +165,12 @@ INSERT INTO journal_events VALUES ('legacy', 1, 2000000000, 0, 'llm_response', '
 		t.Fatalf("close legacy database: %v", err)
 	}
 
-	j, err := NewSQLiteJournal(path, 10)
+	j, err := New(path, 10)
 	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer j.Close()
-	metas, err := j.List(ListFilter{SessionID: "s", Status: "running"})
+	metas, err := j.List(journal.ListFilter{SessionID: "s", Status: "running"})
 	if err != nil || len(metas) != 1 {
 		t.Fatalf("List after backfill = %+v, err=%v", metas, err)
 	}
@@ -177,13 +180,13 @@ INSERT INTO journal_events VALUES ('legacy', 1, 2000000000, 0, 'llm_response', '
 }
 
 func TestSQLiteJournal_ConcurrentAppendsHaveUniqueSequences(t *testing.T) {
-	j, err := NewSQLiteJournal(filepath.Join(t.TempDir(), "runs.db"), 10)
+	j, err := New(filepath.Join(t.TempDir(), "runs.db"), 10)
 	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer j.Close()
 
-	if err := j.Start(RunRecord{ID: "run", StartedAt: time.Now()}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "run", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -194,7 +197,7 @@ func TestSQLiteJournal_ConcurrentAppendsHaveUniqueSequences(t *testing.T) {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			errs <- j.Append(RunEvent{RunID: "run", Kind: EvToolCall, Data: map[string]any{"index": index}})
+			errs <- j.Append(journal.RunEvent{RunID: "run", Kind: journal.EvToolCall, Data: map[string]any{"index": index}})
 		}(i)
 	}
 	wg.Wait()
@@ -219,50 +222,11 @@ func TestSQLiteJournal_ConcurrentAppendsHaveUniqueSequences(t *testing.T) {
 	}
 }
 
-func TestJournalBackendSelection(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "runs.db")
-	spec := DefaultSpec()
-	spec.Observability.Journal = JournalSpec{
-		Enabled: true, Backend: "sqlite", Path: dbPath, Retention: 2,
-	}
-
-	reader, ok := OpenJournalReader(spec)
-	if !ok {
-		t.Fatal("OpenJournalReader should open the SQLite backend")
-	}
-	if _, ok := reader.(*SQLiteJournal); !ok {
-		t.Fatalf("OpenJournalReader returned %T, want *SQLiteJournal", reader)
-	}
-	defer reader.Close()
-
-	built, err := buildJournal(spec.Observability.Journal)
+func TestContract(t *testing.T) {
+	j, err := New(filepath.Join(t.TempDir(), "runs.db"), 10)
 	if err != nil {
-		t.Fatalf("buildJournal: %v", err)
+		t.Fatal(err)
 	}
-	multi, ok := built.(*MultiJournal)
-	if !ok {
-		t.Fatalf("buildJournal returned %T, want *MultiJournal", built)
-	}
-	if len(multi.sinks) != 2 {
-		t.Fatalf("buildJournal returned %d sinks, want 2", len(multi.sinks))
-	}
-	if _, ok := multi.sinks[1].(*SQLiteJournal); !ok {
-		t.Fatalf("persistent sink is %T, want *SQLiteJournal", multi.sinks[1])
-	}
-	if err := multi.Close(); err != nil {
-		t.Fatalf("MultiJournal.Close: %v", err)
-	}
-}
-
-func TestRuntimeCloseClosesSQLiteJournal(t *testing.T) {
-	j, err := NewSQLiteJournal(filepath.Join(t.TempDir(), "runs.db"), 1)
-	if err != nil {
-		t.Fatalf("NewSQLiteJournal: %v", err)
-	}
-	rt := &Runtime{journal: j}
-	rt.Close()
-
-	if _, err := j.List(ListFilter{}); err == nil {
-		t.Fatal("Runtime.Close should close the SQLite journal")
-	}
+	defer j.Close()
+	journaltest.Run(t, j)
 }

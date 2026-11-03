@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 While the version is `0.x`, breaking changes may land in any minor release.
 
+## [Unreleased]
+
+Flows grow the three things real pipelines kept needing — parameters, filters and joins — and
+`app/` is split along its boundaries, which is a breaking change for anyone importing mani as a
+library.
+
+### Added
+
+- **Flow parameters.** A flow declares `params:` and references them as `${params.name}` in any
+  value; `mani run --set name=value` fills them, a `default` covers the rest.
+
+  ```yaml
+  params:
+    busta: "The busta to rebuild"
+    since: { about: "Earliest year to keep", default: "1490" }
+  ```
+
+  A required parameter with no value stops the run before anything starts, naming it and its
+  description. `${params.x}` for an undeclared name is a load error with its line, and so is
+  `--set x=…`: a typo is never ignored. `mani validate` lists the parameters, their values and
+  where each came from, and still shows a flow whose required parameters are not set.
+
+  **A state directory belongs to its parameters.** The first run with `--out` writes
+  `<out>/.params.json`, and a later run with a different value — a different `--set`, or a
+  default changed in the file — is refused. Without it, rerunning busta 13 in the directory of
+  busta 12 found every step "already done" and handed back busta 12's records.
+
+- **Filters on a step: `where:`.** `where: { confidence: low }` keeps only the records whose
+  payload has those field values. Equality only — no comparisons, no `or`, no expressions: a
+  threshold comes from the agent upstream declaring a band in its schema, so the judgement stays
+  with the agent and the flow only routes.
+
+  When the step it reads is an agent with an `output.schema`, the filter is checked at load time
+  — a misspelt field, a value outside the enum or a type mismatch is an error with its line,
+  instead of a flow that filters out everything and succeeds. A record left out is not pending:
+  it is not run, not retried, and not a failure. A record that stops matching has its old result
+  removed from the step's directory, and a whole-step run behind a filter reruns when any upstream
+  record changes, kept or not.
+
+- **Joins: `from_all: [a, b]`.** A step can read several steps; every record arrives with a
+  `from` field naming the step it came from, so the same id in two sources stays two records. A
+  join reruns when any of its sources changes. `for_each` over a list, and `where` on a join, are
+  refused with a message saying what to write instead.
+
+- `journal/journaltest` is public: the contract every `journal.Journal` adapter must pass, so an
+  adapter written outside this repository can run the same checks. It now also covers
+  `journal.Multi`, the fan-out the runtime actually uses, which no test covered before.
+
+### Changed
+
+- **`app/` is split into packages along its boundaries.** Breaking for library users, at the
+  import level only — no behaviour changes:
+
+  | Before | After |
+  |---|---|
+  | `app.RuntimeSpec`, `app.LoadManifest`, `app.DefaultSpec` | `manifest.Spec`, `manifest.Load`, `manifest.Default` |
+  | `app.FlowSpec`, `app.LoadFlow(path)` | `manifest.Flow`, `manifest.LoadFlow(path, set)` |
+  | `app.Journal`, `app.RunRecord`, `app.ListFilter`, … | `journal.Journal`, `journal.RunRecord`, `journal.ListFilter`, … |
+  | `app.NewInMemoryJournal`, `app.NewJSONLJournal`, `app.NewMultiJournal` | `journal.NewInMemory`, `journal.NewJSONL`, `journal.NewMulti` |
+  | `app.SQLiteJournal`, `app.NewSQLiteJournal` | `sqlite.Journal`, `sqlite.New` (in `journal/sqlite`) |
+  | `app.TaskQueue`, `app.NewFileQueue`, `app.NewInMemoryQueue` | `scheduler.Queue`, … (in `internal/scheduler`) |
+
+  `app/` goes from about 4,800 lines to 2,600. `StepSpec.ForEach` and `StepSpec.FromAll` are now
+  `manifest.Sources`; build one with `manifest.One("step")`.
+
+### Fixed
+
+- **`mani init` did not work.** The flag default was `agent` while the embedded template was
+  named `agents.yaml`, so the first command of every tutorial failed with
+  `unknown template "agent" (available: agents)`. A test now runs `init` with no arguments and
+  loads what it scaffolds.
+- An unknown tool in a manifest listed six built-in tools out of ten; the list is now derived
+  from the catalog, and a test keeps the two equal.
+- The `run` and `validate` command summaries did not mention flows, and `run` said "deamon". The
+  scaffolded manifest suggested a trigger of `type: cron`, which does not exist.
+
 ## [0.2.0] - 2026-10-09
 
 The agent stops being something you chat with and becomes something that

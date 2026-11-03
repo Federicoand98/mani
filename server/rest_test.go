@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/journal/sqlite"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 // fakeOllama serves Ollama's /api/chat well enough for an end-to-end turn:
@@ -56,7 +58,7 @@ func testServer(t *testing.T, token, reply string) *Server {
 		t.Fatalf("write config: %v", err)
 	}
 
-	spec := app.DefaultSpec()
+	spec := manifest.Default()
 	spec.Identity.Provider = "ollama"
 	spec.Identity.Model = "test-model"
 	// context injection reads AGENTS.md from disk: off, keeps the test hermetic
@@ -217,7 +219,7 @@ func TestRuns_ListAndGet(t *testing.T) {
 
 	// journal su disco: è la sorgente della vista unificata cross-sessione
 	dir := t.TempDir()
-	j, err := app.NewJSONLJournal(dir)
+	j, err := journal.NewJSONL(dir)
 	if err != nil {
 		t.Fatalf("NewJSONLJournal: %v", err)
 	}
@@ -232,20 +234,20 @@ func TestRuns_ListAndGet(t *testing.T) {
 }
 
 func TestServerCloseClosesSQLiteJournal(t *testing.T) {
-	spec := app.DefaultSpec()
+	spec := manifest.Default()
 	spec.Observability.Journal.Enabled = true
 	spec.Observability.Journal.Backend = "sqlite"
 	spec.Observability.Journal.Path = filepath.Join(t.TempDir(), "runs.db")
 
 	s := New(spec, "secret")
-	j, ok := s.journal.(*app.SQLiteJournal)
+	j, ok := s.journal.(*sqlite.Journal)
 	if !ok {
-		t.Fatalf("server journal is %T, want *app.SQLiteJournal", s.journal)
+		t.Fatalf("server journal is %T, want *sqlite.Journal", s.journal)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := j.List(app.ListFilter{}); err == nil {
+	if _, err := j.List(journal.ListFilter{}); err == nil {
 		t.Fatal("Server.Close should close the SQLite journal")
 	}
 }

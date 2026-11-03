@@ -1,4 +1,4 @@
-package app
+package manifest
 
 import (
 	"os"
@@ -11,15 +11,15 @@ import (
 
 // validFlow is the smallest flow that touches every kind of step: code with no
 // input, an agent per record, code over all records, an agent per record again.
-func validFlow() FlowSpec {
-	return FlowSpec{
+func validFlow() Flow {
+	return Flow{
 		Flow:  "letters",
 		About: "rebuilds a timeline",
 		Steps: []StepSpec{
 			{Step: "fetch", Does: "downloads", Run: Command{"python", "fetch.py"}},
-			{Step: "extract", Does: "extracts", Agent: "extract.yaml", ForEach: "fetch", Jobs: 4},
-			{Step: "timeline", Does: "merges", Run: Command{"python", "merge.py"}, FromAll: "extract"},
-			{Step: "synth", Does: "writes", Agent: "synth.yaml", ForEach: "timeline"},
+			{Step: "extract", Does: "extracts", Agent: "extract.yaml", ForEach: One("fetch"), Jobs: 4},
+			{Step: "timeline", Does: "merges", Run: Command{"python", "merge.py"}, FromAll: One("extract")},
+			{Step: "synth", Does: "writes", Agent: "synth.yaml", ForEach: One("timeline")},
 		},
 		Result: "synth",
 	}
@@ -32,33 +32,33 @@ func TestFlowValidate(t *testing.T) {
 
 	cases := []struct {
 		name   string
-		mutate func(f *FlowSpec)
+		mutate func(f *Flow)
 		want   string // substring of the error
 	}{
-		{"flow name with a space", func(f *FlowSpec) { f.Flow = "my flow" }, `flow: "my flow" is not a name`},
-		{"flow name uppercase", func(f *FlowSpec) { f.Flow = "Letters" }, "is not a name"},
-		{"about missing", func(f *FlowSpec) { f.About = "  " }, "about:"},
-		{"no steps", func(f *FlowSpec) { f.Steps = nil }, "at least one step"},
-		{"step name with a space", func(f *FlowSpec) { f.Steps[0].Step = "fetch letters" }, `"fetch letters" is not a name`},
-		{"step named input", func(f *FlowSpec) { f.Steps[0].Step = "input"; f.Steps[1].ForEach = "input"; f.Input = "x" }, "reserved"},
-		{"step defined twice", func(f *FlowSpec) { f.Steps[2].Step = "extract" }, "step extract: defined twice"},
-		{"does missing", func(f *FlowSpec) { f.Steps[1].Does = "" }, "step extract: does:"},
-		{"neither agent nor run", func(f *FlowSpec) { f.Steps[1].Agent = "" }, "step extract: needs exactly one of agent or run"},
-		{"both agent and run", func(f *FlowSpec) { f.Steps[1].Run = Command{"x"} }, "step extract: needs exactly one of agent or run"},
-		{"for_each and from_all", func(f *FlowSpec) { f.Steps[1].FromAll = "fetch" }, "step extract: reads with for_each or with from_all"},
-		{"agent without input", func(f *FlowSpec) { f.Steps[1].ForEach = "" }, "step extract: an agent needs something to work on"},
-		{"negative jobs", func(f *FlowSpec) { f.Steps[1].Jobs = -1 }, "step extract: jobs cannot be negative"},
-		{"jobs on a code step", func(f *FlowSpec) { f.Steps[0].Jobs = 2 }, "step fetch: jobs:"},
-		{"jobs with from_all", func(f *FlowSpec) {
-			f.Steps[3].ForEach, f.Steps[3].FromAll, f.Steps[3].Jobs = "", "timeline", 2
+		{"flow name with a space", func(f *Flow) { f.Flow = "my flow" }, `flow: "my flow" is not a name`},
+		{"flow name uppercase", func(f *Flow) { f.Flow = "Letters" }, "is not a name"},
+		{"about missing", func(f *Flow) { f.About = "  " }, "about:"},
+		{"no steps", func(f *Flow) { f.Steps = nil }, "at least one step"},
+		{"step name with a space", func(f *Flow) { f.Steps[0].Step = "fetch letters" }, `"fetch letters" is not a name`},
+		{"step named input", func(f *Flow) { f.Steps[0].Step = "input"; f.Steps[1].ForEach = One("input"); f.Input = "x" }, "reserved"},
+		{"step defined twice", func(f *Flow) { f.Steps[2].Step = "extract" }, "step extract: defined twice"},
+		{"does missing", func(f *Flow) { f.Steps[1].Does = "" }, "step extract: does:"},
+		{"neither agent nor run", func(f *Flow) { f.Steps[1].Agent = "" }, "step extract: needs exactly one of agent or run"},
+		{"both agent and run", func(f *Flow) { f.Steps[1].Run = Command{"x"} }, "step extract: needs exactly one of agent or run"},
+		{"for_each and from_all", func(f *Flow) { f.Steps[1].FromAll = One("fetch") }, "step extract: reads with for_each or with from_all"},
+		{"agent without input", func(f *Flow) { f.Steps[1].ForEach = Sources{} }, "step extract: an agent needs something to work on"},
+		{"negative jobs", func(f *Flow) { f.Steps[1].Jobs = -1 }, "step extract: jobs cannot be negative"},
+		{"jobs on a code step", func(f *Flow) { f.Steps[0].Jobs = 2 }, "step fetch: jobs:"},
+		{"jobs with from_all", func(f *Flow) {
+			f.Steps[3].ForEach, f.Steps[3].FromAll, f.Steps[3].Jobs = Sources{}, One("timeline"), 2
 		}, "step synth: jobs:"},
-		{"reads input that is not declared", func(f *FlowSpec) { f.Steps[1].ForEach = "input" }, "step extract: reads \"input\", but the flow declares no input"},
-		{"reads itself", func(f *FlowSpec) { f.Steps[1].ForEach = "extract" }, "step extract: reads itself"},
-		{"reads a missing step", func(f *FlowSpec) { f.Steps[1].ForEach = "fecth" }, "step extract: reads fecth, which is not a step"},
-		{"reads a step below it", func(f *FlowSpec) { f.Steps[1].ForEach = "synth" }, "step extract: reads synth, which comes later"},
-		{"input declared but unread", func(f *FlowSpec) { f.Input = "letters" }, "input: declared, but no step reads it"},
-		{"result not a step", func(f *FlowSpec) { f.Result = "report" }, `result: "report" is not a step`},
-		{"negative budget", func(f *FlowSpec) { f.Limits.Tokens = -1 }, "limits.tokens"},
+		{"reads input that is not declared", func(f *Flow) { f.Steps[1].ForEach = One("input") }, "step extract: reads \"input\", but the flow declares no input"},
+		{"reads itself", func(f *Flow) { f.Steps[1].ForEach = One("extract") }, "step extract: reads itself"},
+		{"reads a missing step", func(f *Flow) { f.Steps[1].ForEach = One("fecth") }, "step extract: reads fecth, which is not a step"},
+		{"reads a step below it", func(f *Flow) { f.Steps[1].ForEach = One("synth") }, "step extract: reads synth, which comes later"},
+		{"input declared but unread", func(f *Flow) { f.Input = "letters" }, "input: declared, but no step reads it"},
+		{"result not a step", func(f *Flow) { f.Result = "report" }, `result: "report" is not a step`},
+		{"negative budget", func(f *Flow) { f.Limits.Tokens = -1 }, "limits.tokens"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,11 +77,11 @@ func TestFlowValidate(t *testing.T) {
 
 // The input is the one name a step may read without it being written above.
 func TestFlowValidate_InputIsReadableByAnyStep(t *testing.T) {
-	f := FlowSpec{
+	f := Flow{
 		Flow: "batch", About: "x", Input: "tasks",
 		Steps: []StepSpec{
-			{Step: "a", Does: "x", Agent: "a.yaml", ForEach: FlowInput},
-			{Step: "b", Does: "x", Run: Command{"cat"}, FromAll: FlowInput},
+			{Step: "a", Does: "x", Agent: "a.yaml", ForEach: One(FlowInput)},
+			{Step: "b", Does: "x", Run: Command{"cat"}, FromAll: One(FlowInput)},
 		},
 		Result: "a",
 	}
@@ -179,7 +179,7 @@ result: extract
 func TestLoadFlow_LoadsItsAgentsRelativeToTheFlow(t *testing.T) {
 	dir := writeFlowDir(t, map[string]string{"f.yaml": twoStepFlow, "agent.yaml": flowAgent})
 
-	f, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	f, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err != nil {
 		t.Fatalf("LoadFlow: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestLoadFlow_ABrokenAgentNamesTheStep(t *testing.T) {
 		"agent.yaml": flowAgent + "surprise: true\n",
 	})
 
-	_, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	_, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err == nil || !strings.Contains(err.Error(), "step extract") || !strings.Contains(err.Error(), "surprise") {
 		t.Errorf("err = %v, want it to name the step and the bad field", err)
 	}
@@ -203,7 +203,7 @@ func TestLoadFlow_ABrokenAgentNamesTheStep(t *testing.T) {
 func TestLoadFlow_MissingAgentFileNamesTheStep(t *testing.T) {
 	dir := writeFlowDir(t, map[string]string{"f.yaml": twoStepFlow})
 
-	_, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	_, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err == nil || !strings.Contains(err.Error(), "step extract") {
 		t.Errorf("err = %v, want it to name the step", err)
 	}
@@ -221,7 +221,7 @@ steps:
 result: fetch
 `})
 
-	f, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	f, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err != nil {
 		t.Fatalf("LoadFlow: %v", err)
 	}
@@ -242,7 +242,7 @@ steps:
 result: fetch
 `})
 
-	_, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	_, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err == nil || !strings.Contains(err.Error(), "MANI_TEST_SURELY_UNSET") {
 		t.Errorf("err = %v, want it to name the variable", err)
 	}
@@ -264,7 +264,7 @@ steps:
 result: merge
 `})
 
-	_, err := LoadFlow(filepath.Join(dir, "f.yaml"))
+	_, err := LoadFlow(filepath.Join(dir, "f.yaml"), nil)
 	if err == nil || !strings.Contains(err.Error(), "form_all") || !strings.Contains(err.Error(), "line 10") {
 		t.Errorf("err = %v, want the unknown field and line 10", err)
 	}
@@ -274,8 +274,77 @@ func TestLoadFlow_InvalidFlowNamesTheFile(t *testing.T) {
 	dir := writeFlowDir(t, map[string]string{"f.yaml": "flow: letters\nabout: x\nsteps: []\nresult: x\n"})
 	path := filepath.Join(dir, "f.yaml")
 
-	_, err := LoadFlow(path)
+	_, err := LoadFlow(path, nil)
 	if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "at least one step") {
 		t.Errorf("err = %v, want the file and the reason", err)
+	}
+}
+
+func TestSources_ScalarAndList(t *testing.T) {
+	var st StepSpec
+	if err := yaml.Unmarshal([]byte("from_all: extract\n"), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.FanIn() || st.Upstream() != "extract" {
+		t.Errorf("scalar from_all = %+v: one source, no fan-in", st.FromAll)
+	}
+
+	st = StepSpec{}
+	if err := yaml.Unmarshal([]byte("from_all: [letters, people]\n"), &st); err != nil {
+		t.Fatal(err)
+	}
+	if !st.FanIn() || strings.Join(st.Reads(), ",") != "letters,people" {
+		t.Errorf("list from_all = %+v, want a fan-in over letters and people", st.FromAll)
+	}
+
+	// The shape of the data follows what the file says: a list of one still
+	// tags its records, so adding a second source later does not change the
+	// format the script already reads.
+	st = StepSpec{}
+	if err := yaml.Unmarshal([]byte("from_all: [letters]\n"), &st); err != nil {
+		t.Fatal(err)
+	}
+	if !st.FanIn() {
+		t.Error("a list of one must still be a fan-in")
+	}
+}
+
+func TestFlowValidate_FanIn(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(f *Flow)
+		want   string
+	}{
+		{"for_each over a list", func(f *Flow) {
+			f.Steps[1].ForEach = Sources{Names: []string{"fetch"}, List: true}
+		}, "for_each reads one step; to combine several, use from_all: [a, b]"},
+		{"an empty list", func(f *Flow) {
+			f.Steps[2].FromAll = Sources{List: true}
+		}, "from_all: the list names no step"},
+		{"a source twice", func(f *Flow) {
+			f.Steps[2].FromAll = Sources{Names: []string{"extract", "extract"}, List: true}
+		}, "reads extract twice"},
+		{"a source written later", func(f *Flow) {
+			f.Steps[2].FromAll = Sources{Names: []string{"extract", "synth"}, List: true}
+		}, "reads synth, which comes later"},
+		{"a source that is not a step", func(f *Flow) {
+			f.Steps[2].FromAll = Sources{Names: []string{"extract", "pepole"}, List: true}
+		}, "reads pepole, which is not a step"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := validFlow()
+			tc.mutate(&f)
+			err := f.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Validate = %v, want %q", err, tc.want)
+			}
+		})
+	}
+
+	f := validFlow()
+	f.Steps[2].FromAll = Sources{Names: []string{"fetch", "extract"}, List: true}
+	if err := f.Validate(); err != nil {
+		t.Errorf("a fan-in over two steps above must be valid: %v", err)
 	}
 }

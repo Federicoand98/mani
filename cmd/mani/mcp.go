@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/server/mcpserver"
 )
 
@@ -17,7 +17,7 @@ func runMCP(ctx context.Context, args []string) error {
 		return usagef("--config is required")
 	}
 
-	spec, err := app.LoadManifest(*configPath)
+	spec, err := manifest.Load(*configPath)
 	if err != nil {
 		return usagef("%v", err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/config"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 // shortTTL shrinks the idle window for the duration of one test.
@@ -41,7 +42,7 @@ func has(sm *sessionManager, id string) bool {
 }
 
 func newTestManager() *sessionManager {
-	return newSessionManager(app.DefaultSpec())
+	return newSessionManager(manifest.Default())
 }
 
 // ---------------------------------------------------------------------------

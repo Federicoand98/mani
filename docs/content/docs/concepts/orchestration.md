@@ -102,9 +102,11 @@ Resuming follows make's rule: a record newer than what it was made from is not m
 finished flow rerun calls no model; one new input costs one new run; a step that produces
 identical output leaves everything downstream alone.
 
-A flow is deliberately not a graph framework. No shared mutable state, no cycles, no conditional
-edges. Where the branch depends on judgement, use an agent; where the shape is known in advance,
-use a flow.
+A flow is deliberately not a graph framework. No shared mutable state, no cycles, no expressions.
+It can still branch and join: `where: { confidence: low }` sends only some records down a step,
+and `from_all: [a, b]` brings two branches back together. The filter tests a value an agent
+declared in its schema, so the judgement of which branch a record takes stays with the agent, and
+the flow only routes.
 
 ## Choosing
 

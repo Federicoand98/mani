@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/server"
 )
 
@@ -37,7 +37,7 @@ func runServer(ctx context.Context, args []string) error {
 		slog.Warn("agent server without AUTH (insecure, dev only)")
 	}
 
-	spec, err := app.LoadManifest(*configPath)
+	spec, err := manifest.Load(*configPath)
 	if err != nil {
 		return err
 	}

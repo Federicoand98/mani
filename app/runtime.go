@@ -1,7 +1,7 @@
 // Package app is the application service that wires a runnable agent together.
 //
 // It owns the Runtime (agent, provider, tools, permissions, exposed as a stream of
-// Event), the declarative manifest (RuntimeSpec and its eight blocks), and the
+// Event), the declarative manifest (manifest.Spec and its eight blocks), and the
 // middleware composed on top of the core hooks: policy rules, limits, planning,
 // compaction, subagents, tracing and the run journal. It also holds the trigger
 // Daemon and the durable task queue.
@@ -22,6 +22,8 @@ import (
 
 	"github.com/Federicoand98/mani/config"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/session"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/Federicoand98/mani/tool/mcp"
@@ -37,8 +39,8 @@ type Runtime struct {
 	tools           []tool.Tool
 	maxDuration     time.Duration // 0 = no timeout
 	mcpSessions     []*mcp.Session
-	subagents       map[string]SubagentSpec
-	journal         Journal
+	subagents       map[string]manifest.SubagentSpec
+	journal         journal.Journal
 	cancel          context.CancelFunc
 	clientErr       error      // != nil if provider is not available
 	mu              sync.Mutex // protege l'accesso a cancel
@@ -186,10 +188,10 @@ func (r *Runtime) spawnChild() *core.Agent {
 	return child
 }
 
-func (r *Runtime) spawnNamed(name string) (*core.Agent, SubagentSpec, error) {
+func (r *Runtime) spawnNamed(name string) (*core.Agent, manifest.SubagentSpec, error) {
 	spec, ok := r.subagents[name]
 	if !ok {
-		return nil, SubagentSpec{}, fmt.Errorf("subagent %s not found", name)
+		return nil, manifest.SubagentSpec{}, fmt.Errorf("subagent %s not found", name)
 	}
 
 	client := r.agent.Client
@@ -350,7 +352,7 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 	})
 
 	if r.journal != nil {
-		_ = r.journal.Start(RunRecord{
+		_ = r.journal.Start(journal.RunRecord{
 			ID: runID, SessionID: sess.ID, Source: source, StartedAt: time.Now(), Status: "running",
 		})
 	}
@@ -395,7 +397,7 @@ func (r *Runtime) Execute(ctx context.Context, input string, attachments ...core
 
 func (r *Runtime) finishRun(runID string, status string, result map[string]any) {
 	if r.journal != nil {
-		_ = r.journal.Finish(runID, RunOutcome{Status: status, Result: result})
+		_ = r.journal.Finish(runID, journal.RunOutcome{Status: status, Result: result})
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 type session struct {
@@ -18,7 +19,7 @@ type session struct {
 }
 
 type sessionManager struct {
-	spec app.RuntimeSpec
+	spec manifest.Spec
 	mu   sync.Mutex
 	m    map[string]*session
 }
@@ -27,7 +28,7 @@ type sessionManager struct {
 // Diventa un flag di `mani serve` se qualcuno ha bisogno di un'attesa diversa.
 var sessionTTL = 30 * time.Minute
 
-func newSessionManager(spec app.RuntimeSpec) *sessionManager {
+func newSessionManager(spec manifest.Spec) *sessionManager {
 	return &sessionManager{spec: spec, mu: sync.Mutex{}, m: make(map[string]*session)}
 }
 

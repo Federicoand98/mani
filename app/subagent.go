@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 )
 
@@ -23,13 +24,13 @@ func RegisterSubagents(rt *Runtime, maxDepth int) {
 	rt.WithTool(newDelegateTool(rt, maxDepth))
 }
 
-func registerSubagentsFromSpec(rt *Runtime, specs []SubagentSpec, maxDepth int, deps ToolDeps) {
+func registerSubagentsFromSpec(rt *Runtime, specs []manifest.SubagentSpec, maxDepth int, deps ToolDeps) {
 	if len(specs) == 0 {
 		RegisterSubagents(rt, maxDepth)
 		return
 	}
 
-	rt.subagents = make(map[string]SubagentSpec, len(specs))
+	rt.subagents = make(map[string]manifest.SubagentSpec, len(specs))
 	names := make([]string, 0, len(specs))
 	for _, spec := range specs {
 		rt.subagents[spec.Name] = spec

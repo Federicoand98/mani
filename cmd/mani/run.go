@@ -10,6 +10,7 @@ import (
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 func runFromManifest(ctx context.Context, args []string) error {
@@ -25,13 +26,15 @@ func runFromManifest(ctx context.Context, args []string) error {
 	_ = fs.Bool("debug", false, "alias for --verbose")
 	var images stringList
 	fs.Var(&images, "image", "attach an image to the task (repeatable)")
+	var sets stringList
+	fs.Var(&sets, "set", "flow only: a parameter value, name=value (repeatable)")
 	_ = fs.Parse(args)
 
 	if *configPath == "" {
 		return usagef("--config is required")
 	}
 
-	isFlow, err := app.IsFlowFile(*configPath)
+	isFlow, err := manifest.IsFlowFile(*configPath)
 	if err != nil {
 		return usagef("%v", err)
 	}
@@ -41,14 +44,18 @@ func runFromManifest(ctx context.Context, args []string) error {
 			return usagef("--%s does not apply to a flow: it takes its records from --in or from its first step", bad)
 		}
 
-		return runFlow(ctx, *configPath, *in, *out, *limit)
+		set, err := parseSet(sets)
+		if err != nil {
+			return usagef("%v", err)
+		}
+		return runFlow(ctx, *configPath, *in, *out, *limit, set)
 	}
 
-	if bad := setFlag(fs, "in", "out", "limit"); bad != "" {
+	if bad := setFlag(fs, "in", "out", "limit", "set"); bad != "" {
 		return usagef("--%s does not apply to a manifest: it is only for flows", bad)
 	}
 
-	spec, err := app.LoadManifest(*configPath)
+	spec, err := manifest.Load(*configPath)
 	if err != nil {
 		return err
 	}

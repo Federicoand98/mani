@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/journal"
 )
 
 // Regressione della condizione invertita: LastResponse ritorna il testo dell'ASSISTANT,
@@ -51,17 +52,17 @@ func TestExecute_DonePayload_NoSchema(t *testing.T) {
 
 // journaledRuntime is a Runtime with an in-memory journal, so a test can ask
 // what the audit trail recorded for the run it just executed.
-func journaledRuntime(t *testing.T, client core.LLMClient) (*Runtime, *InMemoryJournal) {
+func journaledRuntime(t *testing.T, client core.LLMClient) (*Runtime, *journal.InMemory) {
 	t.Helper()
 	rt := testRuntime(t, client)
-	j := NewInMemoryJournal(10)
+	j := journal.NewInMemory(10)
 	RegisterJournal(rt, j)
 	return rt, j
 }
 
-func onlyRun(t *testing.T, j *InMemoryJournal) RunRecord {
+func onlyRun(t *testing.T, j *journal.InMemory) journal.RunRecord {
 	t.Helper()
-	metas, err := j.List(ListFilter{})
+	metas, err := j.List(journal.ListFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

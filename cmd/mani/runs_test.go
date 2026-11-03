@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/journal/sqlite"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,54 +26,54 @@ func seedJournal(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 
-	j, err := app.NewJSONLJournal(dir)
+	j, err := journal.NewJSONL(dir)
 	if err != nil {
 		t.Fatalf("NewJSONLJournal: %v", err)
 	}
 
 	// run 1: completata, con una tool call, un blocco e un subagent
-	if err := j.Start(app.RunRecord{ID: "aaaa11112222", Source: "cli", SessionID: "s1", StartedAt: testStart}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "aaaa11112222", Source: "cli", SessionID: "s1", StartedAt: testStart}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	appendAll(t, j, "aaaa11112222",
-		ev(app.EvLLMReponse, 0, testStart.Add(1*time.Second), map[string]any{
+		ev(journal.EvLLMReponse, 0, testStart.Add(1*time.Second), map[string]any{
 			"stop_reason": "tool_use", "in_tokens": 681, "out_tokens": 96,
 		}),
-		ev(app.EvToolCall, 0, testStart.Add(2*time.Second), map[string]any{
+		ev(journal.EvToolCall, 0, testStart.Add(2*time.Second), map[string]any{
 			"tool": "read", "input": map[string]any{"path": "incident.log"},
 		}),
-		ev(app.EvToolResult, 0, testStart.Add(2*time.Second), map[string]any{
+		ev(journal.EvToolResult, 0, testStart.Add(2*time.Second), map[string]any{
 			"tool": "read", "is_error": false, "result_len": 559,
 		}),
 		// il subagent: Depth 1 → deve comparire indentato
-		ev(app.EvLLMCall, 1, testStart.Add(3*time.Second), map[string]any{
+		ev(journal.EvLLMCall, 1, testStart.Add(3*time.Second), map[string]any{
 			"messages": 4, "tools": 2,
 		}),
-		ev(app.EvGuardrail, 0, testStart.Add(4*time.Second), map[string]any{
+		ev(journal.EvGuardrail, 0, testStart.Add(4*time.Second), map[string]any{
 			"tool": "bash", "action": "deny", "label": "recursive delete",
 		}),
 	)
-	if err := j.Finish("aaaa11112222", app.RunOutcome{Status: "ok"}); err != nil {
+	if err := j.Finish("aaaa11112222", journal.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 
 	// run 2: fallita, e piu' vecchia di un'ora (serve a --since)
 	old := testStart.Add(-2 * time.Hour)
-	if err := j.Start(app.RunRecord{ID: "bbbb33334444", Source: "trigger", StartedAt: old}); err != nil {
+	if err := j.Start(journal.RunRecord{ID: "bbbb33334444", Source: "trigger", StartedAt: old}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := j.Finish("bbbb33334444", app.RunOutcome{Status: "error"}); err != nil {
+	if err := j.Finish("bbbb33334444", journal.RunOutcome{Status: "error"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 
 	return dir
 }
 
-func ev(kind app.EventKind, depth int, at time.Time, data map[string]any) app.RunEvent {
-	return app.RunEvent{Kind: kind, Depth: depth, At: at, Data: data}
+func ev(kind journal.EventKind, depth int, at time.Time, data map[string]any) journal.RunEvent {
+	return journal.RunEvent{Kind: kind, Depth: depth, At: at, Data: data}
 }
 
-func appendAll(t *testing.T, j app.Journal, runID string, evs ...app.RunEvent) {
+func appendAll(t *testing.T, j journal.Journal, runID string, evs ...journal.RunEvent) {
 	t.Helper()
 	for _, e := range evs {
 		e.RunID = runID
@@ -188,38 +189,38 @@ func TestDuration_RunningRunHasNoDuration(t *testing.T) {
 }
 
 func TestStatusOrRunning(t *testing.T) {
-	if got := statusOrRunning(app.RunMeta{Status: ""}); got != "running" {
+	if got := statusOrRunning(journal.RunMeta{Status: ""}); got != "running" {
 		t.Errorf("status vuoto = %q, want running", got)
 	}
-	if got := statusOrRunning(app.RunMeta{Status: "ok"}); got != "ok" {
+	if got := statusOrRunning(journal.RunMeta{Status: "ok"}); got != "ok" {
 		t.Errorf("status = %q, want ok", got)
 	}
 }
 
 func TestDescribe_PerKind(t *testing.T) {
 	cases := []struct {
-		kind     app.EventKind
+		kind     journal.EventKind
 		data     map[string]any
 		contains []string
 	}{
-		{app.EvRunStart, map[string]any{"source": "cli"}, []string{"cli"}},
-		{app.EvLLMCall, map[string]any{"messages": float64(4), "tools": float64(2)}, []string{"messages=4", "tools=2"}},
-		{app.EvLLMReponse, map[string]any{"stop_reason": "tool_use", "in_tokens": float64(681), "out_tokens": float64(96)},
+		{journal.EvRunStart, map[string]any{"source": "cli"}, []string{"cli"}},
+		{journal.EvLLMCall, map[string]any{"messages": float64(4), "tools": float64(2)}, []string{"messages=4", "tools=2"}},
+		{journal.EvLLMReponse, map[string]any{"stop_reason": "tool_use", "in_tokens": float64(681), "out_tokens": float64(96)},
 			[]string{"stop=tool_use", "in=681", "out=96"}},
-		{app.EvToolCall, map[string]any{"tool": "read", "input": map[string]any{"path": "x.log"}},
+		{journal.EvToolCall, map[string]any{"tool": "read", "input": map[string]any{"path": "x.log"}},
 			[]string{"read", "x.log"}},
-		{app.EvToolResult, map[string]any{"tool": "read", "is_error": false, "result_len": float64(559)},
+		{journal.EvToolResult, map[string]any{"tool": "read", "is_error": false, "result_len": float64(559)},
 			[]string{"read", "ok", "559"}},
-		{app.EvToolResult, map[string]any{"tool": "bash", "is_error": true, "result_len": float64(12)},
+		{journal.EvToolResult, map[string]any{"tool": "bash", "is_error": true, "result_len": float64(12)},
 			[]string{"bash", "ERROR"}},
-		{app.EvGuardrail, map[string]any{"tool": "bash", "action": "deny", "label": "recursive delete"},
+		{journal.EvGuardrail, map[string]any{"tool": "bash", "action": "deny", "label": "recursive delete"},
 			[]string{"bash", "deny", "recursive delete"}},
-		{app.EvRunEnd, map[string]any{"status": "ok"}, []string{"ok"}},
+		{journal.EvRunEnd, map[string]any{"status": "ok"}, []string{"ok"}},
 	}
 
 	for _, c := range cases {
 		t.Run(string(c.kind), func(t *testing.T) {
-			got := describe(app.RunEvent{Kind: c.kind, Data: c.data})
+			got := describe(journal.RunEvent{Kind: c.kind, Data: c.data})
 			for _, want := range c.contains {
 				if !strings.Contains(got, want) {
 					t.Errorf("describe(%s) = %q, manca %q", c.kind, got, want)
@@ -250,10 +251,10 @@ func TestPrintRuns_EmptySaysSo(t *testing.T) {
 
 func TestPrintRuns_Table(t *testing.T) {
 	var b bytes.Buffer
-	metas := []app.RunMeta{{
+	metas := []journal.RunMeta{{
 		ID: "aaaa11112222", Status: "ok",
 		StartedAt: testStart, EndedAt: testStart.Add(3 * time.Second),
-		Summary: app.Summary{InTokens: 681, OutTokens: 96, ToolCalls: 2, Blocked: 1},
+		Summary: journal.Summary{InTokens: 681, OutTokens: 96, ToolCalls: 2, Blocked: 1},
 	}}
 	if err := printRuns(&b, metas, false); err != nil {
 		t.Fatalf("printRuns: %v", err)
@@ -269,12 +270,12 @@ func TestPrintRuns_Table(t *testing.T) {
 
 func TestPrintRuns_JSONIsValid(t *testing.T) {
 	var b bytes.Buffer
-	metas := []app.RunMeta{{ID: "aaaa11112222", Status: "ok", StartedAt: testStart}}
+	metas := []journal.RunMeta{{ID: "aaaa11112222", Status: "ok", StartedAt: testStart}}
 	if err := printRuns(&b, metas, true); err != nil {
 		t.Fatalf("printRuns: %v", err)
 	}
 
-	var back []app.RunMeta
+	var back []journal.RunMeta
 	if err := json.Unmarshal(b.Bytes(), &back); err != nil {
 		t.Fatalf("output non deserializzabile: %v\n%s", err, b.String())
 	}
@@ -290,12 +291,12 @@ func TestPrintRuns_JSONIsValid(t *testing.T) {
 // leggibile una run con delegate, ed e' il motivo per cui Depth sta nel RunEvent.
 func TestPrintRun_IndentsSubagentEvents(t *testing.T) {
 	var b bytes.Buffer
-	rec := app.RunRecord{
+	rec := journal.RunRecord{
 		ID: "aaaa11112222", Source: "cli", Status: "ok",
 		StartedAt: testStart, EndedAt: testStart.Add(4 * time.Second),
-		Events: []app.RunEvent{
-			ev(app.EvToolCall, 0, testStart.Add(1*time.Second), map[string]any{"tool": "delegate", "input": map[string]any{"agent": "researcher"}}),
-			ev(app.EvLLMCall, 1, testStart.Add(2*time.Second), map[string]any{"messages": 3, "tools": 1}),
+		Events: []journal.RunEvent{
+			ev(journal.EvToolCall, 0, testStart.Add(1*time.Second), map[string]any{"tool": "delegate", "input": map[string]any{"agent": "researcher"}}),
+			ev(journal.EvLLMCall, 1, testStart.Add(2*time.Second), map[string]any{"messages": 3, "tools": 1}),
 		},
 	}
 	if err := printRun(&b, rec, false); err != nil {
@@ -333,7 +334,7 @@ func TestOpenJournal_FromPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openJournal: %v", err)
 	}
-	metas, err := j.List(app.ListFilter{})
+	metas, err := j.List(journal.ListFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -357,14 +358,14 @@ func TestOpenJournal_FromManifest(t *testing.T) {
 
 func TestOpenJournal_FromSQLiteManifest(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "runs.db")
-	seed, err := app.NewSQLiteJournal(dbPath, 10)
+	seed, err := sqlite.New(dbPath, 10)
 	if err != nil {
 		t.Fatalf("NewSQLiteJournal: %v", err)
 	}
-	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
+	if err := seed.Start(journal.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := seed.Finish("sqlite-run", app.RunOutcome{Status: "ok"}); err != nil {
+	if err := seed.Finish("sqlite-run", journal.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 	if err := seed.Close(); err != nil {
@@ -403,7 +404,7 @@ func TestOpenJournal_PathOverridesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openJournal: %v", err)
 	}
-	metas, _ := j.List(app.ListFilter{})
+	metas, _ := j.List(journal.ListFilter{})
 	if len(metas) != 2 {
 		t.Errorf("--path ignorato: run trovate %d, attese 2", len(metas))
 	}
@@ -475,12 +476,12 @@ func TestResolveRunID(t *testing.T) {
 // quale run volevi vedere e' peggio che chiedere.
 func TestResolveRunID_AmbiguousListsCandidates(t *testing.T) {
 	dir := t.TempDir()
-	j, err := app.NewJSONLJournal(dir)
+	j, err := journal.NewJSONL(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"dup1", "dup2"} {
-		if err := j.Start(app.RunRecord{ID: id, Source: "cli", StartedAt: testStart}); err != nil {
+		if err := j.Start(journal.RunRecord{ID: id, Source: "cli", StartedAt: testStart}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -504,7 +505,7 @@ func TestList_FilterByStatus(t *testing.T) {
 	dir := seedJournal(t)
 	j, _ := openJournal("", dir)
 
-	metas, err := j.List(app.ListFilter{Status: "error"})
+	metas, err := j.List(journal.ListFilter{Status: "error"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +519,7 @@ func TestList_FilterBySince(t *testing.T) {
 	j, _ := openJournal("", dir)
 
 	// la run vecchia e' 2h prima di testStart: con Since a 1h prima resta fuori
-	metas, err := j.List(app.ListFilter{Since: testStart.Add(-time.Hour)})
+	metas, err := j.List(journal.ListFilter{Since: testStart.Add(-time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +532,7 @@ func TestList_LimitAppliesAfterSorting(t *testing.T) {
 	dir := seedJournal(t)
 	j, _ := openJournal("", dir)
 
-	metas, err := j.List(app.ListFilter{Limit: 1})
+	metas, err := j.List(journal.ListFilter{Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +570,7 @@ func TestList_CorruptedFileIsSkipped(t *testing.T) {
 	}
 
 	j, _ := openJournal("", dir)
-	metas, err := j.List(app.ListFilter{})
+	metas, err := j.List(journal.ListFilter{})
 	if err != nil {
 		t.Fatalf("un file corrotto non deve far fallire l'elenco: %v", err)
 	}
@@ -583,14 +584,14 @@ func TestList_CorruptedFileIsSkipped(t *testing.T) {
 // with "mkdir runs.db: not a directory".
 func TestOpenJournal_FromSQLitePath(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "runs.db")
-	seed, err := app.NewSQLiteJournal(dbPath, 10)
+	seed, err := sqlite.New(dbPath, 10)
 	if err != nil {
 		t.Fatalf("NewSQLiteJournal: %v", err)
 	}
-	if err := seed.Start(app.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
+	if err := seed.Start(journal.RunRecord{ID: "sqlite-run", StartedAt: testStart}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := seed.Finish("sqlite-run", app.RunOutcome{Status: "ok"}); err != nil {
+	if err := seed.Finish("sqlite-run", journal.RunOutcome{Status: "ok"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
 	if err := seed.Close(); err != nil {
@@ -603,8 +604,8 @@ func TestOpenJournal_FromSQLitePath(t *testing.T) {
 	}
 	defer j.Close()
 
-	if _, ok := j.(*app.SQLiteJournal); !ok {
-		t.Fatalf("openJournal returned %T, want *app.SQLiteJournal", j)
+	if _, ok := j.(*sqlite.Journal); !ok {
+		t.Fatalf("openJournal returned %T, want *sqlite.Journal", j)
 	}
 	if _, err := j.Get("sqlite-run"); err != nil {
 		t.Errorf("Get on the seeded run: %v", err)

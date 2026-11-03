@@ -13,7 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -93,7 +94,7 @@ func (f *fakeModel) seen() []chatRequest {
 // The provider base URL comes from the global config, so XDG_CONFIG_HOME points
 // at a temp dir holding a config.json aimed at the fake: hermetic, and no
 // production code grows a test seam. Same approach as server/rest_test.go.
-func newServer(t *testing.T, model *fakeModel, edit func(*app.RuntimeSpec)) *Server {
+func newServer(t *testing.T, model *fakeModel, edit func(*manifest.Spec)) *Server {
 	t.Helper()
 	llm := httptest.NewServer(model)
 	t.Cleanup(llm.Close)
@@ -108,7 +109,7 @@ func newServer(t *testing.T, model *fakeModel, edit func(*app.RuntimeSpec)) *Ser
 		t.Fatalf("write config: %v", err)
 	}
 
-	spec := app.DefaultSpec()
+	spec := manifest.Default()
 	spec.Identity.Name = "summariser"
 	spec.Identity.Description = "Summarises a document in two sentences."
 	spec.Identity.Provider = "ollama"
@@ -220,7 +221,7 @@ func sentimentSchema() tool.InputSchema {
 // ---------------------------------------------------------------- construction
 
 func TestNew_RequiresIdentityName(t *testing.T) {
-	_, err := New(context.Background(), app.RuntimeSpec{}, "test")
+	_, err := New(context.Background(), manifest.Spec{}, "test")
 	if err == nil || !strings.Contains(err.Error(), "identity.name") {
 		t.Fatalf("err = %v, want an error naming identity.name", err)
 	}
@@ -237,7 +238,7 @@ func TestNew_RejectsInvalidToolName(t *testing.T) {
 		strings.Repeat("a", 65), // over the 64 the model APIs accept
 	} {
 		t.Run(name, func(t *testing.T) {
-			spec := app.RuntimeSpec{}
+			spec := manifest.Spec{}
 			spec.Identity.Name = name
 			_, err := New(context.Background(), spec, "test")
 			if err == nil {
@@ -254,7 +255,7 @@ func TestNew_RejectsInvalidToolName(t *testing.T) {
 func TestNew_AcceptsValidToolNames(t *testing.T) {
 	for _, name := range []string{"summariser", "code-review_2", strings.Repeat("a", 64)} {
 		t.Run(name, func(t *testing.T) {
-			newServer(t, &fakeModel{script: []turn{{text: "unused"}}}, func(s *app.RuntimeSpec) {
+			newServer(t, &fakeModel{script: []turn{{text: "unused"}}}, func(s *manifest.Spec) {
 				s.Identity.Name = name
 			})
 		})
@@ -302,7 +303,7 @@ func TestListTools_ExposesTheWholeAgentAsOneTool(t *testing.T) {
 }
 
 func TestListTools_OutputSchemaComesFromTheManifest(t *testing.T) {
-	cs := connect(t, newServer(t, &fakeModel{script: []turn{{text: "unused"}}}, func(s *app.RuntimeSpec) {
+	cs := connect(t, newServer(t, &fakeModel{script: []turn{{text: "unused"}}}, func(s *manifest.Spec) {
 		s.Output.Schema = sentimentSchema()
 	}))
 
@@ -350,7 +351,7 @@ func TestCallTool_StructuredOutput(t *testing.T) {
 	model := &fakeModel{script: []turn{
 		{tool: "respond", args: map[string]any{"label": "positive", "score": 0.9}},
 	}}
-	cs := connect(t, newServer(t, model, func(s *app.RuntimeSpec) {
+	cs := connect(t, newServer(t, model, func(s *manifest.Spec) {
 		s.Output.Schema = sentimentSchema()
 	}))
 
@@ -379,7 +380,7 @@ func TestCallTool_StructuredOutput(t *testing.T) {
 // to see it and be able to react.
 func TestCallTool_RunFailureIsAToolError(t *testing.T) {
 	model := &fakeModel{script: []turn{{text: "too long"}}}
-	cs := connect(t, newServer(t, model, func(s *app.RuntimeSpec) {
+	cs := connect(t, newServer(t, model, func(s *manifest.Spec) {
 		s.Limits.MaxTokens = 1 // the first reply already costs 18
 	}))
 
@@ -429,10 +430,10 @@ func TestCallTool_AskIsDeniedWithoutBlocking(t *testing.T) {
 		{text: "I was not allowed to write the file."},
 	}}
 	var workspace string
-	cs := connect(t, newServer(t, model, func(s *app.RuntimeSpec) {
+	cs := connect(t, newServer(t, model, func(s *manifest.Spec) {
 		workspace = s.Capabilities.Workspace
-		s.Capabilities.Tools = []app.ToolRef{{Name: "write"}}
-		s.Policy.Tools = map[string]app.RiskPolicy{"write": app.RiskPolicyAsk}
+		s.Capabilities.Tools = []manifest.ToolRef{{Name: "write"}}
+		s.Policy.Tools = map[string]manifest.RiskPolicy{"write": manifest.RiskPolicyAsk}
 	}))
 
 	res := call(t, cs, map[string]any{"task": "write out.txt"})
@@ -479,17 +480,17 @@ func TestCallTool_EachCallIsAFreshRun(t *testing.T) {
 func TestCallTool_RunIsJournaledAsMCP(t *testing.T) {
 	dir := t.TempDir()
 	model := &fakeModel{script: []turn{{text: "done"}}}
-	cs := connect(t, newServer(t, model, func(s *app.RuntimeSpec) {
-		s.Observability.Journal = app.JournalSpec{Enabled: true, Path: dir}
+	cs := connect(t, newServer(t, model, func(s *manifest.Spec) {
+		s.Observability.Journal = manifest.JournalSpec{Enabled: true, Path: dir}
 	}))
 
 	call(t, cs, map[string]any{"task": "anything"})
 
-	j, err := app.NewJSONLJournal(dir)
+	j, err := journal.NewJSONL(dir)
 	if err != nil {
 		t.Fatalf("open journal: %v", err)
 	}
-	runs, err := j.List(app.ListFilter{})
+	runs, err := j.List(journal.ListFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

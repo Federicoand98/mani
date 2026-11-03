@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -120,6 +121,9 @@ type stepOutput struct {
 	field   string               // where the payload is: "task" or "result"
 	stamp   map[string]time.Time // when each record was written; missing = zero
 	newest  time.Time            // the latest of them
+	// filtered holds the ids a where left out: they are not missing, so they
+	// are not run, not retried and not reported as failures.
+	filtered []string
 }
 
 // stepStore is one step's directory: <id>.json per record, errors.jsonl for
@@ -272,4 +276,56 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// checkParamsRecord ties a state directory to the parameters it was built
+// with, in <out>/.params.json. The first run writes it; a later run with
+// different values is refused, naming the first difference.
+func checkParamsRecord(out string, values map[string]string) error {
+	p := filepath.Join(out, ".params.json")
+	b, err := os.ReadFile(p)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if len(values) == 0 {
+			return nil // a flow without parameters leaves nothing to compare
+		}
+		return writeJSONAtomic(p, values)
+	case err != nil:
+		return err
+	}
+
+	var recorded map[string]string
+	if err := json.Unmarshal(b, &recorded); err != nil {
+		return fmt.Errorf("%s: %w", p, err)
+	}
+	if d := firstDifference(recorded, values); d != "" {
+		return fmt.Errorf("%s was built with %s; use another --out, or remove the directory to rebuild it", out, d)
+	}
+	return nil
+}
+
+func firstDifference(recorded, now map[string]string) string {
+	keys := make([]string, 0, len(recorded)+len(now))
+	for k := range recorded {
+		keys = append(keys, k)
+	}
+	for k := range now {
+		if _, ok := recorded[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		was, hadIt := recorded[k]
+		is, hasIt := now[k]
+		switch {
+		case hadIt && hasIt && was != is:
+			return fmt.Sprintf("%s=%s, and this run has %s=%s", k, was, k, is)
+		case hadIt && !hasIt:
+			return fmt.Sprintf("%s=%s, and this flow no longer declares %s", k, was, k)
+		case !hadIt && hasIt:
+			return fmt.Sprintf("no %s, and this run has %s=%s", k, k, is)
+		}
+	}
+	return ""
 }

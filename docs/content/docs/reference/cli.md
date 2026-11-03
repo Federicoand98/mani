@@ -53,6 +53,7 @@ key is `flow:` is a flow.
 | `--in PATH` | | flows only: the records for the flow's `input`, or `-` for stdin |
 | `--out DIR` | | flows only: keep every step's records here, which makes the flow resumable |
 | `--limit N` | `0` | flows only: at most N new agent runs per step |
+| `--set name=value` | | flows only: a parameter's value, repeatable |
 | `--verbose`, `--debug` | `false` | logs to stderr |
 
 Without `--task` and without triggers in the manifest, the command refuses rather than doing
@@ -63,7 +64,7 @@ mani run --config agent.yaml --task "Summarize today's log"
 mani run --config agent.yaml --task "what broke here?" --image screenshot.png
 mani run --config classify.yaml --task "$(cat review.txt)" --provenance
 mani run --config agent.yaml                      # trigger daemon, stays in the foreground
-mani run --config letters.flow.yaml --out runs/   # a pipeline
+mani run --config letters.flow.yaml --out runs/ --set busta=12   # a pipeline
 ```
 
 Permission requests are denied automatically in headless mode. Nobody is there to answer, and a
@@ -147,7 +148,9 @@ agent.yaml: ok
 ```
 
 It resolves included files and `${VAR}` references, checks tool names, policy rules and journal
-settings, and on a flow it also loads every manifest the flow names. Warnings, such as an enum
+settings, and on a flow it also loads every manifest the flow names and checks each `where` against
+the schema of the agent it reads. `--set name=value` fills a flow's parameters; without it, a
+required parameter is listed as not set rather than failing the command. Warnings, such as an enum
 with more than 200 values, go to stderr and do not fail the command.
 
 ## `mani runs`

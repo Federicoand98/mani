@@ -1,4 +1,4 @@
-package app
+package manifest
 
 import (
 	"io/fs"
@@ -92,9 +92,9 @@ observability:
   journal: { enabled: true, backend: sqlite, path: ./runs.db, retention: 200 }
 `)
 
-	s, err := LoadManifest(path)
+	s, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 
 	// 1. identity
@@ -152,7 +152,7 @@ observability:
 }
 
 func TestValidate_JournalBackend(t *testing.T) {
-	s := DefaultSpec()
+	s := Default()
 	s.Observability.Journal.Enabled = true
 	s.Observability.Journal.Path = filepath.Join(t.TempDir(), "runs.db")
 
@@ -177,9 +177,9 @@ identity:
 capabilities:
   tools: [read]
 `)
-	s, err := LoadManifest(path)
+	s, err := Load(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if len(s.Capabilities.Tools) != 1 {
 		t.Errorf("tools: %+v", s.Capabilities.Tools)
@@ -210,7 +210,7 @@ func TestManifest_LegacyKeysRejected(t *testing.T) {
 
 	for key, body := range legacy {
 		t.Run(key, func(t *testing.T) {
-			_, err := LoadManifest(writeManifest(t, body))
+			_, err := Load(writeManifest(t, body))
 			if err == nil {
 				t.Fatalf("la chiave legacy %q doveva essere rifiutata", key)
 			}
@@ -225,7 +225,7 @@ func TestManifest_LegacyKeysRejected(t *testing.T) {
 // custom apre un decoder nuovo), quindi la verifica è manuale. È la stessa classe
 // di bug di `mcp:` invece di `mcpservers:`.
 func TestManifest_UnknownFieldInsideToolRejected(t *testing.T) {
-	_, err := LoadManifest(writeManifest(t, `
+	_, err := Load(writeManifest(t, `
 identity: { provider: ollama, model: m }
 capabilities:
   tools:
@@ -246,7 +246,7 @@ capabilities:
 // ---------------------------------------------------------------------------
 
 func TestToolRef_ScalarAndObjectCoexist(t *testing.T) {
-	s, err := LoadManifest(writeManifest(t, `
+	s, err := Load(writeManifest(t, `
 identity: { provider: ollama, model: m }
 capabilities:
   tools:
@@ -262,17 +262,17 @@ capabilities:
         required: [symbol]
 `))
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 
 	tools := s.Capabilities.Tools
 	if len(tools) != 2 {
 		t.Fatalf("attesi 2 tool, ottenuti %d", len(tools))
 	}
-	if tools[0].Name != "read" || tools[0].isSubprocess() {
+	if tools[0].Name != "read" || tools[0].IsSubprocess() {
 		t.Errorf("tool[0] atteso built-in 'read': %+v", tools[0])
 	}
-	if tools[1].Name != "fetch" || !tools[1].isSubprocess() {
+	if tools[1].Name != "fetch" || !tools[1].IsSubprocess() {
 		t.Errorf("tool[1] atteso subprocess 'fetch': %+v", tools[1])
 	}
 	if tools[1].Schema.Type != "object" || tools[1].Risk != "none" {
@@ -285,7 +285,7 @@ capabilities:
 // ---------------------------------------------------------------------------
 
 func TestDefaultSpec_Values(t *testing.T) {
-	s := DefaultSpec()
+	s := Default()
 	if !s.Context.Inject {
 		t.Error("context.inject deve essere true di default")
 	}
@@ -304,9 +304,9 @@ func TestDefaultSpec_Values(t *testing.T) {
 	}
 }
 
-// Un valore esplicito deve vincere sul default (LoadManifest parte da DefaultSpec).
+// Un valore esplicito deve vincere sul default (Load parte da Default).
 func TestManifest_ExplicitFalseOverridesDefault(t *testing.T) {
-	s, err := LoadManifest(writeManifest(t, `
+	s, err := Load(writeManifest(t, `
 identity: { provider: ollama, model: m }
 context:
   inject: false
@@ -314,7 +314,7 @@ observability:
   tracing: false
 `))
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if s.Context.Inject {
 		t.Error("inject: false esplicito deve vincere sul default true")
@@ -329,44 +329,44 @@ observability:
 // ---------------------------------------------------------------------------
 
 func TestValidate_Rejects(t *testing.T) {
-	base := func() RuntimeSpec {
-		s := DefaultSpec()
+	base := func() Spec {
+		s := Default()
 		s.Identity.Provider = "ollama"
 		return s
 	}
 
-	cases := map[string]func(*RuntimeSpec){
-		"tool sconosciuto": func(s *RuntimeSpec) {
+	cases := map[string]func(*Spec){
+		"tool sconosciuto": func(s *Spec) {
 			s.Capabilities.Tools = []ToolRef{{Name: "nonexistent"}}
 		},
-		"tool duplicato": func(s *RuntimeSpec) {
+		"tool duplicato": func(s *Spec) {
 			s.Capabilities.Tools = []ToolRef{{Name: "read"}, {Name: "read"}}
 		},
-		"subprocess senza schema": func(s *RuntimeSpec) {
+		"subprocess senza schema": func(s *Spec) {
 			s.Capabilities.Tools = []ToolRef{{Name: "x", Command: "./x"}}
 		},
-		"policy.tools valore invalido": func(s *RuntimeSpec) {
+		"policy.tools valore invalido": func(s *Spec) {
 			s.Policy.Tools = map[string]RiskPolicy{"bash": "maybe"}
 		},
-		"policy.rules regex invalida": func(s *RuntimeSpec) {
+		"policy.rules regex invalida": func(s *Spec) {
 			s.Policy.Rules = []RuleSpec{{Tool: "bash", Pattern: "["}}
 		},
-		"policy.redact regex invalida": func(s *RuntimeSpec) {
+		"policy.redact regex invalida": func(s *Spec) {
 			s.Policy.Redact = []RedactSpec{{Pattern: "[", With: "x"}}
 		},
-		"output.schema non object": func(s *RuntimeSpec) {
+		"output.schema non object": func(s *Spec) {
 			s.Output.Schema.Type = "string"
 		},
-		"trigger memory invalida": func(s *RuntimeSpec) {
+		"trigger memory invalida": func(s *Spec) {
 			s.Run.Triggers = []TriggerSpec{{Type: "daily", At: "02:00", Memory: "boh"}}
 		},
-		"trigger type invalido": func(s *RuntimeSpec) {
+		"trigger type invalido": func(s *Spec) {
 			s.Run.Triggers = []TriggerSpec{{Type: "sometimes"}}
 		},
-		"daily trigger without a time": func(s *RuntimeSpec) {
+		"daily trigger without a time": func(s *Spec) {
 			s.Run.Triggers = []TriggerSpec{{Type: "daily", Prompt: "x"}}
 		},
-		"daily trigger with a timezone suffix": func(s *RuntimeSpec) {
+		"daily trigger with a timezone suffix": func(s *Spec) {
 			s.Run.Triggers = []TriggerSpec{{Type: "daily", At: "09:00 UTC", Prompt: "x"}}
 		},
 	}
@@ -383,7 +383,7 @@ func TestValidate_Rejects(t *testing.T) {
 }
 
 func TestValidate_AcceptsKnownTools(t *testing.T) {
-	s := DefaultSpec()
+	s := Default()
 	s.Capabilities.Tools = []ToolRef{
 		{Name: "read"},
 		{Name: "edit"},
@@ -400,77 +400,6 @@ func TestValidate_AcceptsKnownTools(t *testing.T) {
 // ---------------------------------------------------------------------------
 // planning e delegate sono TOOL (fase 31, G2)
 // ---------------------------------------------------------------------------
-
-func TestBuild_PlanningAndDelegateAreTools(t *testing.T) {
-	s := DefaultSpec()
-	s.Identity.Provider = "ollama"
-	s.Capabilities.Tools = []ToolRef{{Name: "read"}, {Name: "planning"}, {Name: "delegate"}}
-
-	rt, err := Build(t.Context(), s)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	defer rt.Close()
-
-	got := map[string]bool{}
-	for _, tl := range rt.tools {
-		got[tl.Name()] = true
-	}
-	for _, want := range []string{"read", "planning", "delegate"} {
-		if !got[want] {
-			t.Errorf("tool %q non registrato; presenti: %v", want, got)
-		}
-	}
-}
-
-// Senza dichiararli, planning e delegate NON esistono: è il punto di G2.
-func TestBuild_NoImplicitTools(t *testing.T) {
-	s := DefaultSpec()
-	s.Identity.Provider = "ollama"
-	s.Capabilities.Tools = []ToolRef{{Name: "read"}}
-
-	rt, err := Build(t.Context(), s)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	defer rt.Close()
-
-	for _, tl := range rt.tools {
-		if tl.Name() == "planning" || tl.Name() == "delegate" {
-			t.Errorf("tool %q non dichiarato ma registrato", tl.Name())
-		}
-	}
-}
-
-// Un solo vocabolario: la chiave del manifest DEVE essere il nome del tool a runtime.
-// Se divergono, `policy.tools` non blocca nulla (cade sul default) e i subagent che
-// referenziano il tool falliscono a runtime — entrambi in silenzio.
-func TestBuiltinTools_ManifestKeyMatchesRuntimeName(t *testing.T) {
-	s := DefaultSpec()
-	s.Identity.Provider = "ollama"
-
-	builtins := []string{"read", "edit", "write", "bash", "planning", "delegate"}
-	for _, name := range builtins {
-		s.Capabilities.Tools = append(s.Capabilities.Tools, ToolRef{Name: name})
-	}
-
-	rt, err := Build(t.Context(), s)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	defer rt.Close()
-
-	runtimeNames := map[string]bool{}
-	for _, tl := range rt.tools {
-		runtimeNames[tl.Name()] = true
-	}
-	for _, key := range builtins {
-		if !runtimeNames[key] {
-			t.Errorf("la chiave di manifest %q non corrisponde a nessun tool a runtime; presenti: %v",
-				key, runtimeNames)
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Gli esempi del repo devono restare validi (in fase 30 ne erano rotti tre)
@@ -514,7 +443,7 @@ func TestExamples_AllLoad(t *testing.T) {
 
 	for _, p := range manifests {
 		t.Run(name(p), func(t *testing.T) {
-			spec, err := LoadManifest(p)
+			spec, err := Load(p)
 			if err != nil {
 				t.Fatalf("does not load: %v", err)
 			}
@@ -528,7 +457,7 @@ func TestExamples_AllLoad(t *testing.T) {
 
 	for _, p := range flows {
 		t.Run(name(p), func(t *testing.T) {
-			if _, err := LoadFlow(p); err != nil {
+			if _, err := LoadFlow(p, nil); err != nil {
 				t.Errorf("does not load: %v", err)
 			}
 		})
@@ -633,7 +562,7 @@ func TestLoadManifest_EnvExpansion(t *testing.T) {
 	t.Setenv("MANI_TEST_MODEL", "qwen3.5:9b")
 	t.Setenv("MANI_TEST_TOKEN", "s3cr3t")
 
-	s, err := LoadManifest(writeManifest(t, `
+	s, err := Load(writeManifest(t, `
 identity:
   provider: ollama
   model: ${MANI_TEST_MODEL}
@@ -653,7 +582,7 @@ capabilities:
         ${MANI_TEST_MODEL}: literal-key
 `))
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 
 	if s.Identity.Model != "qwen3.5:9b" {
@@ -677,7 +606,7 @@ capabilities:
 }
 
 func TestLoadManifest_UndefinedEnvIsAnError(t *testing.T) {
-	_, err := LoadManifest(writeManifest(t, `
+	_, err := Load(writeManifest(t, `
 identity:
   provider: ollama
   model: ${MANI_TEST_DEFINITELY_MISSING}
@@ -695,8 +624,8 @@ identity:
 // ---------------------------------------------------------------------------
 
 func TestValidate_WebhookTriggers(t *testing.T) {
-	base := func(triggers ...TriggerSpec) RuntimeSpec {
-		s := DefaultSpec()
+	base := func(triggers ...TriggerSpec) Spec {
+		s := Default()
 		s.Identity.Provider = "ollama"
 		s.Run.Triggers = triggers
 		return s

@@ -12,15 +12,17 @@ import (
 	"net/http"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/journal"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 type Server struct {
 	mgr     *sessionManager
 	token   string
-	journal app.Journal
+	journal journal.Journal
 }
 
-func New(spec app.RuntimeSpec, token string) *Server {
+func New(spec manifest.Spec, token string) *Server {
 	j, _ := app.OpenJournalReader(spec)
 	return &Server{mgr: newSessionManager(spec), token: token, journal: j}
 }

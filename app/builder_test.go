@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 func TestBuild_FailsOnUnusableProvider(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	spec := DefaultSpec()
+	spec := manifest.Default()
 	spec.Identity.Provider = "anthropic"
 	spec.Identity.Model = "claude-sonnet-4"
 
@@ -29,23 +30,23 @@ func TestBuild_FailsOnUnusableProvider(t *testing.T) {
 // BuildDaemon: how a webhook trigger resolves its token
 // ---------------------------------------------------------------------------
 
-func webhookSpecFor(t *testing.T, triggers []TriggerSpec, opts ...DaemonOption) (*Daemon, error) {
+func webhookSpecFor(t *testing.T, triggers []manifest.TriggerSpec, opts ...DaemonOption) (*Daemon, error) {
 	t.Helper()
 	rt := testRuntime(t, core.NewMock(core.RespText("ok")))
-	spec := DefaultSpec()
+	spec := manifest.Default()
 	spec.Identity.Provider = "ollama"
 	spec.Run.Triggers = triggers
 	return BuildDaemon(rt, spec, opts...)
 }
 
 func TestBuildDaemon_WebhookToken(t *testing.T) {
-	hook := func(path, token string) TriggerSpec {
-		return TriggerSpec{Type: "webhook", Addr: "127.0.0.1:8099", Path: path, Token: token, Prompt: "x"}
+	hook := func(path, token string) manifest.TriggerSpec {
+		return manifest.TriggerSpec{Type: "webhook", Addr: "127.0.0.1:8099", Path: path, Token: token, Prompt: "x"}
 	}
 
 	t.Run("the manifest token wins", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "from-env")
-		d, err := webhookSpecFor(t, []TriggerSpec{hook("/deploy", "from-manifest")})
+		d, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("/deploy", "from-manifest")})
 		if err != nil {
 			t.Fatalf("BuildDaemon: %v", err)
 		}
@@ -58,7 +59,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 	// so the release does not break webhook auth for the second time in a row.
 	t.Run("no manifest token falls back to the env var", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "from-env")
-		d, err := webhookSpecFor(t, []TriggerSpec{hook("", "")})
+		d, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("", "")})
 		if err != nil {
 			t.Fatalf("BuildDaemon: %v", err)
 		}
@@ -72,7 +73,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 
 	t.Run("each route keeps its own token", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "from-env")
-		d, err := webhookSpecFor(t, []TriggerSpec{hook("/deploy", "tok-deploy"), hook("/alert", "tok-alert")})
+		d, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("/deploy", "tok-deploy"), hook("/alert", "tok-alert")})
 		if err != nil {
 			t.Fatalf("BuildDaemon: %v", err)
 		}
@@ -88,7 +89,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 	// to start, rather than serving an unauthenticated hook.
 	t.Run("no token anywhere refuses to build", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "")
-		_, err := webhookSpecFor(t, []TriggerSpec{hook("/deploy", "")})
+		_, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("/deploy", "")})
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
@@ -99,7 +100,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 
 	t.Run("--insecure allows an unauthenticated hook", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "")
-		d, err := webhookSpecFor(t, []TriggerSpec{hook("/deploy", "")}, AllowInsecureWebhook())
+		d, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("/deploy", "")}, AllowInsecureWebhook())
 		if err != nil {
 			t.Fatalf("BuildDaemon: %v", err)
 		}
@@ -112,7 +113,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 	// the check is per route.
 	t.Run("one route without a token fails the whole build", func(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "")
-		_, err := webhookSpecFor(t, []TriggerSpec{hook("/deploy", "tok"), hook("/alert", "")})
+		_, err := webhookSpecFor(t, []manifest.TriggerSpec{hook("/deploy", "tok"), hook("/alert", "")})
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
@@ -123,7 +124,7 @@ func TestBuildDaemon_WebhookToken(t *testing.T) {
 		t.Setenv("MANI_WEBHOOK_TOKEN", "tok")
 		trig := hook("/deploy", "")
 		trig.Name = "deploy-hook"
-		d, err := webhookSpecFor(t, []TriggerSpec{trig})
+		d, err := webhookSpecFor(t, []manifest.TriggerSpec{trig})
 		if err != nil {
 			t.Fatalf("BuildDaemon: %v", err)
 		}

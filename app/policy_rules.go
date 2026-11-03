@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 type denyRule struct {
@@ -22,7 +23,7 @@ type maskRule struct {
 	with string
 }
 
-func RegisterPolicyRules(rt *Runtime, spec PolicySpec) {
+func RegisterPolicyRules(rt *Runtime, spec manifest.PolicySpec) {
 	var deny []denyRule
 	for _, r := range spec.Rules {
 		if r.Action != "" && r.Action != "deny" {
@@ -72,7 +73,7 @@ func RegisterPolicyRules(rt *Runtime, spec PolicySpec) {
 	}
 }
 
-func RegisterNetworkPolicy(rt *Runtime, spec NetworkSpec) {
+func RegisterNetworkPolicy(rt *Runtime, spec manifest.NetworkSpec) {
 	if len(spec.Allow) == 0 && len(spec.Deny) == 0 {
 		return
 	}
@@ -127,7 +128,7 @@ func matchHost(pattern, host string) bool {
 	return pattern == host
 }
 
-func hostAllowedFunc(spec NetworkSpec) func(string) bool {
+func hostAllowedFunc(spec manifest.NetworkSpec) func(string) bool {
 	if len(spec.Allow) == 0 && len(spec.Deny) == 0 {
 		return nil
 	}

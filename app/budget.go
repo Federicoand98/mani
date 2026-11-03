@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/core"
+	"github.com/Federicoand98/mani/manifest"
 	"github.com/Federicoand98/mani/tool"
 )
 
@@ -24,7 +25,7 @@ func budgetFrom(ctx context.Context) *budgetState {
 	return bs
 }
 
-func RegisterBudget(rt *Runtime, spec LimitsSpec) {
+func RegisterBudget(rt *Runtime, spec manifest.LimitsSpec) {
 	if spec.MaxTokens > 0 {
 		rt.OnPostLLMCall(func(ctx context.Context, p *core.PostLLMCallPayload) error {
 			bs := budgetFrom(ctx)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/manifest"
 )
 
 func TestTemplates_AllParseAndValidate(t *testing.T) {
@@ -23,7 +23,7 @@ func TestTemplates_AllParseAndValidate(t *testing.T) {
 			if err := os.WriteFile(path, data, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			spec, err := app.LoadManifest(path)
+			spec, err := manifest.Load(path)
 			if err != nil {
 				t.Fatalf("LoadManifest: %v", err)
 			}
@@ -95,7 +95,7 @@ func TestInit_DefaultTemplateExists(t *testing.T) {
 	// What it scaffolds must also load, or the first thing a new user runs
 	// after `init` fails too.
 	path := filepath.Join(dir, "agent.yaml")
-	if _, err := app.LoadManifest(path); err != nil {
+	if _, err := manifest.Load(path); err != nil {
 		t.Errorf("the scaffolded manifest does not load: %v\n%s", err, body)
 	}
 }

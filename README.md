@@ -110,8 +110,10 @@ agent over a file of tasks is the same machinery with one step, and gets a short
 mani batch --config classify.yaml --in reviews.jsonl --out out/ --jobs 4
 ```
 
-It is deliberately not LangGraph: no shared mutable state, no cycles, no conditional edges. Where
-judgement is needed you use an agent; where the shape is known you use a flow. Guides:
+A flow can take parameters (`${params.busta}`, filled with `--set busta=12`), filter a step's input
+(`where: { confidence: low }`) and join branches (`from_all: [letters, people]`). It is
+deliberately not LangGraph: no shared mutable state, no cycles, no expressions — a `where` tests a
+value an agent declared, so the judgement stays with the agent. Guides:
 [build a pipeline](https://federicoand98.github.io/mani/docs/guides/flows/) ·
 [process a file of tasks](https://federicoand98.github.io/mani/docs/guides/batch/).
 
@@ -176,20 +178,25 @@ Hexagonal (Ports & Adapters). The single invariant: **`core/` has zero external 
 Dependency arrows always point inward.
 
 ```
-cmd/mani/      composition root — TUI, run, batch, serve, mcp, init, validate, runs,
-               and the flow executor (one engine: a batch is a flow of one step)
-app/           application service — Runtime, events, manifest + flow spec, policy,
-               limits, journal, task queue, subagents, triggers
-server/        driving adapter — REST + WebSocket
-server/mcpserver/  driving adapter — MCP server over stdio (the agent as one tool)
-tui/           driving adapter — terminal UI (BubbleTea)
-core/          domain — Agent, Memory, LLMClient port, hooks, types
-llm/*/         driven adapters — ollama, openai, anthropic, copilot, openrouter
-tool/          Tool interface + registry
-tool/fs/       read/write/edit/delete/glob/grep      tool/bash/   shell
-tool/fetch/    HTTP GET with SSRF guard              tool/mcp/    MCP client
-tool/subprocess/  external-process tools
-config/        config + credentials on disk          session/     session storage
+cmd/mani/            composition root — TUI, run, batch, serve, mcp, init, validate, runs,
+                     and the flow executor (one engine: a batch is a flow of one step)
+app/                 application service — Runtime, events, builder, governance, triggers,
+                     subagents
+manifest/            the declarative grammar — manifest and flow spec, loading, validation
+journal/             Journal port + in-memory, JSONL and multi adapters
+journal/sqlite/      SQLite adapter (the only package that links the driver)
+journal/journaltest/ the contract every journal adapter runs
+internal/scheduler/  durable task queue
+server/              driving adapter — REST + WebSocket
+server/mcpserver/    driving adapter — MCP server over stdio (the agent as one tool)
+tui/                 driving adapter — terminal UI (BubbleTea)
+core/                domain — Agent, Memory, LLMClient port, hooks, types
+llm/*/               driven adapters — ollama, openai, anthropic, copilot, openrouter
+tool/                Tool interface + registry
+tool/fs/             read/write/edit/delete/glob/grep      tool/bash/   shell
+tool/fetch/          HTTP GET with SSRF guard              tool/mcp/    MCP client
+tool/subprocess/     external-process tools
+config/              config + credentials on disk          session/     session storage
 ```
 
 Interfaces are defined in the **consuming** package (Go idiom): `LLMClient`, `Memory`,
@@ -197,7 +204,8 @@ Interfaces are defined in the **consuming** package (Go idiom): `LLMClient`, `Me
 
 Governance and observability are **pure composition over hooks** — policy rules, limits and the
 journal add zero lines to `core/`. The journal writes append-only JSONL (one file per run) behind
-a `Journal` port; a SQLite adapter is a drop-in alternative behind one manifest key.
+a `Journal` port; a SQLite adapter is a drop-in alternative behind one manifest key, and
+`journal/journaltest` is the contract both of them — and any third one — must pass.
 
 ```bash
 go build ./... && go test ./...

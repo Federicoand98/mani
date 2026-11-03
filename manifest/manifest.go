@@ -1,4 +1,4 @@
-package app
+package manifest
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type RuntimeSpec struct {
+type Spec struct {
 	Identity      IdentitySpec      `yaml:"identity"`
 	Capabilities  CapabilitiesSpec  `yaml:"capabilities"`
 	Context       ContextSpec       `yaml:"context"`
@@ -174,7 +174,7 @@ type TriggerSpec struct {
 // before 0.1.4 keeps working unchanged.
 func (t TriggerSpec) HookPath() string {
 	if t.Path == "" {
-		return defaultHookPath
+		return DefaultHookPath
 	}
 	return t.Path
 }
@@ -193,8 +193,8 @@ type JournalSpec struct {
 	Retention int    `yaml:"retention"` // ring buffer
 }
 
-func DefaultSpec() RuntimeSpec {
-	return RuntimeSpec{
+func Default() Spec {
+	return Spec{
 		Context: ContextSpec{
 			Inject:     true,
 			Compaction: CompactionCfg{Enabled: true, Keep: 20},
@@ -206,46 +206,46 @@ func DefaultSpec() RuntimeSpec {
 	}
 }
 
-func LoadManifest(path string) (RuntimeSpec, error) {
+func Load(path string) (Spec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: read %s: %w", path, err)
+		return Spec{}, fmt.Errorf("[manifest]: read %s: %w", path, err)
 	}
 
 	{
-		probe := DefaultSpec()
+		probe := Default()
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
 		if err := dec.Decode(&probe); err != nil && !errors.Is(err, io.EOF) {
-			return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+			return Spec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
 		}
 	}
 
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: unmarshal %s: %w", path, err)
+		return Spec{}, fmt.Errorf("[manifest]: unmarshal %s: %w", path, err)
 	}
 
 	if err := expandEnvNodes(&root); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: expand env %s: %w", path, err)
+		return Spec{}, fmt.Errorf("[manifest]: expand env %s: %w", path, err)
 	}
 
-	spec := DefaultSpec()
+	spec := Default()
 
 	if len(root.Content) > 0 {
 		if err := root.Decode(&spec); err != nil {
-			return RuntimeSpec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+			return Spec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
 		}
 	}
 
 	if err := spec.resolveIncludes(filepath.Dir(path)); err != nil {
-		return RuntimeSpec{}, fmt.Errorf("[manifest]: resolve includes %s: %w", path, err)
+		return Spec{}, fmt.Errorf("[manifest]: resolve includes %s: %w", path, err)
 	}
 
 	return spec, spec.Validate()
 }
 
-func (s RuntimeSpec) Validate() error {
+func (s Spec) Validate() error {
 	// --- capabilities.tools ---
 	declared := map[string]bool{}
 	for _, ref := range s.Capabilities.Tools {
@@ -257,12 +257,12 @@ func (s RuntimeSpec) Validate() error {
 		}
 		declared[ref.Name] = true
 
-		if ref.isSubprocess() {
+		if ref.IsSubprocess() {
 			if ref.Schema.Type == "" {
 				return fmt.Errorf("[manifest]: tool subprocess %q requires schema.type", ref.Name)
 			}
-		} else if !knownTool(ref.Name) {
-			return fmt.Errorf("[manifest]: tool unknown %q (built-in: read, edit, write, bash, planning, delegate)", ref.Name)
+		} else if !IsBuiltinTool(ref.Name) {
+			return fmt.Errorf("[manifest]: tool unknown %q (built-in: %s)", ref.Name, strings.Join(BuiltinTools(), ", "))
 		}
 	}
 
@@ -283,7 +283,7 @@ func (s RuntimeSpec) Validate() error {
 		}
 		seen[sa.Name] = true
 		for _, t := range sa.Tools {
-			if !knownTool(t) && !declared[t] {
+			if !IsBuiltinTool(t) && !declared[t] {
 				return fmt.Errorf("[manifest]: subagent %q: tool unknown %q", sa.Name, t)
 			}
 		}
@@ -354,7 +354,7 @@ func (s RuntimeSpec) Validate() error {
 			return fmt.Errorf("[manifest]: run.triggers[%d]: memory must be fresh|persistent, found %q", i, t.Memory)
 		}
 		if t.Type == "daily" {
-			if _, _, err := parseClock(t.At); err != nil {
+			if _, _, err := ParseClock(t.At); err != nil {
 				return fmt.Errorf("[manifest]: run.triggers[%d].at: %w", i, err)
 			}
 		}
@@ -398,7 +398,7 @@ func (s RuntimeSpec) Validate() error {
 	return nil
 }
 
-func (t ToolRef) isSubprocess() bool {
+func (t ToolRef) IsSubprocess() bool {
 	return t.Command != ""
 }
 
@@ -473,7 +473,7 @@ func (i *IdentitySpec) UnmarshalYAML(node *yaml.Node) error {
 
 const macIncludeBytes = 256 << 10
 
-func (s *RuntimeSpec) resolveIncludes(baseDir string) error {
+func (s *Spec) resolveIncludes(baseDir string) error {
 	if s.Identity.promptInclude != "" {
 		text, err := readInclude(baseDir, s.Identity.promptInclude)
 		if err != nil {
@@ -651,7 +651,7 @@ func expandEnvString(s string, line int) (string, error) {
 	return out, nil
 }
 
-func (r RiskName) toCore() core.RiskLevel {
+func (r RiskName) Core() core.RiskLevel {
 	switch r {
 	case "network":
 		return core.RiskNetwork
@@ -667,7 +667,7 @@ func (r RiskName) toCore() core.RiskLevel {
 const enumWarnThreshold = 200
 
 // Warnings reports what is legal but probably a mistake. It never fails a load.
-func (s RuntimeSpec) Warnings() []string {
+func (s Spec) Warnings() []string {
 	var out []string
 	walkSchema("output.schema", s.Output.Schema, &out)
 	for i, ref := range s.Capabilities.Tools {

@@ -69,6 +69,33 @@ func flowScript(args []string) int {
 	case "fail":
 		fmt.Fprintln(os.Stderr, "boom from the script")
 		return 3
+
+	case "echo": // one record whose task is the arguments: shows what a parameter became
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": "echo", "task": strings.Join(args[1:], " ")})
+		return 0
+
+	case "passthrough": // stdin to stdout, unchanged: shows what a step received
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+		return 0
+
+	case "sources": // one record listing what arrived, as from/id: shows a fan-in
+		var got []string
+		sc := bufio.NewScanner(os.Stdin)
+		sc.Buffer(make([]byte, 0, 64*1024), 8<<20)
+		for sc.Scan() {
+			var rec struct {
+				ID   string `json:"id"`
+				From string `json:"from"`
+				Task any    `json:"task"`
+			}
+			if err := json.Unmarshal(sc.Bytes(), &rec); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			got = append(got, fmt.Sprintf("%s/%s=%v", rec.From, rec.ID, rec.Task))
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": "all", "task": got})
+		return 0
 	}
 	fmt.Fprintf(os.Stderr, "flowScript: unknown script %q\n", args[0])
 	return 2
