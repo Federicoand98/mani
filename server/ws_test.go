@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+
+	"github.com/Federicoand98/mani/server/wire"
 )
 
 // newTestConn builds the part of a connection these tests need: the pending
@@ -13,7 +15,7 @@ import (
 // pushes to the queue the writer drains.
 func newTestConn() *conn {
 	return &conn{
-		outbound: make(chan serverMsg, 8),
+		outbound: make(chan wire.ServerMsg, 8),
 		pending:  make(map[string]chan app.Decision),
 	}
 }
@@ -45,9 +47,9 @@ func request(t *testing.T, cn *conn) (string, chan app.Decision) {
 		if msg.Type != "permission_request" {
 			t.Fatalf("outbound message = %q, want permission_request", msg.Type)
 		}
-		dto, ok := msg.Payload.(permissionRequestDTO)
+		dto, ok := msg.Payload.(wire.PermissionRequest)
 		if !ok {
-			t.Fatalf("payload = %T, want permissionRequestDTO", msg.Payload)
+			t.Fatalf("payload = %T, want wire.PermissionRequest", msg.Payload)
 		}
 		if dto.RequestID == "" {
 			t.Fatal("the request carries no id: the client could not answer it")

@@ -80,6 +80,21 @@ library.
   `go install` builds mani without the console, because the frontend is compiled by `make web`
   and the release pipeline: `mani web` then shows a page saying so, and the API still answers.
 
+- **Chat in `mani web` (second milestone).** Conversations with any connected model, streamed word
+  by word: Markdown replies with a Copy button on code, reasoning in a closed block, images pasted
+  or dropped into the message, and `/help`, `/clear`, `/model`, `/thinking`. Each conversation
+  keeps its own provider and model, and can switch them halfway. The chat has no tools: the model
+  answers alone, and tools arrive with agents.
+
+  Conversations belong to the folder: they are saved in `<dir>/.mani/sessions`, next to the
+  agents, and `.mani/` gets its own `.gitignore` so they stay out of a project's history. A reply
+  does not depend on the browser tab: closing or reloading it mid-answer leaves the reply running,
+  and it is saved when it ends. How many recent messages the model remembers is a setting (20 by
+  default); older ones stay on screen, below a line that says so.
+
+  The WebSocket messages of `mani serve` move to `server/wire`, and `mani web` speaks the same
+  protocol. Nothing changes on the wire for existing clients.
+
 ### Changed
 
 - **`app/` is split into packages along its boundaries.** Breaking for library users, at the
@@ -98,6 +113,17 @@ library.
   `manifest.Sources`; build one with `manifest.One("step")`.
 
 ### Fixed
+
+- **Images never reached the model.** `mani run --image` and the image attachments of the chat
+  were accepted and then dropped twice over: `Runtime.ExecuteIn` did not pass attachments to the
+  agent, and none of the provider adapters (Ollama, OpenAI and the ones built on it, Anthropic)
+  converted an image block into its API's format. Both are fixed: Ollama gets `images`, OpenAI a
+  `image_url` part with a data URL, Anthropic a base64 `image` block.
+- **A reloaded session had empty blocks in every message.** The session file reader sized the
+  block list and then appended to it, so each message came back with as many `nil` blocks as real
+  ones in front. This affected every session reopened in the TUI. Images are now also saved in the
+  session file instead of being dropped.
+- **A session saved before its first message kept the title "(no title)" forever.**
 
 - **`mani init` did not work.** The flag default was `agent` while the embedded template was
   named `agents.yaml`, so the first command of every tutorial failed with

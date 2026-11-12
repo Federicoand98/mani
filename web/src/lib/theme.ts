@@ -2,27 +2,12 @@
 // app.html applies the saved values before the first paint; this module keeps
 // them in sync afterwards.
 
+import { read, write } from './storage.ts';
+
 export type Theme = 'system' | 'light' | 'dark';
 
 const THEME = 'mani:theme';
 const MOTION = 'mani:reduce-motion';
-
-function read(key: string): string | null {
-	try {
-		return localStorage.getItem(key);
-	} catch {
-		return null; // storage blocked: fall back to the defaults
-	}
-}
-
-function write(key: string, value: string | null) {
-	try {
-		if (value === null) localStorage.removeItem(key);
-		else localStorage.setItem(key, value);
-	} catch {
-		// the choice still applies to this page
-	}
-}
 
 export function getTheme(): Theme {
 	const t = read(THEME);

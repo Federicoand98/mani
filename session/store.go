@@ -19,6 +19,7 @@ type Meta struct {
 	ID        string
 	Title     string
 	Model     string
+	Provider  string
 	UpdatedAt time.Time
 }
 
@@ -59,7 +60,7 @@ func (s *InMemoryStore) List() ([]Meta, error) {
 	out := make([]Meta, 0, len(s.sessions))
 
 	for _, session := range s.sessions {
-		out = append(out, Meta{ID: session.ID, Title: session.Title, Model: session.Model, UpdatedAt: session.UpdatedAt})
+		out = append(out, Meta{ID: session.ID, Title: session.Title, Model: session.Model, Provider: session.Provider, UpdatedAt: session.UpdatedAt})
 	}
 
 	return out, nil

@@ -1,5 +1,8 @@
 import type {
 	APIError,
+	Conversation,
+	ConversationInput,
+	ConversationList,
 	DeviceStart,
 	DeviceStatus,
 	Health,
@@ -56,5 +59,12 @@ export const api = {
 	testProvider: (name: string, input: ProviderInput) => call<TestResult>('POST', p(name) + '/test', input),
 	models: (name: string) => call<ModelList>('GET', p(name) + '/models'),
 	deviceStart: () => call<DeviceStart>('POST', '/providers/copilot/device'),
-	deviceStatus: () => call<DeviceStatus>('GET', '/providers/copilot/device')
+	deviceStatus: () => call<DeviceStatus>('GET', '/providers/copilot/device'),
+	conversations: () => call<ConversationList>('GET', '/conversations'),
+	conversation: (id: string) => call<Conversation>('GET', c(id)),
+	createConversation: (input: ConversationInput) => call<Conversation>('POST', '/conversations', input),
+	updateConversation: (id: string, input: ConversationInput) => call<Conversation>('PATCH', c(id), input),
+	deleteConversation: (id: string) => call<null>('DELETE', c(id))
 };
+
+const c = (id: string) => '/conversations/' + encodeURIComponent(id);

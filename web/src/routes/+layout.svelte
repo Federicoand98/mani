@@ -17,6 +17,7 @@
 
 	type Item = { href: string; icon: IconName; label: string };
 	const top: Item[] = [{ href: '/', icon: 'home', label: m.nav.home }];
+	const build: Item[] = [{ href: '/chat', icon: 'chat', label: m.nav.chat }];
 	const system: Item[] = [
 		{ href: '/providers', icon: 'cube', label: m.nav.providers },
 		{ href: '/settings', icon: 'sliders', label: m.nav.settings }
@@ -58,6 +59,10 @@
 			{#each top as it (it.href)}
 				<a class="nav" href={it.href} aria-current={current(it.href) ? 'page' : undefined}><Icon name={it.icon} />{it.label}</a>
 			{/each}
+			<div class="group">{m.nav.groupBuild}</div>
+			{#each build as it (it.href)}
+				<a class="nav" href={it.href} aria-current={current(it.href) ? 'page' : undefined}><Icon name={it.icon} />{it.label}</a>
+			{/each}
 			<div class="group">{m.nav.groupSystem}</div>
 			{#each system as it (it.href)}
 				<a class="nav" href={it.href} aria-current={current(it.href) ? 'page' : undefined}><Icon name={it.icon} />{it.label}</a>
@@ -79,7 +84,7 @@
 					<span class="ws" title={m.app.workspace}><Icon name="folder" size={16} />{app.health.dir}</span>
 				{/if}
 			</header>
-			<main id="main" tabindex="-1" class="content">
+			<main id="main" tabindex="-1" class="content" class:full={page.url.pathname.startsWith('/chat')}>
 				{#if app.connection === 'offline'}
 					<div class="banner error" role="alert">
 						<Icon name="warn" />
@@ -250,6 +255,14 @@
 		gap: 24px;
 		outline: none;
 	}
+	.content.full {
+		padding: 0;
+		max-width: none;
+		gap: 0;
+	}
+	.content.full > :global(.banner) {
+		margin: 16px;
+	}
 	.gate {
 		min-height: 100vh;
 		display: grid;
@@ -294,6 +307,9 @@
 		}
 		.content {
 			padding: 24px 16px;
+		}
+		.content.full {
+			padding: 0;
 		}
 	}
 </style>

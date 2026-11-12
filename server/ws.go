@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/server/wire"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -16,7 +17,7 @@ import (
 type conn struct {
 	c        *websocket.Conn
 	rt       *app.Runtime
-	outbound chan serverMsg
+	outbound chan wire.ServerMsg
 	mu       sync.Mutex
 	pending  map[string]chan app.Decision
 	running  bool
@@ -45,7 +46,7 @@ func (s *Server) handleTurn(w http.ResponseWriter, r *http.Request) {
 	cn := &conn{
 		c:        c,
 		rt:       rt,
-		outbound: make(chan serverMsg, 32),
+		outbound: make(chan wire.ServerMsg, 32),
 		pending:  make(map[string]chan app.Decision),
 	}
 
@@ -68,7 +69,7 @@ func (cn *conn) writer(ctx context.Context) {
 }
 
 // send: push non bloccante versio il writer
-func (cn *conn) send(ctx context.Context, m serverMsg) {
+func (cn *conn) send(ctx context.Context, m wire.ServerMsg) {
 	select {
 	case cn.outbound <- m:
 	case <-ctx.Done():
@@ -77,7 +78,7 @@ func (cn *conn) send(ctx context.Context, m serverMsg) {
 
 func (cn *conn) reader(ctx context.Context) {
 	for {
-		var msg clientMsg
+		var msg wire.ClientMsg
 		if err := wsjson.Read(ctx, cn.c, &msg); err != nil {
 			return
 		}
@@ -95,7 +96,7 @@ func (cn *conn) reader(ctx context.Context) {
 
 func (cn *conn) startTurn(ctx context.Context, input string) {
 	if input == "" {
-		cn.send(ctx, errMsg("input vuoto"))
+		cn.send(ctx, wire.ErrorMsg("input vuoto"))
 		return
 	}
 
@@ -103,7 +104,7 @@ func (cn *conn) startTurn(ctx context.Context, input string) {
 
 	if cn.running {
 		cn.mu.Unlock()
-		cn.send(ctx, errMsg("turn in progress"))
+		cn.send(ctx, wire.ErrorMsg("turn in progress"))
 		return
 	}
 
@@ -128,11 +129,11 @@ func (cn *conn) runTurn(ctx context.Context, input string) {
 
 		if ev.Type == app.EventDone {
 			if p, ok := ev.Payload.(app.DonePayload); ok && p.Result != nil {
-				cn.send(ctx, serverMsg{Type: "structured", Payload: p.Result})
+				cn.send(ctx, wire.ServerMsg{Type: "structured", Payload: p.Result})
 			}
 		}
 
-		if m, ok := toServerMsg(ev); ok {
+		if m, ok := wire.FromEvent(ev); ok {
 			cn.send(ctx, m)
 		}
 	}
@@ -156,7 +157,7 @@ func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 		conn.routeDecision(reqID, "deny")
 	})
 
-	conn.send(ctx, serverMsg{Type: "permission_request", Payload: permissionRequestDTO{
+	conn.send(ctx, wire.ServerMsg{Type: "permission_request", Payload: wire.PermissionRequest{
 		RequestID: reqID, ToolName: p.ToolName, RiskLevel: p.RiskLevel,
 		Input: p.Input, Preview: p.Preview,
 	}})
@@ -168,7 +169,7 @@ func (cn *conn) routeDecision(reqID, decision string) {
 	delete(cn.pending, reqID)
 	cn.mu.Unlock()
 	if ok {
-		ch <- parseDecision(decision)
+		ch <- wire.ParseDecision(decision)
 	}
 }
 
@@ -182,12 +183,5 @@ func (cn *conn) shutdown() {
 		default:
 		}
 		delete(cn.pending, id)
-	}
-}
-
-func errMsg(s string) serverMsg {
-	return serverMsg{
-		Type:    "error",
-		Payload: errorDTO{Message: s},
 	}
 }

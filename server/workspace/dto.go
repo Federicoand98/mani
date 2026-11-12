@@ -63,3 +63,43 @@ type DeviceStatus struct {
 type APIError struct {
 	Error string `json:"error"`
 }
+
+// ConversationMeta is one row of the conversation list.
+type ConversationMeta struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	UpdatedAt string `json:"updatedAt"` // RFC 3339
+	Running   bool   `json:"running"`   // a reply is being written right now
+}
+
+type ConversationList struct {
+	Conversations []ConversationMeta `json:"conversations"`
+}
+
+// Conversation is a conversation with its messages, as the page shows them.
+type Conversation struct {
+	ConversationMeta `tstype:",extends"`
+	Messages         []ChatMessage `json:"messages"`
+}
+
+type ChatMessage struct {
+	Role  string     `json:"role"` // "user" or "assistant"
+	Parts []ChatPart `json:"parts"`
+}
+
+// ChatPart is text or an image; images come back base64-encoded.
+type ChatPart struct {
+	Type      string `json:"type"` // "text" or "image"
+	Text      string `json:"text,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+// ConversationInput creates or edits a conversation. Empty fields keep what is saved.
+type ConversationInput struct {
+	Title    string `json:"title,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+}

@@ -67,3 +67,44 @@ export interface DeviceStatus {
 export interface APIError {
   error: string;
 }
+/**
+ * ConversationMeta is one row of the conversation list.
+ */
+export interface ConversationMeta {
+  id: string;
+  title: string;
+  provider: string;
+  model: string;
+  updatedAt: string; // RFC 3339
+  running: boolean; // a reply is being written right now
+}
+export interface ConversationList {
+  conversations: ConversationMeta[];
+}
+/**
+ * Conversation is a conversation with its messages, as the page shows them.
+ */
+export interface Conversation extends ConversationMeta {
+  messages: ChatMessage[];
+}
+export interface ChatMessage {
+  role: string; // "user" or "assistant"
+  parts: ChatPart[];
+}
+/**
+ * ChatPart is text or an image; images come back base64-encoded.
+ */
+export interface ChatPart {
+  type: string; // "text" or "image"
+  text?: string;
+  mediaType?: string;
+  data?: string;
+}
+/**
+ * ConversationInput creates or edits a conversation. Empty fields keep what is saved.
+ */
+export interface ConversationInput {
+  title?: string;
+  provider?: string;
+  model?: string;
+}

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/base64"
 	"time"
 
 	"github.com/Federicoand98/mani/core"
@@ -12,6 +13,7 @@ type sessionDTO struct {
 	ID        string       `json:"id"`
 	Title     string       `json:"title"`
 	Model     string       `json:"model"`
+	Provider  string       `json:"provider,omitempty"`
 	Plan      []PlanStep   `json:"plan,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
@@ -51,6 +53,7 @@ func toSessionDTO(s *Session) sessionDTO {
 		ID:        s.ID,
 		Title:     s.Title,
 		Model:     s.Model,
+		Provider:  s.Provider,
 		Plan:      s.Plan,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
@@ -76,6 +79,8 @@ func toBlockDTO(b core.ContentBlock) blockDTO {
 		return blockDTO{Type: v.BlockType(), ID: v.ID, Name: v.Name, Input: v.Input}
 	case core.ToolResultBlock:
 		return blockDTO{Type: v.BlockType(), ToolUseID: v.ToolUseID, Content: v.Content, IsError: v.IsError}
+	case core.ImageBlock:
+		return blockDTO{Type: v.BlockType(), MediaType: v.MediaType, Data: base64.StdEncoding.EncodeToString(v.Data)}
 	default:
 		return blockDTO{Type: "unknown"}
 	}
@@ -94,6 +99,7 @@ func (d sessionDTO) toSession() *Session {
 		ID:        d.ID,
 		Title:     d.Title,
 		Model:     d.Model,
+		Provider:  d.Provider,
 		Plan:      d.Plan,
 		CreatedAt: d.CreatedAt,
 		UpdatedAt: d.UpdatedAt,
@@ -102,7 +108,7 @@ func (d sessionDTO) toSession() *Session {
 }
 
 func (d messageDTO) toCore() core.Message {
-	blocks := make([]core.ContentBlock, len(d.Content))
+	blocks := make([]core.ContentBlock, 0, len(d.Content))
 
 	for _, b := range d.Content {
 		if cb := b.toCore(); cb != nil {
@@ -121,6 +127,12 @@ func (d blockDTO) toCore() core.ContentBlock {
 		return core.ToolUseBlock{ID: d.ID, Name: d.Name, Input: d.Input}
 	case "tool_result":
 		return core.ToolResultBlock{ToolUseID: d.ToolUseID, Content: d.Content, IsError: d.IsError}
+	case "image":
+		data, err := base64.StdEncoding.DecodeString(d.Data)
+		if err != nil {
+			return nil
+		}
+		return core.ImageBlock{MediaType: d.MediaType, Data: data}
 	default:
 		return nil
 	}

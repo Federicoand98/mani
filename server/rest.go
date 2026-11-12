@@ -8,11 +8,13 @@ import (
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/journal"
+
+	"github.com/Federicoand98/mani/server/wire"
 )
 
 type chatResponse struct {
 	Output  map[string]any `json:"output,omitempty"`
-	Usage   *usageDTO      `json:"usage,omitempty"`
+	Usage   *wire.Usage    `json:"usage,omitempty"`
 	Error   string         `json:"error,omitempty"`
 	IsError bool           `json:"is_error,omitempty"`
 }
@@ -99,7 +101,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 
 	writeJSON(w, http.StatusOK, chatResponse{
 		Output: out,
-		Usage:  &usageDTO{Input: usage.Input, Output: usage.Output},
+		Usage:  &wire.Usage{Input: usage.Input, Output: usage.Output},
 	})
 }
 

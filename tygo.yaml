@@ -3,3 +3,5 @@ packages:
   - path: "github.com/Federicoand98/mani/server/workspace"
     include_files: ["dto.go"]
     output_path: "../../web/src/lib/api/types.ts" # relative to server/workspace, where go generate runs
+  - path: "github.com/Federicoand98/mani/server/wire"
+    output_path: "../../web/src/lib/api/wire.ts"

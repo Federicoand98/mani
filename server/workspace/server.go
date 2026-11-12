@@ -28,10 +28,11 @@ type Server struct {
 
 	mu     sync.Mutex // serialises writes to config.json and auth.json
 	device deviceFlow
+	chats  *chats
 }
 
 func New(opt Options) *Server {
-	s := &Server{opt: opt, auth: newSessions(opt.Token, opt.OnLogin)}
+	s := &Server{opt: opt, auth: newSessions(opt.Token, opt.OnLogin), chats: newChats(opt.Dir)}
 	if opt.Assets != nil {
 		if fi, err := fs.Stat(opt.Assets, "index.html"); err == nil && !fi.IsDir() {
 			s.built = true
@@ -53,12 +54,23 @@ func (s *Server) Handler() http.Handler {
 	s.api(mux, "GET /api/providers/{name}/models", s.handleProviderModels)
 	s.api(mux, "POST /api/providers/copilot/device", s.handleDeviceStart)
 	s.api(mux, "GET /api/providers/copilot/device", s.handleDeviceStatus)
+	s.api(mux, "GET /api/conversations", s.handleListConversations)
+	s.api(mux, "POST /api/conversations", s.handleCreateConversation)
+	s.api(mux, "GET /api/conversations/{id}", s.handleGetConversation)
+	s.api(mux, "PATCH /api/conversations/{id}", s.handlePatchConversation)
+	s.api(mux, "DELETE /api/conversations/{id}", s.handleDeleteConversation)
+	s.api(mux, "GET /api/conversations/{id}/ws", s.handleChatSocket)
 	s.api(mux, "/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
 	})
 	mux.HandleFunc("/", s.handleStatic)
 
 	return hostCheck(securityHeaders(mux))
+}
+
+// Close stops the replies being written; each saves what it has.
+func (s *Server) Close() {
+	s.chats.close()
 }
 
 // api registers an endpoint that needs a signed-in browser.

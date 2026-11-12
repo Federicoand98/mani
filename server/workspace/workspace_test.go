@@ -21,6 +21,7 @@ const host = "127.0.0.1:7878"
 
 type fixture struct {
 	t      *testing.T
+	dir    string
 	h      http.Handler
 	cookie *http.Cookie
 
@@ -42,12 +43,14 @@ func newFixture(t *testing.T) *fixture {
 	for _, k := range []string{"MANI_PROVIDER", "MANI_MODEL"} {
 		os.Unsetenv(k)
 	}
-	f := &fixture{t: t}
-	f.h = New(Options{Dir: "/work", Version: "test", Assets: assets, Token: "tok", OnLogin: func(n string) {
+	f := &fixture{t: t, dir: t.TempDir()}
+	srv := New(Options{Dir: f.dir, Version: "test", Assets: assets, Token: "tok", OnLogin: func(n string) {
 		f.mu.Lock()
 		f.next = n
 		f.mu.Unlock()
-	}}).Handler()
+	}})
+	t.Cleanup(srv.Close)
+	f.h = srv.Handler()
 	f.cookie = f.login("tok")
 	if f.cookie == nil {
 		t.Fatal("login with the right token gave no cookie")
@@ -116,7 +119,7 @@ func TestAPI_NeedsTheSessionCookie(t *testing.T) {
 	}
 
 	var h Health
-	if code := f.do("GET", "/api/health", "", &h); code != 200 || h.Dir != "/work" || h.Version != "test" {
+	if code := f.do("GET", "/api/health", "", &h); code != 200 || h.Dir != f.dir || h.Version != "test" {
 		t.Errorf("with cookie: %d %+v", code, h)
 	}
 }

@@ -16,7 +16,12 @@ export const paths = {
 	chat: '<path d="M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>',
 	agent: '<rect x="3" y="5" width="14" height="11" rx="3"/><path d="M10 2v3M7 10v1M13 10v1"/>',
 	runs: '<path d="M4 5h12M4 10h12M4 15h8"/>',
-	flow: '<circle cx="4.5" cy="10" r="2"/><circle cx="15.5" cy="5" r="2"/><circle cx="15.5" cy="15" r="2"/><path d="M6.5 10h3l4-4M9.5 10l4 4"/>'
+	flow: '<circle cx="4.5" cy="10" r="2"/><circle cx="15.5" cy="5" r="2"/><circle cx="15.5" cy="15" r="2"/><path d="M6.5 10h3l4-4M9.5 10l4 4"/>',
+	pencil: '<path d="M4 16l1-4 8-8 3 3-8 8z"/>',
+	trash: '<path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11"/>',
+	image: '<rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="M17 13l-4-4-7 7"/>',
+	send: '<path d="M3 10l14-6-5 14-2-6z"/>',
+	stop: '<rect x="5" y="5" width="10" height="10" rx="1.5"/>'
 } as const;
 
 export type IconName = keyof typeof paths;

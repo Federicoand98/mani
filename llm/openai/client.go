@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,6 +170,14 @@ func (c *Client) readSSE(body io.Reader, h core.TokenHandler) (core.LLMResponse,
 	return assemble(text.String(), calls, stop, usage), nil
 }
 
+// orNil keeps an empty text out of the JSON, as omitempty did when Content was a string.
+func orNil(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func mapMessages(msgs []core.Message) []oaiMessage {
 	result := make([]oaiMessage, 0, len(msgs))
 	for _, msg := range msgs {
@@ -181,16 +190,29 @@ func mapMessages(msgs []core.Message) []oaiMessage {
 					text += tb.Text
 				}
 			}
-			result = append(result, oaiMessage{Role: "system", Content: text})
+			result = append(result, oaiMessage{Role: "system", Content: orNil(text)})
 
 		case core.RoleUser:
 			var text string
+			var images []oaiPart
 			for _, b := range msg.Content {
-				if tb, ok := b.(core.TextBlock); ok {
-					text += tb.Text
+				switch bc := b.(type) {
+				case core.TextBlock:
+					text += bc.Text
+				case core.ImageBlock:
+					url := "data:" + bc.MediaType + ";base64," + base64.StdEncoding.EncodeToString(bc.Data)
+					images = append(images, oaiPart{Type: "image_url", ImageURL: &oaiImageURL{URL: url}})
 				}
 			}
-			result = append(result, oaiMessage{Role: "user", Content: text})
+			if len(images) == 0 {
+				result = append(result, oaiMessage{Role: "user", Content: orNil(text)})
+				break
+			}
+			parts := images
+			if text != "" {
+				parts = append([]oaiPart{{Type: "text", Text: text}}, images...)
+			}
+			result = append(result, oaiMessage{Role: "user", Content: parts})
 
 		case core.RoleAssistant:
 			// testo e tool_calls vanno nello stesso messaggio
@@ -211,7 +233,7 @@ func mapMessages(msgs []core.Message) []oaiMessage {
 			}
 			result = append(result, oaiMessage{
 				Role:      "assistant",
-				Content:   text,
+				Content:   orNil(text),
 				ToolCalls: calls,
 			})
 
@@ -225,7 +247,7 @@ func mapMessages(msgs []core.Message) []oaiMessage {
 					}
 					result = append(result, oaiMessage{
 						Role:       "tool",
-						Content:    content,
+						Content:    orNil(content),
 						ToolCallID: tr.ToolUseID,
 					})
 				}

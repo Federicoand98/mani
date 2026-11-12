@@ -361,7 +361,7 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 		defer close(ch)
 		defer cancel()
 
-		res, err := r.agent.Run(runCtx, sess.Memory(), input, em)
+		res, err := r.agent.Run(runCtx, sess.Memory(), input, em, attachments...)
 
 		switch {
 		case errors.Is(err, context.Canceled):

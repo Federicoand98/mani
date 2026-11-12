@@ -73,7 +73,9 @@ func runWeb(ctx context.Context, args []string) error {
 		defer cancel()
 		_ = hs.Shutdown(sctx)
 	}()
-	if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err = hs.Serve(ln)
+	srv.Close() // replies still being written stop and save what they have
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

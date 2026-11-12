@@ -149,6 +149,11 @@ cookie, every `/api` request answers `401`.
 
 A busy port is reported with the port in the message; pass another `--addr`.
 
+Conversations started in the console are saved in `<dir>/.mani/sessions`, one JSON file each.
+The first one creates `<dir>/.mani/.gitignore`, so they stay out of git without touching the
+project's own ignore file. A reply in progress keeps running when the browser tab closes, and
+stopping `mani web` stops it and saves what was written.
+
 ## `mani init`
 
 | Flag | Default | Meaning |

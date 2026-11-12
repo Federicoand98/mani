@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -81,8 +82,13 @@ func mapMessages(msgs []core.Message) (string, []antMessage) {
 		case core.RoleUser:
 			var blocks []antContent
 			for _, b := range msg.Content {
-				if tb, ok := b.(core.TextBlock); ok {
-					blocks = append(blocks, antContent{Type: "text", Text: tb.Text})
+				switch bc := b.(type) {
+				case core.TextBlock:
+					blocks = append(blocks, antContent{Type: "text", Text: bc.Text})
+				case core.ImageBlock:
+					blocks = append(blocks, antContent{Type: "image", Source: &antSource{
+						Type: "base64", MediaType: bc.MediaType, Data: base64.StdEncoding.EncodeToString(bc.Data),
+					}})
 				}
 			}
 			out = append(out, antMessage{Role: "user", Content: blocks})

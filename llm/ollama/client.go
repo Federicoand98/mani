@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -248,6 +249,9 @@ func mapMessagesToOllama(messages []core.Message) []ollamaMessage {
 			switch b := block.(type) {
 			case core.TextBlock:
 				om.Content += b.Text
+
+			case core.ImageBlock:
+				om.Images = append(om.Images, base64.StdEncoding.EncodeToString(b.Data))
 
 			case core.ToolUseBlock:
 				om.ToolCalls = append(om.ToolCalls, ollamaToolCall{

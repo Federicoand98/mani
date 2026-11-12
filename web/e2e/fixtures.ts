@@ -15,11 +15,42 @@ export type Mani = {
 	home: string; // where config.json and auth.json live for this test
 };
 
+// A fake Ollama: two models, and /api/chat streaming one word per chunk. A
+// message containing "slow" streams a word every 400 ms; one containing "code"
+// gets a fenced code block back. /__last returns the last chat request.
 function fakeOllama(): Promise<Server> {
+	let last = '';
 	const s = createServer((req, res) => {
 		if (req.url === '/api/tags') {
 			res.setHeader('Content-Type', 'application/json');
 			res.end(JSON.stringify({ models: [{ name: 'qwen3.5:9b' }, { name: 'llama3.2:3b' }] }));
+			return;
+		}
+		if (req.url === '/__last') {
+			res.end(last);
+			return;
+		}
+		if (req.url === '/api/chat') {
+			let body = '';
+			req.on('data', (d) => (body += d));
+			req.on('end', async () => {
+				last = body;
+				const msgs = JSON.parse(body).messages as { role: string; content: string }[];
+				const said = msgs.filter((m) => m.role === 'user').at(-1)?.content ?? '';
+				const reply = said.includes('code')
+					? 'Here it is:\n\n```js\nconsole.log(1)\n```'
+					: said.includes('slow')
+						? 'One two three four five six seven eight nine ten'
+						: 'Hello there, friend';
+				const words = reply.split(/(?<= )/);
+				res.setHeader('Content-Type', 'application/x-ndjson');
+				for (const w of words) {
+					if (res.destroyed) return;
+					res.write(JSON.stringify({ message: { role: 'assistant', content: w }, done: false }) + '\n');
+					await new Promise((r) => setTimeout(r, said.includes('slow') ? 400 : 10));
+				}
+				res.end(JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 12, eval_count: 4 }) + '\n');
+			});
 			return;
 		}
 		res.statusCode = 404;
@@ -58,3 +89,16 @@ export const test = base.extend<{ mani: Mani }>({
 });
 
 export { expect } from '@playwright/test';
+
+/** Signs in and adds the fake Ollama through the API, for tests about other pages. */
+export async function signInWithOllama(page: import('@playwright/test').Page, mani: Mani) {
+	await page.goto(mani.link);
+	const status = await page.evaluate(
+		(url) =>
+			fetch('/api/providers/ollama', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseUrl: url }) }).then(
+				(r) => r.status
+			),
+		mani.ollama
+	);
+	if (status !== 200) throw new Error(`adding the fake Ollama answered ${status}`);
+}

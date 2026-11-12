@@ -34,7 +34,7 @@ describe('call', () => {
 
 	it('reports status 0 when mani does not answer', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
-		const err = await call('GET', '/health').catch((e) => e);
+		const err = (await call('GET', '/health').catch((e) => e)) as ApiError;
 		expect(err).toBeInstanceOf(ApiError);
 		expect(err.status).toBe(0);
 	});

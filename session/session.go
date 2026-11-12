@@ -31,6 +31,7 @@ type Session struct {
 	ID        string
 	Title     string
 	Model     string
+	Provider  string // empty in sessions written before it existed
 	Plan      []PlanStep
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -53,7 +54,9 @@ func (s *Session) Memory() core.Memory { return s.memory }
 
 func (s *Session) touch() {
 	s.UpdatedAt = time.Now()
-	if s.Title == "" {
+	// A session saved before its first message gets the placeholder; keep
+	// deriving until a user message gives it a real title.
+	if s.Title == "" || s.Title == noTitle {
 		s.Title = deriveTitle(s.memory.Messages())
 	}
 }
@@ -81,5 +84,7 @@ func deriveTitle(msgs []core.Message) string {
 		}
 	}
 
-	return "(no title)"
+	return noTitle
 }
+
+const noTitle = "(no title)"
