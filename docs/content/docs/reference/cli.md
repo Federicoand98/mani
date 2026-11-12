@@ -10,6 +10,7 @@ mani run --config         one task, the trigger daemon, or a flow
 mani batch --config       one agent over a JSONL file of tasks
 mani serve --config       expose the agent over HTTP and WebSocket
 mani mcp --config         expose the agent to MCP clients over stdio
+mani web                  open the browser console on a folder
 mani init                 scaffold a commented agent.yaml
 mani validate --config    check a manifest or a flow without running it
 mani runs --config        list past runs, or replay one as a timeline
@@ -24,7 +25,7 @@ progress, warnings, the summary of a batch, logs. A run can be piped into `jq` w
 anything out, and `mani mcp` can speak JSON-RPC on stdout without a stray log line breaking the
 client.
 
-Logs are quiet by default for `run` and `batch`, go to stderr for `serve` and `mcp`, and go to
+Logs are quiet by default for `run`, `batch` and `web`, go to stderr for `serve` and `mcp`, and go to
 `~/.config/mani/mani.log` for the chat. `--verbose` moves them to stderr.
 
 ## Exit codes
@@ -121,6 +122,32 @@ claude mcp add reviewer -- mani mcp --config /absolute/path/to/reviewer.yaml
 
 Under `mani mcp` the name is required and must match `^[a-zA-Z0-9_-]{1,64}$`, which is stricter
 than MCP itself: clients pass tool names to model APIs that refuse anything else.
+
+## `mani web`
+
+Opens the console in the browser for the agents of a folder.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--dir PATH` | `.` | the folder the console manages |
+| `--addr HOST:PORT` | `127.0.0.1:7878` | listen address; loopback only |
+| `--no-open` | `false` | print the link without opening a browser |
+| `--verbose` | `false` | logs to stderr |
+
+```bash
+mani web
+mani web --dir ~/agents --addr 127.0.0.1:8080 --no-open
+```
+
+Any address that is not this machine (`127.0.0.1`, `localhost`, `::1`) is a usage error: the
+console drives agents that can run commands, and it is not meant to be reachable from the
+network.
+
+Each start prints a link with a one-time token. The first browser to open it gets a session
+cookie, the token is replaced, and mani prints a fresh link for another browser. Without the
+cookie, every `/api` request answers `401`.
+
+A busy port is reported with the port in the message; pass another `--addr`.
 
 ## `mani init`
 

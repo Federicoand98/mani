@@ -1,0 +1,463 @@
+/* The design system's components as classes: buttons, fields, badges, cards,
+   tables, segmented controls, banners. Pages add their own scoped styles. */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+html,
+body {
+	margin: 0;
+}
+body {
+	background: var(--bg);
+	color: var(--tx);
+	font-family: var(--f-ui);
+	font-size: 16px;
+	line-height: 24px;
+	-webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3,
+p {
+	margin: 0;
+}
+h1 {
+	font-size: 28px;
+	line-height: 36px;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+h2 {
+	font-size: 20px;
+	line-height: 28px;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+h3 {
+	font-size: 16px;
+	line-height: 24px;
+	font-weight: 700;
+}
+a {
+	color: var(--pr);
+}
+a:hover {
+	color: var(--prh);
+}
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+code,
+.mono {
+	font-family: var(--f-mono);
+	font-size: 13px;
+	line-height: 20px;
+}
+code {
+	background: var(--sk);
+	border-radius: 4px;
+	padding: 1px 6px;
+	font-size: 12.5px;
+}
+:focus-visible {
+	outline: 2px solid var(--pr);
+	outline-offset: 2px;
+}
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+.mu {
+	color: var(--mu);
+}
+.sm {
+	font-size: 14px;
+	line-height: 20px;
+}
+.cap {
+	font-size: 12px;
+	line-height: 16px;
+	font-weight: 500;
+	color: var(--mu);
+}
+.row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.stack {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.card {
+	background: var(--sf);
+	border: 1px solid var(--bd);
+	border-radius: var(--r-card);
+	padding: 20px;
+	min-width: 0;
+}
+.card.flush {
+	padding: 0;
+	overflow: hidden;
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	height: 40px;
+	padding: 0 16px;
+	border-radius: var(--r-field);
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: 600;
+	border: 1px solid transparent;
+	cursor: pointer;
+	white-space: nowrap;
+	text-decoration: none;
+	background: none;
+}
+.btn.primary {
+	background: var(--pr);
+	color: var(--onpr);
+}
+.btn.primary:hover {
+	background: var(--prh);
+	color: var(--onpr);
+}
+.btn.secondary {
+	background: var(--sf);
+	color: var(--tx);
+	border-color: var(--bs);
+}
+.btn.secondary:hover {
+	background: var(--sk);
+	color: var(--tx);
+}
+.btn.ghost {
+	color: var(--pr);
+}
+.btn.ghost:hover {
+	background: var(--prt);
+}
+.btn.danger {
+	background: var(--er);
+	color: var(--oner);
+}
+.btn.small {
+	height: 32px;
+	padding: 0 12px;
+	font-size: 13px;
+}
+.btn:disabled {
+	background: var(--sk);
+	color: var(--mu);
+	border-color: var(--bd);
+	cursor: not-allowed;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+.field > label,
+.label {
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: 600;
+}
+.input {
+	width: 100%;
+	height: 40px;
+	border: 1px solid var(--bs);
+	border-radius: var(--r-field);
+	background: var(--sf);
+	padding: 0 12px;
+	font-size: 14px;
+}
+.input.mono {
+	font-family: var(--f-mono);
+	font-size: 13px;
+}
+.input:focus {
+	outline: none;
+	border-color: var(--pr);
+	box-shadow: 0 0 0 2px var(--pr);
+}
+.input[aria-invalid='true'] {
+	border-color: var(--er);
+	box-shadow: 0 0 0 1px var(--er);
+}
+.input:disabled {
+	background: var(--sk);
+	color: var(--mu);
+	border-color: var(--bd);
+}
+.help {
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--mu);
+}
+.help.error {
+	color: var(--er);
+	font-weight: 600;
+}
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12px;
+	line-height: 16px;
+	font-weight: 700;
+	padding: 3px 10px 3px 8px;
+	border-radius: 999px;
+	background: var(--prt);
+	color: var(--pr);
+	white-space: nowrap;
+}
+.badge.local {
+	background: var(--set);
+	color: var(--se);
+}
+.badge.ok {
+	background: var(--okt);
+	color: var(--ok);
+}
+.badge.warn {
+	background: var(--wat);
+	color: var(--wa);
+}
+.badge.error {
+	background: var(--ert);
+	color: var(--er);
+}
+.badge.muted {
+	background: var(--sk);
+	color: var(--mu);
+}
+.dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: currentColor;
+	display: inline-block;
+}
+
+.seg {
+	display: inline-flex;
+	border: 1px solid var(--bs);
+	border-radius: var(--r-field);
+	overflow: hidden;
+	background: var(--sf);
+}
+.seg button {
+	height: 34px;
+	padding: 0 14px;
+	border: 0;
+	background: transparent;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.seg button + button {
+	border-left: 1px solid var(--bd);
+}
+.seg button[aria-pressed='true'] {
+	background: var(--prt);
+	color: var(--pr);
+}
+
+.table-wrap {
+	overflow-x: auto;
+	position: relative; /* contains .sr-only children, which would otherwise widen the page */
+}
+.table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+	line-height: 20px;
+}
+.table th {
+	text-align: left;
+	font-size: 12px;
+	line-height: 16px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--mu);
+	background: var(--sk);
+	padding: 0 16px;
+	height: 40px;
+	white-space: nowrap;
+}
+.table td {
+	padding: 12px 16px;
+	border-top: 1px solid var(--bd);
+	vertical-align: middle;
+}
+
+.banner {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	padding: 14px 16px;
+	border-radius: var(--r-card);
+	border: 1px solid;
+	font-size: 14px;
+	line-height: 20px;
+}
+.banner.error {
+	background: var(--ert);
+	border-color: var(--er);
+}
+.banner.ok {
+	background: var(--okt);
+	border-color: var(--ok);
+}
+.banner.info {
+	background: var(--prt);
+	border-color: var(--pr);
+}
+.banner svg {
+	flex: none;
+	margin-top: 1px;
+}
+
+.command {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	background: var(--code-bg);
+	color: var(--code-tx);
+	border-radius: var(--r-field);
+	padding: 6px 6px 6px 14px;
+	font-family: var(--f-mono);
+	font-size: 13px;
+	min-width: 0;
+}
+.command span {
+	flex: 1;
+	overflow-x: auto;
+	white-space: nowrap;
+}
+.command button {
+	flex: none;
+	background: #2e3347;
+	color: #eceef8;
+	border: 0;
+	border-radius: 6px;
+	height: 28px;
+	padding: 0 10px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.empty {
+	text-align: center;
+	padding: 48px 24px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+}
+.empty p {
+	max-width: 52ch;
+	color: var(--mu);
+	font-size: 14px;
+}
+.empty .icon {
+	width: 48px;
+	height: 48px;
+	border-radius: 12px;
+	background: var(--prt);
+	color: var(--pr);
+	display: grid;
+	place-items: center;
+}
+
+.skeleton {
+	background: linear-gradient(90deg, var(--sk), var(--bd), var(--sk));
+	background-size: 200% 100%;
+	animation: shimmer 1.2s infinite;
+	border-radius: 6px;
+	height: 14px;
+}
+@keyframes shimmer {
+	to {
+		background-position: -200% 0;
+	}
+}
+
+kbd {
+	font-family: var(--f-mono);
+	font-size: 11px;
+	border: 1px solid var(--bd);
+	border-bottom-width: 2px;
+	border-radius: 4px;
+	padding: 0 5px;
+	color: var(--mu);
+	background: var(--sf);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation: none !important;
+		transition: none !important;
+	}
+}
+:root.reduce * {
+	animation: none !important;
+	transition: none !important;
+}
+
+/* Dialogs (bits-ui renders them in a portal, so their classes are global). */
+.scrim {
+	position: fixed;
+	inset: 0;
+	background: var(--scrim);
+	z-index: 80;
+}
+.modal {
+	position: fixed;
+	left: 50%;
+	top: 12vh;
+	transform: translateX(-50%);
+	z-index: 81;
+	width: calc(100% - 32px);
+	max-width: 580px;
+	max-height: 80vh;
+	overflow: auto;
+	background: var(--sf);
+	border: 1px solid var(--bd);
+	border-radius: var(--r-modal);
+	box-shadow: var(--sh3);
+	padding: 24px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+.modal-foot {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}

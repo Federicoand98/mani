@@ -18,6 +18,9 @@ import (
 type ProviderConfig struct {
 	BaseURL string `json:"base_url"`
 	Model   string `json:"model,omitempty"`
+	// Enabled marks a provider the user added (from mani web). Providers have a
+	// default base URL whether or not anyone uses them, so presence alone says nothing.
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 type Config struct {
@@ -89,6 +92,30 @@ func SessionsDir() string { return filepath.Join(ConfigDir(), "sessions") }
 func ConfigPath() string  { return filepath.Join(ConfigDir(), "config.json") }
 
 func Load() (Config, error) {
+	cfg, err := loadFile(true)
+	if err != nil {
+		return cfg, err
+	}
+	applyEnv(&cfg)
+	return cfg, nil
+}
+
+// Update reads config.json without the MANI_* overrides, applies fn and writes it
+// back, so a value that only lives in the environment never lands in the file.
+func Update(fn func(*Config) error) error {
+	cfg, err := loadFile(false)
+	if err != nil {
+		return err
+	}
+	if err := fn(&cfg); err != nil {
+		return err
+	}
+	return Save(cfg)
+}
+
+// loadFile returns the defaults overlaid with config.json; create writes the
+// defaults out when the file does not exist yet.
+func loadFile(create bool) (Config, error) {
 	cfg := defaults()
 	path := ConfigPath()
 
@@ -111,6 +138,9 @@ func Load() (Config, error) {
 		}
 
 	case errors.Is(err, os.ErrNotExist):
+		if !create {
+			break
+		}
 		if werr := Save(cfg); werr != nil {
 			slog.Warn("config: creazione file fallita", "path", path, "err", werr)
 		}
@@ -119,7 +149,6 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("config: read %s: %w", path, err)
 	}
 
-	applyEnv(&cfg)
 	return cfg, nil
 }
 

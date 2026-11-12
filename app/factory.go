@@ -76,3 +76,19 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 
 	return NewRetryClient(client, 3, 500*time.Millisecond), nil
 }
+
+// ProviderModels builds a client for provider from cfg and auth and asks it for
+// the models it offers. It doubles as a connection test: an unreachable URL or a
+// rejected key comes back as the error, worded by the provider.
+func ProviderModels(ctx context.Context, cfg config.Config, auth config.Auth, provider string) ([]string, error) {
+	cfg.Provider = provider
+	client, err := newLLMClient(cfg, auth)
+	if err != nil {
+		return nil, err
+	}
+	ml, ok := client.(core.ModelLister)
+	if !ok {
+		return nil, fmt.Errorf("provider %s: cannot list models", provider)
+	}
+	return ml.ListModels(ctx)
+}

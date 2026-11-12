@@ -3,6 +3,9 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    # the console is embedded from web/build: build it before Go compiles
+    - npm ci --prefix web
+    - npm run build --prefix web
 
 builds:
   - id: mani

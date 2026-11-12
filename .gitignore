@@ -34,7 +34,7 @@ go.work.sum
 memory
 guide
 CLAUDE.md
-build
+/build
 
 # binari compilati degli esempi (go build dentro _examples/<dir>/)
 _examples/custom-tool/custom-tool
@@ -53,3 +53,11 @@ _examples/demo/queue/
 
 # binario compilato nella radice (go build ./cmd/mani)
 /mani
+
+# webapp: the build output is embedded, only the placeholder is tracked
+web/build/*
+!web/build/.gitkeep
+web/node_modules/
+web/.svelte-kit/
+web/test-results/
+web/playwright-report/

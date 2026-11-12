@@ -60,6 +60,37 @@ jobs:
       #       (cd "$dir" && go build ./... && go vet ./...)
       #     done
 
+  # The browser console: type check, unit tests, then end-to-end tests against
+  # the real binary with the console embedded.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: types are up to date with the Go DTOs
+        working-directory: .
+        run: go generate ./server/workspace/ && git diff --exit-code web/src/lib/api/types.ts
+      - name: build mani with the console
+        working-directory: .
+        run: CGO_ENABLED=0 go build -o build/mani ./cmd/mani
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   # mani ships an in-process scheduler precisely so it runs everywhere, and the
   # durable queue relies on os.Rename semantics — so the other OSes must be tested.
   # Not on every development push though: it's the slow, expensive half of the CI.

@@ -1,0 +1,5 @@
+# go generate ./server/workspace/ writes the console's API types from the Go DTOs.
+packages:
+  - path: "github.com/Federicoand98/mani/server/workspace"
+    include_files: ["dto.go"]
+    output_path: "../../web/src/lib/api/types.ts" # relative to server/workspace, where go generate runs

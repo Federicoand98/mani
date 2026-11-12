@@ -1,0 +1,95 @@
+/* The mani design system, v0.1: tokens only. Light values on :root, dark values
+   for the system preference unless light is chosen, and again for an explicit
+   dark choice, so the toggle in Settings wins both ways. */
+:root {
+	--bg: #f6f7fb;
+	--sf: #ffffff;
+	--sk: #eceef6;
+	--bd: #d9dce8;
+	--bs: #7c8299;
+	--tx: #14162b;
+	--mu: #4a4f6a;
+	--pr: #3730c9;
+	--prh: #2b25a8;
+	--prt: #e9e8fb;
+	--onpr: #ffffff;
+	--se: #0b6670;
+	--set: #ddf1f2;
+	--ok: #146c3a;
+	--okt: #e3f4ea;
+	--wa: #8f4306;
+	--wat: #fcefd9;
+	--er: #b3261e;
+	--ert: #fce8e6;
+	--oner: #ffffff;
+	--code-bg: #0e1018;
+	--code-tx: #eceef8;
+	--code-mu: #8c92ae;
+	--scrim: rgba(14, 16, 24, 0.55);
+	--sh2: 0 4px 16px rgba(20, 22, 43, 0.1);
+	--sh3: 0 16px 48px rgba(20, 22, 43, 0.22);
+
+	--f-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--f-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--r-field: 8px;
+	--r-card: 12px;
+	--r-modal: 16px;
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0e1018;
+		--sf: #171a26;
+		--sk: #0a0c12;
+		--bd: #2e3347;
+		--bs: #6b7190;
+		--tx: #eceef8;
+		--mu: #a3a9c2;
+		--pr: #9a97ff;
+		--prh: #b3b1ff;
+		--prt: #25244f;
+		--onpr: #0e1018;
+		--se: #5cc8d2;
+		--set: #12333a;
+		--ok: #5cd08a;
+		--okt: #11301e;
+		--wa: #f2b14c;
+		--wat: #3a2a0e;
+		--er: #ff8a80;
+		--ert: #3f1714;
+		--oner: #0e1018;
+		--code-bg: #0a0c12;
+		--sh2: 0 4px 16px rgba(0, 0, 0, 0.45);
+		--sh3: 0 16px 48px rgba(0, 0, 0, 0.6);
+		color-scheme: dark;
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #0e1018;
+	--sf: #171a26;
+	--sk: #0a0c12;
+	--bd: #2e3347;
+	--bs: #6b7190;
+	--tx: #eceef8;
+	--mu: #a3a9c2;
+	--pr: #9a97ff;
+	--prh: #b3b1ff;
+	--prt: #25244f;
+	--onpr: #0e1018;
+	--se: #5cc8d2;
+	--set: #12333a;
+	--ok: #5cd08a;
+	--okt: #11301e;
+	--wa: #f2b14c;
+	--wat: #3a2a0e;
+	--er: #ff8a80;
+	--ert: #3f1714;
+	--oner: #0e1018;
+	--code-bg: #0a0c12;
+	--sh2: 0 4px 16px rgba(0, 0, 0, 0.45);
+	--sh3: 0 16px 48px rgba(0, 0, 0, 0.6);
+	color-scheme: dark;
+}

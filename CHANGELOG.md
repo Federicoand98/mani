@@ -55,6 +55,31 @@ library.
   adapter written outside this repository can run the same checks. It now also covers
   `journal.Multi`, the fan-out the runtime actually uses, which no test covered before.
 
+- **`mani web`, a console in the browser (first milestone).** One command opens the browser on
+  the agents' folder: today it connects model providers and sets the theme; chat, agents, runs and
+  flows follow in later releases. It is served by the mani binary itself, with nothing to install
+  and no database: everything it shows lives in the files mani already uses.
+
+  ```bash
+  mani web                 # the current folder, http://127.0.0.1:7878, opens the browser
+  mani web --dir ~/agents --no-open
+  ```
+
+  It listens on loopback only and refuses any other address. Each start prints a one-time link;
+  opening it gives the browser a session cookie and the link stops working, so it is harmless in
+  the shell history. Requests carrying a foreign `Host` (DNS rebinding) or another `Origin` are
+  refused.
+
+  The **Providers** page starts empty and adds Ollama, OpenAI, Anthropic, OpenRouter or GitHub
+  Copilot: a provider is tested before it is saved, and a refusal is reported in the provider's
+  words with nothing saved and no other provider tried in its place. Keys go to `auth.json`, as
+  with `/login` in the TUI. A provider added from the browser is marked `"enabled": true` in
+  `config.json`; existing files read as before, with every provider not enabled, so the page
+  opens empty even for a TUI user with Ollama configured.
+
+  `go install` builds mani without the console, because the frontend is compiled by `make web`
+  and the release pipeline: `mani web` then shows a page saying so, and the API still answers.
+
 ### Changed
 
 - **`app/` is split into packages along its boundaries.** Breaking for library users, at the

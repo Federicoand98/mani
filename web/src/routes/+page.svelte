@@ -1,0 +1,79 @@
+<script lang="ts">
+	import Icon from '#lib/components/Icon.svelte';
+	import { m } from '#lib/messages/en.ts';
+	import { app, enabledProviders } from '#lib/state.svelte.ts';
+
+	const t = m.home;
+	const connected = $derived(enabledProviders().length);
+</script>
+
+<svelte:head><title>{t.title} · mani</title></svelte:head>
+
+<div>
+	<h1>{t.title}</h1>
+	{#if app.health}<p class="sm mu">{t.subtitle(app.health.dir)}</p>{/if}
+</div>
+
+<section class="card start">
+	<h2>{t.getStarted}</h2>
+	<a class="step" href="/providers">
+		<span class:done={connected > 0} class="tick"><Icon name={connected > 0 ? 'check' : 'circle'} /></span>
+		<span class="grow">
+			<b>{t.connect}</b>
+			<span class="sm mu">{connected > 0 ? t.connectDone(connected) : t.connectTodo}</span>
+		</span>
+		{#if connected > 0}<span class="cap">{t.done}</span>{/if}
+	</a>
+	<div class="next">
+		<span class="cap">{t.next}</span>
+		<ul>
+			{#each t.nextItems as item (item)}<li class="sm mu">{item}</li>{/each}
+		</ul>
+	</div>
+</section>
+
+<style>
+	.start {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		max-width: 640px;
+	}
+	.step {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px;
+		margin: 0 -12px;
+		border-radius: 10px;
+		color: var(--tx);
+		text-decoration: none;
+	}
+	.step:hover {
+		background: var(--sk);
+		color: var(--tx);
+	}
+	.step b {
+		display: block;
+		font-size: 15px;
+	}
+	.tick {
+		color: var(--bs);
+		display: grid;
+	}
+	.tick.done {
+		color: var(--ok);
+	}
+	.grow {
+		flex: 1;
+		min-width: 0;
+	}
+	.next {
+		border-top: 1px solid var(--bd);
+		padding-top: 12px;
+	}
+	.next ul {
+		margin: 6px 0 0;
+		padding-left: 20px;
+	}
+</style>

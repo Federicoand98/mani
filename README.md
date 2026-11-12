@@ -53,11 +53,19 @@ mani init                             # scaffold a commented agent.yaml
 mani validate --config agent.yaml     # check it without running anything
 mani run --config agent.yaml --task "hello"
 mani                                  # or just start the interactive chat
+mani web                              # or the console in the browser (release builds)
 ```
 
 Config lives in `~/.config/mani/config.json`; credentials never touch a manifest — they go in
 `$XDG_DATA_HOME/mani/auth.json` (default `~/.local/share/mani/auth.json`, mode 0600), managed
 with `/login` in the TUI.
+
+## In the browser
+
+`mani web` opens a console on the agents of a folder, served by the binary itself on
+`127.0.0.1:7878`. It starts with providers and settings; chat, agents, runs and flows arrive one
+milestone at a time ([plan](web/DEVELOPMENT.md)). The console ships in release builds and with
+`make build`; a plain `go install` leaves it out and says so.
 
 ## Inside your editor
 

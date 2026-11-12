@@ -42,7 +42,7 @@ func main() {
 	switch arg {
 	case "serve":
 		dest = "stderr"
-	case "run", "batch":
+	case "run", "batch", "web":
 		if hasFlag(os.Args, "verbose", "debug") {
 			dest = "stderr"
 		} else {
