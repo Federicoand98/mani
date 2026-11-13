@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/Federicoand98/mani/core"
 )
 
 type ProviderConfig struct {
@@ -28,22 +30,24 @@ type ProviderConfig struct {
 	// Label is the name the console shows for a custom provider.
 	Label string `json:"label,omitempty"`
 	// Models, when set, is the list offered, for endpoints that do not list theirs.
-	Models []string `json:"models,omitempty"`
+	Models      []string                    `json:"models,omitempty"`
+	ModelLimits map[string]core.ModelLimits `json:"model_limits,omitempty"`
 }
 
 // Custom reports whether the provider is one the user declared, not one of mani's.
 func (p ProviderConfig) Custom() bool { return p.Type != "" }
 
 type Config struct {
-	Provider      string                    `json:"provider"`
-	Providers     map[string]ProviderConfig `json:"providers"`
-	UI            string                    `json:"ui"`
-	Thinking      bool                      `json:"thinking"`
-	Debug         bool                      `json:"debug"`
-	ContextWindow int                       `json:"context_window"`
-	MaxIterations int                       `json:"max_iterations"`
-	LegacyModel   string                    `json:"legacy_model,omitempty"`
-	LogLevel      string                    `json:"log_level"` // error | warn | info | debug
+	Provider        string                    `json:"provider"`
+	Providers       map[string]ProviderConfig `json:"providers"`
+	UI              string                    `json:"ui"`
+	Thinking        bool                      `json:"thinking"`
+	Debug           bool                      `json:"debug"`
+	ContextWindow   int                       `json:"context_window"`
+	MaxOutputTokens int                       `json:"max_output_tokens"`
+	MaxIterations   int                       `json:"max_iterations"`
+	LegacyModel     string                    `json:"legacy_model,omitempty"`
+	LogLevel        string                    `json:"log_level"` // error | warn | info | debug
 }
 
 func defaults() Config {
@@ -56,12 +60,12 @@ func defaults() Config {
 			"copilot":    {BaseURL: "https://api.githubcopilot.com"},
 			"openrouter": {BaseURL: "https://openrouter.ai/api/v1"},
 		},
-		UI:            "tui",
-		Thinking:      true,
-		Debug:         true,
-		ContextWindow: 1500000,
-		MaxIterations: 10,
-		LogLevel:      "debug",
+		UI:              "tui",
+		Thinking:        true,
+		Debug:           true,
+		MaxOutputTokens: 4096,
+		MaxIterations:   10,
+		LogLevel:        "debug",
 	}
 }
 
@@ -187,6 +191,19 @@ func applyEnv(c *Config) {
 	if v, ok := os.LookupEnv("MANI_CONTEXT_WINDOW"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.ContextWindow = n
+			pc := c.Providers[c.Provider]
+			if pc.ModelLimits == nil {
+				pc.ModelLimits = make(map[string]core.ModelLimits)
+			}
+			limits := pc.ModelLimits[pc.Model]
+			limits.ContextWindow = n
+			pc.ModelLimits[pc.Model] = limits
+			c.Providers[c.Provider] = pc
+		}
+	}
+	if v, ok := os.LookupEnv("MANI_MAX_OUTPUT_TOKENS"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.MaxOutputTokens = n
 		}
 	}
 

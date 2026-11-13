@@ -52,7 +52,9 @@ func runTUI(ctx context.Context, cfg config.Config) error {
 	}
 
 	app.RegistrerContextInjection(runtime, ws)
-	app.RegisterTrimCompaction(runtime, 20)
+	if err := app.RegisterContextManagement(runtime, true, 2, 0); err != nil {
+		return err
+	}
 	app.RegisterPlanning(runtime)
 	app.RegisterSubagents(runtime, 3)
 	app.RegisterTracing(runtime)

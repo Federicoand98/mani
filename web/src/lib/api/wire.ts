@@ -53,6 +53,18 @@ export interface Usage {
   input: number /* int */;
   output: number /* int */;
 }
+export interface Context {
+  estimated_input: number /* int */;
+  input_budget: number /* int */;
+  output_limit: number /* int */;
+  context_window: number /* int */;
+  max_input_tokens: number /* int */;
+  max_output_tokens: number /* int */;
+  limit_source: string;
+  last_input?: number /* int */;
+  state: string;
+  compacted: boolean;
+}
 export interface PermissionRequest {
   request_id: string;
   tool_name: string;

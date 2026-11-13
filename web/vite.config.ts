@@ -5,7 +5,8 @@ import { defineConfig } from 'vite';
 
 // The console is a single-page app served by mani itself: no server-side
 // rendering, every route falls back to index.html, and mani serves build/.
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+	resolve: mode === 'test' ? { conditions: ['browser'] } : undefined,
 	plugins: [sveltekit({ adapter: adapter({ fallback: 'index.html' }) })],
 	server: {
 		// In development, start `mani web --no-open`, open its link once to get the
@@ -16,4 +17,4 @@ export default defineConfig({
 		include: ['src/**/*.test.ts'],
 		environment: 'jsdom'
 	}
-});
+}));

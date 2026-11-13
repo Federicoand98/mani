@@ -110,7 +110,9 @@ func modelRuntime(cfg config.Config, store session.Store, keep int) (*app.Runtim
 	if err := rt.ClientErr(); err != nil {
 		return nil, err
 	}
-	app.RegisterTrimCompaction(rt, keep)
+	if err := app.RegisterContextManagement(rt, true, 2, 0); err != nil {
+		return nil, err
+	}
 	return rt, nil
 }
 
@@ -315,6 +317,7 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 
 func (c *chats) toDTO(sess *session.Session) Conversation {
 	out := Conversation{
+		Context: sess.Context,
 		ConversationMeta: ConversationMeta{
 			ID: sess.ID, Title: sess.Title, Provider: sess.Provider, Model: sess.Model, Agent: sess.Agent,
 			UpdatedAt: sess.UpdatedAt.UTC().Format(time.RFC3339), Running: c.running(sess.ID),

@@ -30,6 +30,10 @@ func agentOllama(t *testing.T) string {
 			_, _ = w.Write([]byte(`{"models":[{"name":"m"}]}`))
 			return
 		}
+		if r.URL.Path == "/api/show" {
+			_, _ = w.Write([]byte(`{"model_info":{"llama.context_length":8192}}`))
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
 			Messages []struct {
@@ -243,7 +247,7 @@ func TestAgentChat_AReopenedTabCanAnswer(t *testing.T) {
 	}
 }
 
-func TestAgentChat_TheRuntimeIsSharedUntilTheFileChanges(t *testing.T) {
+func TestAgentChat_TheRuntimeIsSharedUntilFileOrSettingsChange(t *testing.T) {
 	e := newAgentEnv(t)
 	var builds atomic.Int32
 	orig := buildAgent
@@ -271,10 +275,82 @@ func TestAgentChat_TheRuntimeIsSharedUntilTheFileChanges(t *testing.T) {
 	if n := builds.Load(); n != 1 {
 		t.Errorf("builds for one unchanged agent = %d, want 1", n)
 	}
-	write(t, e.dir, "agent.yaml", agentYAML+"limits:\n  max_tool_calls: 5\n")
+	var apiError APIError
+	if code := e.api("PUT", "/api/settings", `{"maxOutputTokens":0}`, &apiError); code != 400 {
+		t.Fatalf("invalid settings: %d", code)
+	}
+	if code := e.api("PUT", "/api/providers/ollama", `{"modelLimits":{"m":{"context_window":-1}}}`, &apiError); code != 400 {
+		t.Fatalf("invalid model limits: %d", code)
+	}
 	say(a)
-	if n := builds.Load(); n != 2 {
-		t.Errorf("builds after the file changed = %d, want 2", n)
+	if n := builds.Load(); n != 1 {
+		t.Errorf("rejected settings invalidated the runtime: %d builds", n)
+	}
+	var settings Settings
+	if code := e.api("PUT", "/api/settings", `{"maxOutputTokens":128}`, &settings); code != 200 {
+		t.Fatalf("save requested output: %d", code)
+	}
+	say(a)
+	var got Conversation
+	e.api("GET", "/api/conversations/"+a.ID, "", &got)
+	if builds.Load() != 2 || got.Context == nil || got.Context.OutputLimit != 128 {
+		t.Fatalf("settings did not reach rebuilt runtime: builds=%d, context=%+v", builds.Load(), got.Context)
+	}
+	var provider Provider
+	if code := e.api("PUT", "/api/providers/ollama", `{"modelLimits":{"m":{"context_window":1024}}}`, &provider); code != 200 {
+		t.Fatalf("save model limits: %d", code)
+	}
+	say(a)
+	e.api("GET", "/api/conversations/"+a.ID, "", &got)
+	if builds.Load() != 3 || got.Context == nil || got.Context.InputBudget != 896 {
+		t.Fatalf("model limits did not reach rebuilt runtime: builds=%d, context=%+v", builds.Load(), got.Context)
+	}
+	write(t, e.dir, "agent.yaml", agentYAML+"limits:\n  max_tool_calls: 5\n  max_output_tokens: 64\n")
+	say(a)
+	e.api("GET", "/api/conversations/"+a.ID, "", &got)
+	if n := builds.Load(); n != 4 {
+		t.Errorf("builds after the file changed = %d, want 4", n)
+	}
+	if got.Context == nil || got.Context.OutputLimit != 64 || got.Context.InputBudget != 960 {
+		t.Fatalf("explicit manifest output did not override requested output: %+v", got.Context)
+	}
+}
+
+func TestAgentRuntimeInvalidationKeepsActiveReferencesUntilRelease(t *testing.T) {
+	e := newAgentEnv(t)
+	s := New(Options{Dir: e.dir, Token: "tok"})
+	t.Cleanup(s.Close)
+	old, release, err := s.acquireAgent(context.Background(), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	_, releaseOther, err := s.acquireAgent(context.Background(), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseOther()
+	entry := s.agents.m["agent.yaml"]
+	s.agents.invalidate()
+	if !entry.stale || entry.refs != 2 || len(s.agents.m) != 0 {
+		t.Fatalf("active runtime was not safely retired: %+v", entry)
+	}
+	next, releaseNext, err := s.acquireAgent(context.Background(), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseNext()
+	if old == next {
+		t.Fatal("the next turn acquired the retired runtime")
+	}
+	release()
+	release()
+	if entry.refs != 1 {
+		t.Fatalf("release was not idempotent: %d", entry.refs)
+	}
+	releaseOther()
+	if entry.refs != 0 {
+		t.Fatalf("active references remain: %d", entry.refs)
 	}
 }
 

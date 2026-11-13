@@ -1,9 +1,8 @@
 import { test as base } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const BIN = process.env.MANI_BIN ?? resolve(import.meta.dirname, '../../build/mani');
@@ -20,14 +19,30 @@ export type Mani = {
 // gets a fenced code block back. /__last returns the last chat request.
 function fakeOllama(): Promise<Server> {
 	let last = '';
+	const requests: unknown[] = [];
 	const s = createServer((req, res) => {
 		if (req.url === '/api/tags') {
 			res.setHeader('Content-Type', 'application/json');
 			res.end(JSON.stringify({ models: [{ name: 'qwen3.5:9b' }, { name: 'llama3.2:3b' }] }));
 			return;
 		}
+		if (req.url === '/api/show') {
+			let body = '';
+			req.on('data', (d) => (body += d));
+			req.on('end', () => {
+				const model = JSON.parse(body).model;
+				res.setHeader('Content-Type', 'application/json');
+				res.end(JSON.stringify({ model_info: model === 'unknown-model' ? {} : { 'llama.context_length': 8192 } }));
+			});
+			return;
+		}
 		if (req.url === '/__last') {
 			res.end(last);
+			return;
+		}
+		if (req.url === '/__requests') {
+			res.setHeader('Content-Type', 'application/json');
+			res.end(JSON.stringify(requests));
 			return;
 		}
 		if (req.url === '/api/chat') {
@@ -35,7 +50,17 @@ function fakeOllama(): Promise<Server> {
 			req.on('data', (d) => (body += d));
 			req.on('end', async () => {
 				last = body;
-				const msgs = JSON.parse(body).messages as { role: string; content: string }[];
+				const request = JSON.parse(body);
+				requests.push(request);
+				if (request.stream === false) {
+					res.setHeader('Content-Type', 'application/json');
+					res.end(JSON.stringify({
+						message: { role: 'assistant', content: 'Hello there, friend' }, done: true,
+						done_reason: 'stop', prompt_eval_count: 12, eval_count: 4
+					}));
+					return;
+				}
+				const msgs = request.messages as { role: string; content: string }[];
 				const said = msgs.filter((m) => m.role === 'user').at(-1)?.content ?? '';
 				// A model that uses tools: "read notes" reads notes.txt, "run" runs a
 				// command; after a tool result it reports it.
@@ -79,7 +104,9 @@ function fakeOllama(): Promise<Server> {
 
 export const test = base.extend<{ mani: Mani }>({
 	mani: async ({}, use) => {
-		const home = mkdtempSync(join(tmpdir(), 'mani-e2e-'));
+		const root = resolve(import.meta.dirname, '../test-results/runtime');
+		mkdirSync(root, { recursive: true });
+		const home = mkdtempSync(join(root, 'mani-e2e-'));
 		const ollama = await fakeOllama();
 		const port = 17000 + Math.floor(Math.random() * 2000);
 		const proc = spawn(BIN, ['web', '--no-open', '--addr', `127.0.0.1:${port}`, '--dir', home], {

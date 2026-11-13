@@ -80,8 +80,10 @@ type ContextSpec struct {
 }
 
 type CompactionCfg struct {
-	Enabled bool `yaml:"enabled"`
-	Keep    int  `yaml:"keep"`
+	Enabled   bool   `yaml:"enabled"`
+	Keep      int    `yaml:"keep"`
+	Mode      string `yaml:"mode,omitempty"`
+	KeepTurns int    `yaml:"keep_turns,omitempty"`
 }
 
 // --- 4. output ---
@@ -129,12 +131,13 @@ type NetworkSpec struct {
 // --- 6. limits ---
 
 type LimitsSpec struct {
-	MaxTokens     int    `yaml:"max_tokens"`
-	MaxToolCalls  int    `yaml:"max_tool_calls"`
-	MaxDuration   string `yaml:"max_duration"`
-	MaxIterations int    `yaml:"max_iterations"`
-	ToolTimeout   string `yaml:"tool_timeout"`
-	SubagentDepth int    `yaml:"subagent_depth"`
+	MaxTokens       int    `yaml:"max_tokens"`
+	MaxOutputTokens int    `yaml:"max_output_tokens,omitempty"`
+	MaxToolCalls    int    `yaml:"max_tool_calls"`
+	MaxDuration     string `yaml:"max_duration"`
+	MaxIterations   int    `yaml:"max_iterations"`
+	ToolTimeout     string `yaml:"tool_timeout"`
+	SubagentDepth   int    `yaml:"subagent_depth"`
 }
 
 // --- 7. run ---

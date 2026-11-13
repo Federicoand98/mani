@@ -4,7 +4,10 @@
 // structs into TypeScript for the console.
 package wire
 
-import "github.com/Federicoand98/mani/app"
+import (
+	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/core"
+)
 
 // ClientMsg is what a client sends.
 type ClientMsg struct {
@@ -51,6 +54,19 @@ type Usage struct {
 	Output int `json:"output"`
 }
 
+type Context struct {
+	EstimatedInput  int    `json:"estimated_input"`
+	InputBudget     int    `json:"input_budget"`
+	OutputLimit     int    `json:"output_limit"`
+	ContextWindow   int    `json:"context_window"`
+	MaxInputTokens  int    `json:"max_input_tokens"`
+	MaxOutputTokens int    `json:"max_output_tokens"`
+	LimitSource     string `json:"limit_source"`
+	LastInput       *int   `json:"last_input,omitempty"`
+	State           string `json:"state"`
+	Compacted       bool   `json:"compacted"`
+}
+
 type PermissionRequest struct {
 	RequestID string         `json:"request_id"`
 	ToolName  string         `json:"tool_name"`
@@ -90,6 +106,13 @@ func FromEvent(ev app.Event) (ServerMsg, bool) {
 	case app.EventUsage:
 		p := ev.Payload.(app.UsagePayload)
 		return ServerMsg{Type: "usage", Payload: Usage{Input: p.Input, Output: p.Output}}, true
+	case app.EventContext:
+		p := ev.Payload.(core.ContextUsage)
+		return ServerMsg{Type: "context", Payload: Context{
+			EstimatedInput: p.EstimatedInput, InputBudget: p.InputBudget, OutputLimit: p.OutputLimit,
+			ContextWindow: p.ContextWindow, MaxInputTokens: p.MaxInputTokens, MaxOutputTokens: p.MaxOutputTokens,
+			LimitSource: p.LimitSource, LastInput: p.LastInput, State: p.State, Compacted: p.Compacted,
+		}}, true
 	case app.EventDone:
 		return ServerMsg{Type: "done"}, true
 	case app.EventCancelled:

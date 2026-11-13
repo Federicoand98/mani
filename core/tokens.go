@@ -1,6 +1,9 @@
 package core
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // EstimateTokens da una stima GREZZA dei token di un insieme di messaggi.
 // Euristica: ~4 caratteri = 1 token (stima di imprecisione +- 20%) ma sufficiente per decidere quando si è al limite del contesto.
@@ -27,4 +30,15 @@ func EstimateTokens(messages []Message) int {
 	}
 
 	return chars / 4
+}
+
+// EstimateRequestTokens is an estimate, not a model-specific tokenizer.
+// Include tool schemas and protocol overhead; retain a margin for the text heuristic.
+func EstimateRequestTokens(messages []Message, tools []ToolDefinition) (int, error) {
+	encoded, err := json.Marshal(tools)
+	if err != nil {
+		return 0, fmt.Errorf("estimate tool schemas: %w", err)
+	}
+	n := EstimateTokens(messages) + (len(encoded)+3)/4 + len(messages)*12 + 8
+	return n + (n+3)/4, nil
 }

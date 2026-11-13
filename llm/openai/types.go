@@ -50,6 +50,7 @@ type oaiRequest struct {
 	Tools         []oaiTool    `json:"tools,omitempty"`
 	Stream        bool         `json:"stream,omitempty"`
 	StreamOptions *streamOpts  `json:"stream_options,omitempty"`
+	MaxTokens     int          `json:"max_tokens,omitempty"`
 }
 
 type streamOpts struct {

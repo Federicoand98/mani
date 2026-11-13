@@ -12,6 +12,7 @@ const (
 	EventError             EventType = "error"
 	EventCancelled         EventType = "cancelled"
 	EventUsage             EventType = "usage"
+	EventContext           EventType = "context"
 )
 
 type Event struct {

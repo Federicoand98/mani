@@ -134,14 +134,92 @@ filling the parent's context. `limits.subagent_depth` caps how deep delegation c
 
 ```yaml
 context:
-  window: 0                      # 0 inherits from config.json
+  window: 0                      # no additional manifest ceiling
   inject: true                   # pull AGENTS.md into the system prompt
   compaction: { enabled: true, keep: 20 }
 ```
 
-When the conversation approaches the window, compaction drops the oldest messages and keeps the
-last `keep`. For a long autonomous run, prefer a flow or a batch over a single run that compacts:
-a run that forgets does not fail, it just gets quietly worse.
+Without a `mode`, this is the legacy trim: before each call it keeps the last `keep` messages.
+It does not add model calls and does not offer token-budgeted summarization. Existing manifests
+keep this behavior; `keep` still counts messages, not turns.
+
+Opt in to managed context explicitly:
+
+```yaml
+context:
+  window: 131072                 # shared input + output ceiling, optional
+  inject: true
+  compaction:
+    enabled: true
+    mode: summary
+    keep_turns: 2
+limits:
+  max_output_tokens: 4096
+```
+
+The runtime discovers model limits where the provider exposes them, or uses manual limits
+saved for that provider and model. Unknown limits stop the call with a configuration error.
+`context.window` can tighten a known shared window, never enlarge it. A separate model input
+ceiling is not treated as a shared window: output is subtracted only from the shared ceiling.
+`limits.max_output_tokens` is the per-request generation limit, distinct from the cumulative
+run budget `limits.max_tokens`.
+
+Before every model request, the runtime estimates messages, system instructions and tool
+schemas. Above 80% of the effective input budget it summarizes older complete turns using the
+same model without tools, targeting 60%. System instructions, the last two completed turns
+and the current turn stay intact. `keep_turns` changes the number of completed turns retained.
+If protected content cannot fit, it reports an error instead of silently dropping it.
+
+Compaction takes at most four summary calls, counted in usage and run limits. The full stored
+message history remains available; a separate summary checkpoint is saved in the session and
+reused after restart. Failed or incomplete summaries do not replace the checkpoint.
+Previously clipped tool output is still clipped in that history; this is not an archive of
+the original raw tool output.
+
+`mode: summary` with `enabled: false` keeps the preventive budget check but refuses oversized
+requests instead of summarizing. Model-only console and terminal chats enable managed context
+by default. Agents in those interfaces still obey their manifest.
+
+A recognized context overflow may trigger one additional compaction and one new model request.
+This never restarts the turn or reruns tools. No automatic resend happens after response text
+or thinking has already been emitted; unknown HTTP 400 errors are not assumed to be overflows.
+
+In the console, **Providers - Model limits** configures the model's capacity, while
+**Settings - Reserved output tokens** configures the requested generation limit. These are
+different values. The chat meter shows estimated input over effective input budget, not the
+sum of input tokens consumed by all calls. Its detail distinguishes the last provider-reported
+input from the estimate, and excludes unsent draft text.
+Legacy manifest chats also report the actual post-trim request size, without enabling summaries
+or adding a preventive input guard. If metadata is unavailable or cannot yield a valid input
+budget, the meter shows an unknown budget and the runtime logs the reason. Saving model limits
+or the output reserve refreshes cached agent runtimes for the next turn.
+
+For headless use, add `model_limits` to the existing provider entry in `config.json`, keeping
+its base URL and credentials unchanged:
+
+```json
+{
+  "max_output_tokens": 4096,
+  "providers": {
+    "example-provider": {
+      "type": "openai",
+      "model": "example-model",
+      "model_limits": {
+        "example-model": {
+          "max_input_tokens": 245000,
+          "max_output_tokens": 11000
+        }
+      }
+    }
+  }
+}
+```
+
+This is a partial configuration example, not a replacement for the provider's existing entry.
+If the known limit is shared instead, use `context_window`. `MANI_CONTEXT_WINDOW` overrides
+the active model's shared ceiling; `MANI_MAX_OUTPUT_TOKENS` overrides requested output.
+Ollama managed calls set `options.num_ctx` and `options.num_predict` explicitly; an input-only
+manual cap is insufficient unless a shared window can also be discovered.
 
 ## `output`
 

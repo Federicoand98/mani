@@ -46,6 +46,9 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 		MaxTokens: defaultMaxTokens,
 		Stream:    true,
 	}
+	if n := core.TokenLimitsFrom(ctx).OutputTokens; n > 0 {
+		body.MaxTokens = n
+	}
 	raw, _ := json.Marshal(body)
 
 	req, _ := http.NewRequestWithContext(ctx, "POST", c.cfg.BaseURL+"/v1/messages", bytes.NewReader(raw))
@@ -60,7 +63,14 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return core.LLMResponse{}, &core.ProviderError{Provider: "anthropic", StatusCode: resp.StatusCode, Body: string(b), RetryAfter: resp.Header.Get("Retry-After")}
+		var failure struct {
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		overflow := json.Unmarshal(b, &failure) == nil && failure.Error.Type == "invalid_request_error" && strings.HasPrefix(strings.ToLower(failure.Error.Message), "prompt is too long:")
+		return core.LLMResponse{}, &core.ProviderError{Provider: "anthropic", StatusCode: resp.StatusCode, Body: string(b), RetryAfter: resp.Header.Get("Retry-After"), ContextOverflow: overflow}
 	}
 	return c.readSSE(resp.Body, h)
 }
@@ -255,7 +265,9 @@ func (c *Client) readSSE(body io.Reader, h core.TokenHandler) (core.LLMResponse,
 			}
 			switch ev.Delta.Type {
 			case "text_delta":
-				h(ev.Delta.Text, false)
+				if h != nil {
+					h(ev.Delta.Text, false)
+				}
 				text.WriteString(ev.Delta.Text)
 			case "input_json_delta":
 				curToolJSON.WriteString(ev.Delta.PartialJSON)

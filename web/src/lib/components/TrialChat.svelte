@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { agentsApi } from '../api/client.ts';
+	import type { ContextUsage } from '../api/types.ts';
 	import type { ServerMsg } from '../api/wire.ts';
 	import { ChatSocket } from '../chat/socket.ts';
 	import { idle, reduce, start, type Ask, type Segment, type Turn } from '../chat/turn.ts';
@@ -9,6 +11,9 @@
 	import ChatMessage from './ChatMessage.svelte';
 	import Icon from './Icon.svelte';
 	import ToolCard from './ToolCard.svelte';
+	import ContextMeter from './ContextMeter.svelte';
+	import { contextSummarized, reduceContext } from '../chat/context.ts';
+	import { m as messages } from '../messages/en.ts';
 
 	// A trial of an agent that is not saved yet (M4-4): a real conversation, tools
 	// and approvals included, that mani keeps in memory and drops at the end.
@@ -18,6 +23,8 @@
 	let history = $state<Entry[]>([]);
 	let turn = $state<Turn>(idle());
 	let input = $state('');
+	let context = $state<ContextUsage | null>(null);
+	let summarized = $state(false);
 	let error = $state('');
 	let ready = $state(false);
 	let log: HTMLElement | undefined = $state();
@@ -41,6 +48,8 @@
 	});
 
 	async function onMessage(m: ServerMsg) {
+		if (contextSummarized(context, m)) summarized = true;
+		context = reduceContext(context, m);
 		turn = reduce(turn, m, Date.now());
 		if (m.type === 'done' || m.type === 'cancelled' || m.type === 'error') {
 			history = [...history, { kind: 'reply', segments: turn.segments, error: turn.error }];
@@ -92,6 +101,8 @@
 			{/each}
 		{/if}
 	</div>
+	{#if summarized}<p class="sm mu" role="note">{messages.context.summarized}</p>{/if}
+	<ContextMeter {context} onconfigure={() => goto('/providers')} />
 	<form class="row" onsubmit={send} style="flex-wrap:nowrap">
 		<label class="sr-only" for="trial-input">Task for the trial</label>
 		<input id="trial-input" class="input" placeholder="Write a task…" bind:value={input} disabled={!ready || turn.status !== 'idle'} autocomplete="off" />

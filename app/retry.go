@@ -47,12 +47,17 @@ func (r *retryClient) Send(ctx context.Context, messages []core.Message, tools [
 			}
 		}
 
-		resp, err := r.inner.Send(ctx, messages, tools, tokenHandler)
+		streamed := false
+		var handler core.TokenHandler
+		if tokenHandler != nil {
+			handler = func(s string, thinking bool) { streamed = true; tokenHandler(s, thinking) }
+		}
+		resp, err := r.inner.Send(ctx, messages, tools, handler)
 		if err == nil {
 			return resp, nil
 		}
 
-		if ctx.Err() != nil || !isRetryable(err) {
+		if streamed || ctx.Err() != nil || !isRetryable(err) {
 			return resp, err
 		}
 
@@ -69,6 +74,14 @@ func (r *retryClient) ListModels(ctx context.Context) ([]string, error) {
 		return ml.ListModels(ctx)
 	}
 	return nil, fmt.Errorf("retry: inner client does not support model listing")
+}
+
+// ModelInfo preserves the inner client's optional metadata capability.
+func (r *retryClient) ModelInfo(ctx context.Context) (core.ModelLimits, error) {
+	if mi, ok := r.inner.(core.ModelInformer); ok {
+		return mi.ModelInfo(ctx)
+	}
+	return core.ModelLimits{}, nil
 }
 
 // delay is the wait before retry number attempt: exponential backoff with jitter,
@@ -115,6 +128,9 @@ func parseRetryAfter(v string, now time.Time) (time.Duration, bool) {
 func isRetryable(err error) bool {
 	var pe *core.ProviderError
 	if errors.As(err, &pe) {
+		if pe.ContextOverflow {
+			return false
+		}
 		switch {
 		case pe.StatusCode == http.StatusRequestTimeout,
 			pe.StatusCode == http.StatusConflict,

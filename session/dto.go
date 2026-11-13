@@ -10,15 +10,17 @@ import (
 // unico posto che conosce il formato json dei messaggi
 
 type sessionDTO struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	Model     string       `json:"model"`
-	Provider  string       `json:"provider,omitempty"`
-	Agent     string       `json:"agent,omitempty"`
-	Plan      []PlanStep   `json:"plan,omitempty"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
-	Messages  []messageDTO `json:"messages"`
+	ID         string                `json:"id"`
+	Title      string                `json:"title"`
+	Model      string                `json:"model"`
+	Provider   string                `json:"provider,omitempty"`
+	Agent      string                `json:"agent,omitempty"`
+	Plan       []PlanStep            `json:"plan,omitempty"`
+	CreatedAt  time.Time             `json:"created_at"`
+	UpdatedAt  time.Time             `json:"updated_at"`
+	Messages   []messageDTO          `json:"messages"`
+	Compaction *CompactionCheckpoint `json:"compaction,omitempty"`
+	Context    *core.ContextUsage    `json:"context,omitempty"`
 }
 
 type messageDTO struct {
@@ -51,15 +53,17 @@ func toSessionDTO(s *Session) sessionDTO {
 	}
 
 	return sessionDTO{
-		ID:        s.ID,
-		Title:     s.Title,
-		Model:     s.Model,
-		Provider:  s.Provider,
-		Agent:     s.Agent,
-		Plan:      s.Plan,
-		CreatedAt: s.CreatedAt,
-		UpdatedAt: s.UpdatedAt,
-		Messages:  out,
+		ID:         s.ID,
+		Title:      s.Title,
+		Model:      s.Model,
+		Provider:   s.Provider,
+		Agent:      s.Agent,
+		Plan:       s.Plan,
+		CreatedAt:  s.CreatedAt,
+		UpdatedAt:  s.UpdatedAt,
+		Messages:   out,
+		Compaction: s.Compaction,
+		Context:    s.Context,
 	}
 }
 
@@ -98,15 +102,17 @@ func (d sessionDTO) toSession() *Session {
 	}
 
 	return &Session{
-		ID:        d.ID,
-		Title:     d.Title,
-		Model:     d.Model,
-		Provider:  d.Provider,
-		Agent:     d.Agent,
-		Plan:      d.Plan,
-		CreatedAt: d.CreatedAt,
-		UpdatedAt: d.UpdatedAt,
-		memory:    core.NewInMemoryFrom(msgs),
+		ID:         d.ID,
+		Title:      d.Title,
+		Model:      d.Model,
+		Provider:   d.Provider,
+		Agent:      d.Agent,
+		Plan:       d.Plan,
+		CreatedAt:  d.CreatedAt,
+		UpdatedAt:  d.UpdatedAt,
+		memory:     core.NewInMemoryFrom(msgs),
+		Compaction: d.Compaction,
+		Context:    d.Context,
 	}
 }
 

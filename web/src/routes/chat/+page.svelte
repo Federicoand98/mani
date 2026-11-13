@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { onDestroy, tick } from 'svelte';
 	import { agentsApi, api } from '#lib/api/client.ts';
-	import type { AgentSummary, ChatPart, Conversation, ConversationMeta } from '#lib/api/types.ts';
+	import type { AgentSummary, ChatPart, ContextUsage, ModelLimits, Conversation, ConversationMeta } from '#lib/api/types.ts';
 	import type { ServerMsg } from '#lib/api/wire.ts';
 	import { commandHelp, findModel, parseCommand, type Command } from '#lib/chat/commands.ts';
 	import { checkImage, readImage, type Attachment } from '#lib/chat/images.ts';
@@ -13,9 +13,12 @@
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import ToolCard from '#lib/components/ToolCard.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import ContextMeter from '#lib/components/ContextMeter.svelte';
+	import ModelLimitsDialog from '#lib/components/ModelLimitsDialog.svelte';
+	import { contextSummarized, hasInputLimit, mergedLimits, reduceContext } from '#lib/chat/context.ts';
 	import { m } from '#lib/messages/en.ts';
 	import { getKeep, getLastModel, getShowThinking, setLastModel, setShowThinking } from '#lib/prefs.ts';
-	import { app, enabledProviders, toast } from '#lib/state.svelte.ts';
+	import { app, enabledProviders, loadProviders, toast } from '#lib/state.svelte.ts';
 
 	const t = m.chat;
 
@@ -31,6 +34,11 @@
 	let models = $state<Record<string, string[]>>({});
 	let selected = $state<{ provider: string; model: string } | null>(null);
 	let input = $state('');
+	let context = $state<ContextUsage | null>(null);
+	let endpointLimits = $state<Record<string, ModelLimits>>({});
+	let limitsErrors = $state<Record<string, string>>({});
+	let limitsLoading = $state<Record<string, boolean>>({});
+	let limitsOpen = $state(false);
 	let images = $state<Attachment[]>([]);
 	let attachError = $state('');
 	let renaming = $state<string | null>(null);
@@ -57,6 +65,23 @@
 	const answering = $derived(turn.status === 'answering');
 	const busy = $derived(turn.status === 'busy');
 	const who = $derived(agent ? (agentInfo?.name ?? agent) : (current?.model ?? selected?.model ?? ''));
+	const contextModel = $derived(agent && agentInfo ? { provider: agentInfo.provider, model: agentInfo.model } : selected);
+	const limitsKey = $derived(contextModel ? `${contextModel.provider}|${contextModel.model}` : '');
+	const limitsProvider = $derived(app.providers.find((p) => p.name === contextModel?.provider) ?? null);
+	const knownLimits = $derived(hasInputLimit(mergedLimits(endpointLimits[limitsKey], limitsProvider?.modelLimits?.[contextModel?.model ?? ''])));
+	const checkingLimits = $derived(!!limitsKey && (!!limitsLoading[limitsKey] || !(limitsKey in endpointLimits)));
+
+	$effect(() => {
+		const target = contextModel;
+		const key = limitsKey;
+		if (!target || key in endpointLimits) return;
+		endpointLimits[key] = {};
+		limitsLoading[key] = true;
+		api.modelLimits(target.provider, target.model).then(
+			(limits) => { endpointLimits[key] = limits; },
+			(e) => { limitsErrors[key] = (e as Error).message; }
+		).finally(() => { limitsLoading[key] = false; });
+	});
 
 	// --- data -------------------------------------------------------------------
 
@@ -107,6 +132,7 @@
 		pending = null;
 		last = null;
 		notes = [];
+		context = null;
 		showList = false;
 		if (!want) {
 			current = null;
@@ -115,6 +141,7 @@
 		}
 		try {
 			current = await api.conversation(want);
+			context = current.context ?? null;
 			agent = current.agent;
 			if (current.provider && current.model) selected = { provider: current.provider, model: current.model };
 		} catch (e) {
@@ -131,6 +158,9 @@
 	}
 
 	async function onMessage(msg: ServerMsg) {
+		const summarized = contextSummarized(context, msg);
+		context = reduceContext(context, msg);
+		if (summarized) note(m.context.summarized);
 		turn = reduce(turn, msg, Date.now());
 		if (msg.type === 'token' || msg.type === 'thinking') return scrollDown();
 		if (msg.type !== 'done' && msg.type !== 'cancelled' && msg.type !== 'error') return;
@@ -140,6 +170,7 @@
 		if (current) {
 			try {
 				current = await api.conversation(current.id);
+				context = current.context ?? context;
 			} catch {
 				// keep what is on screen
 			}
@@ -172,6 +203,11 @@
 			return;
 		}
 		if (!agent && !selected) return;
+		if (!agent && !knownLimits) {
+			if (limitsErrors[limitsKey]) toast(limitsErrors[limitsKey]);
+			limitsOpen = true;
+			return;
+		}
 
 		let cid = id;
 		if (!cid) {
@@ -179,6 +215,7 @@
 				const c = await api.createConversation(agent ? { agent } : { provider: selected!.provider, model: selected!.model });
 				cid = c.id;
 				current = c;
+				context = c.context ?? null;
 				socketId = c.id;
 				connect(c.id);
 				goto(`/chat?c=${c.id}`, { reset: false });
@@ -230,6 +267,7 @@
 		}
 		try {
 			current = await api.updateConversation(current.id, path ? { agent: path } : { agent: '', provider: selected!.provider, model: selected!.model });
+			context = current.context ?? null;
 			agent = current.agent;
 			if (current.messages.length) note(path ? t.agentNow(agentInfo?.name ?? path) : t.modelAlone(selected!.model));
 			loadList();
@@ -271,9 +309,11 @@
 
 	async function chooseModel(next: { provider: string; model: string }) {
 		selected = next;
+		context = null;
 		if (!current) return;
 		try {
 			current = await api.updateConversation(current.id, next);
+			context = current.context ?? null;
 			if (current.messages.length) note(t.modelChanged(next.model));
 			loadList();
 		} catch (e) {
@@ -523,7 +563,7 @@
 						{#each notes.filter((n) => n.at === it.i) as n, j (j)}
 							<pre class="system note">{n.text}</pre>
 						{/each}
-						{#if it.i === forgetBefore}
+						{#if it.i === forgetBefore && !context?.input_budget}
 							<div class="forget" role="note"><span>{t.forgotten}</span> <a href="/settings">{t.forgottenHelp}</a></div>
 						{/if}
 					{/if}
@@ -637,11 +677,13 @@
 								</optgroup>
 							{/each}
 						</select>
+						<ContextMeter {context} known={knownLimits} checking={checkingLimits} onconfigure={() => (limitsOpen = true)} />
 						{#if answering}
 							<button type="button" class="btn secondary small send" onclick={stop}><Icon name="stop" size={14} />{t.stop}</button>
 						{:else}
 							<button type="submit" class="btn primary small send" disabled={busy || !selected || (!input.trim() && !images.length)} aria-label={t.send}><Icon name="send" size={14} /></button>
 						{/if}
+						<ModelLimitsDialog bind:open={limitsOpen} provider={limitsProvider} model={contextModel?.model ?? ''} models={contextModel ? models[contextModel.provider] ?? [] : []} onsaved={async () => { await loadProviders(); if (current) { current = await api.conversation(current.id); context = current.context ?? null; } toast(m.context.saved); }} />
 					</div>
 				</div>
 				{#if attachError}<p class="help error">{attachError}</p>{/if}
@@ -1026,6 +1068,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		flex-wrap: wrap;
 	}
 	.model {
 		height: 32px;

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Federicoand98/mani/app"
 	"github.com/Federicoand98/mani/config"
+	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/llm/copilot"
 )
 
@@ -84,6 +85,7 @@ func loopbackURL(raw string) bool {
 
 // listModels is a variable so tests can stand in for a provider.
 var listModels = app.ProviderModels
+var modelLimits = app.ProviderModelLimits
 
 const testTimeout = 15 * time.Second
 
@@ -92,6 +94,7 @@ func toDTO(name string, e catalogEntry, cfg config.Config, auth config.Auth) Pro
 	p := Provider{
 		Name: name, Label: e.label, Local: e.local, Auth: e.auth, BaseURL: pc.BaseURL, Enabled: pc.Enabled, Model: pc.Model,
 		Custom: e.custom, Type: pc.Type, Models: pc.Models,
+		ModelLimits: pc.ModelLimits,
 	}
 	if cred, ok := auth.Get(name); ok && cred.Key != "" {
 		p.KeyHint = hint(cred.Key)
@@ -193,6 +196,16 @@ func (s *Server) handlePutProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request body: "+err.Error())
 		return
 	}
+	for model, limits := range in.ModelLimits {
+		if strings.TrimSpace(model) == "" || strings.TrimSpace(model) != model {
+			writeError(w, http.StatusBadRequest, "model limits need a non-empty, trimmed model name")
+			return
+		}
+		if err := checkModelLimits(limits); err != nil {
+			writeError(w, http.StatusBadRequest, "model "+model+": "+err.Error())
+			return
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -248,10 +261,19 @@ func (s *Server) handlePutProvider(w http.ResponseWriter, r *http.Request) {
 		if in.Model != "" {
 			pc.Model = in.Model
 		}
+		if in.ModelLimits != nil {
+			if pc.ModelLimits == nil {
+				pc.ModelLimits = make(map[string]core.ModelLimits)
+			}
+			for model, limits := range in.ModelLimits {
+				pc.ModelLimits[model] = limits
+			}
+		}
 		if custom {
 			if in.Type != "" {
 				pc.Type = in.Type
 			}
+
 			if in.Label != "" {
 				pc.Label = in.Label
 			}
@@ -265,7 +287,50 @@ func (s *Server) handlePutProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.agents.invalidate()
 	s.writeProvider(w, name)
+}
+
+func checkModelLimits(l core.ModelLimits) error {
+	if err := l.Validate(); err != nil {
+		return err
+	}
+	if l.ContextWindow == 0 && l.MaxInputTokens == 0 && l.MaxOutputTokens == 0 {
+		return errors.New("enter at least one positive model limit")
+	}
+	if l.ContextWindow > 0 && (l.MaxInputTokens > l.ContextWindow || l.MaxOutputTokens >= l.ContextWindow) {
+		return errors.New("input must not exceed the context window; output must leave room for input")
+	}
+	return nil
+}
+
+func (s *Server) handleModelLimits(w http.ResponseWriter, r *http.Request) {
+	var in ModelLimitsInput
+	if err := readJSON(r, &in); err != nil || strings.TrimSpace(in.Model) == "" {
+		writeError(w, http.StatusBadRequest, "model limits discovery needs a model name")
+		return
+	}
+	cfg, auth, err := loadBoth()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	name, _, ok := provider(w, r, cfg)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
+	defer cancel()
+	limits, err := modelLimits(ctx, cfg, auth, name, strings.TrimSpace(in.Model))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if err := limits.Validate(); err != nil {
+		writeError(w, http.StatusBadGateway, "invalid endpoint limits: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, limits)
 }
 
 // handleDeleteProvider turns a provider off and forgets its credential: what

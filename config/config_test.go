@@ -10,7 +10,7 @@ func TestLoad_DefaultsWhenUnset(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isola: nessun config.json reale toccato
 	for _, k := range []string{
 		"MANI_MODEL", "MANI_PROVIDER", "MANI_UI", "MANI_THINKING",
-		"MANI_DEBUG", "MANI_CONTEXT_WINDOW", "MANI_LOG_LEVEL", "MANI_MAX_ITERATIONS",
+		"MANI_DEBUG", "MANI_CONTEXT_WINDOW", "MANI_MAX_OUTPUT_TOKENS", "MANI_LOG_LEVEL", "MANI_MAX_ITERATIONS",
 	} {
 		os.Unsetenv(k)
 	}

@@ -15,6 +15,15 @@ library.
 
 ### Added
 
+- **Managed chat context.** Provider/model limits can be discovered or configured manually.
+  Input and shared-context ceilings are distinct, with a configurable output reserve (4,096
+  tokens by default). Console and terminal model-only chats summarize older complete turns at
+  80% of the effective input budget, keeping recent turns intact and preserving stored history.
+  Summary checkpoints survive restarts; summary calls count toward consumption and budgets.
+  Manifests opt in with `context.compaction.mode: summary` and `keep_turns`; legacy `keep`
+  retains its message-count meaning. Recognized overflows get one smaller request, never a
+  restarted turn or repeated tool effects.
+
 - **Flow parameters.** A flow declares `params:` and references them as `${params.name}` in any
   value; `mani run --set name=value` fills them, a `default` covers the rest.
 
@@ -169,6 +178,9 @@ library.
   `manifest.Sources`; build one with `manifest.One("step")`.
 
 ### Fixed
+
+- OpenAI and Anthropic streaming adapters support calls without a token callback, including
+  compaction requests. Transient retries stop after a callback has emitted partial output.
 
 - **One large tool result could break every request after it.** `read` returned a whole file and
   `bash` a whole command output, with no limit: one `ls -R` or one big file filled a 128k-token

@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,6 +54,7 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 		Tools:         mapTools(tools),
 		Stream:        true,
 		StreamOptions: &streamOpts{IncludeUsage: true}, // usage nel chunk finale
+		MaxTokens:     core.TokenLimitsFrom(ctx).OutputTokens,
 	}
 	raw, _ := json.Marshal(body)
 	req, _ := http.NewRequestWithContext(ctx, "POST", c.cfg.BaseURL+"/chat/completions", bytes.NewReader(raw))
@@ -71,12 +73,12 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return core.LLMResponse{}, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(b), RetryAfter: resp.Header.Get("Retry-After")}
+		return core.LLMResponse{}, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(b), RetryAfter: resp.Header.Get("Retry-After"), ContextOverflow: contextOverflow(b)}
 	}
 	return c.readSSE(resp.Body, h)
 }
 
-func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+func (c *Client) modelCatalog(ctx context.Context) ([]modelMetadata, error) {
 	token, err := c.cfg.AuthFn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("openai: auth: %w", err)
@@ -99,21 +101,107 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openai: list models: HTTP %d: %s", resp.StatusCode, b)
+		return nil, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(b)}
 	}
 
-	var mr oaiModelsResponse
+	var mr struct {
+		Data []modelMetadata `json:"data"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&mr); err != nil {
 		return nil, fmt.Errorf("openai: list models: %w", err)
 	}
 
-	out := make([]string, 0, len(mr.Data))
-	for _, m := range mr.Data {
+	return mr.Data, nil
+}
+
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	models, err := c.modelCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(models))
+	for _, m := range models {
 		out = append(out, m.ID)
 	}
-
 	sort.Strings(out)
 	return out, nil
+}
+
+type modelMetadata struct {
+	ID              string `json:"id"`
+	ContextLength   int    `json:"context_length"`
+	MaxModelLen     int    `json:"max_model_len"`
+	MaxInputTokens  int    `json:"max_input_tokens"`
+	MaxOutputTokens int    `json:"max_output_tokens"`
+	TopProvider     struct {
+		ContextLength       int `json:"context_length"`
+		MaxCompletionTokens int `json:"max_completion_tokens"`
+	} `json:"top_provider"`
+	Capabilities struct {
+		Limits struct {
+			MaxPromptTokens int `json:"max_prompt_tokens"`
+			MaxOutputTokens int `json:"max_output_tokens"`
+		} `json:"limits"`
+	} `json:"capabilities"`
+}
+
+func smallerKnown(a, b int) int {
+	if a == 0 {
+		return b
+	}
+	if b == 0 {
+		return a
+	}
+	return min(a, b)
+}
+
+func (c *Client) ModelInfo(ctx context.Context) (core.ModelLimits, error) {
+	models, err := c.modelCatalog(ctx)
+	if err != nil {
+		var pe *core.ProviderError
+		if errors.As(err, &pe) && (pe.StatusCode == http.StatusNotFound || pe.StatusCode == http.StatusMethodNotAllowed) {
+			return core.ModelLimits{}, nil
+		}
+		return core.ModelLimits{}, err
+	}
+	for _, m := range models {
+		if m.ID != c.cfg.Model {
+			continue
+		}
+		limits := core.ModelLimits{
+			ContextWindow:   smallerKnown(smallerKnown(m.ContextLength, m.MaxModelLen), m.TopProvider.ContextLength),
+			MaxInputTokens:  smallerKnown(m.MaxInputTokens, m.Capabilities.Limits.MaxPromptTokens),
+			MaxOutputTokens: smallerKnown(smallerKnown(m.MaxOutputTokens, m.TopProvider.MaxCompletionTokens), m.Capabilities.Limits.MaxOutputTokens),
+		}
+		if err := limits.Validate(); err != nil {
+			return limits, fmt.Errorf("openai: model limits: %w", err)
+		}
+		return limits, nil
+	}
+	return core.ModelLimits{}, nil
+}
+
+func contextOverflow(body []byte) bool {
+	var payload struct {
+		Error struct {
+			Code json.RawMessage `json:"code"`
+			Type string          `json:"type"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	var code string
+	if len(payload.Error.Code) > 0 && string(payload.Error.Code) != "null" {
+		if err := json.Unmarshal(payload.Error.Code, &code); err != nil {
+			code = ""
+		}
+	}
+	switch code {
+	case "context_length_exceeded", "context_window_exceeded":
+		return true
+	}
+	return payload.Error.Type == "ContextWindowExceededError"
 }
 
 func (c *Client) readSSE(body io.Reader, h core.TokenHandler) (core.LLMResponse, error) {
@@ -149,7 +237,9 @@ func (c *Client) readSSE(body io.Reader, h core.TokenHandler) (core.LLMResponse,
 			stop = ch.FinishReason
 		}
 		if ch.Delta.Content != "" {
-			h(ch.Delta.Content, false) // OpenAI non separa il reasoning qui
+			if h != nil {
+				h(ch.Delta.Content, false)
+			}
 			text.WriteString(ch.Delta.Content)
 		}
 		for _, tc := range ch.Delta.ToolCalls {

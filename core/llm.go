@@ -11,10 +11,11 @@ type TokenHandler func(token string, isThinking bool)
 // 200. Adapters return it so a caller can tell a request worth repeating (429,
 // 5xx) from one that fails the same way every time (400, 401, 404).
 type ProviderError struct {
-	Provider   string // "openai", "anthropic", "ollama"
-	StatusCode int
-	Body       string
-	RetryAfter string // the raw Retry-After header, empty when absent
+	Provider        string // "openai", "anthropic", "ollama"
+	StatusCode      int
+	Body            string
+	RetryAfter      string // the raw Retry-After header, empty when absent
+	ContextOverflow bool
 }
 
 func (e *ProviderError) Error() string {

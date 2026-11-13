@@ -120,6 +120,19 @@ func (s Spec) Problems() []Problem {
 		out = append(out, Problem{Path: path, Message: fmt.Sprintf(format, args...)})
 	}
 
+	if s.Context.Window < 0 || s.Context.Window > 1<<30 {
+		add("context.window", "context.window must be between 0 and %d", 1<<30)
+	}
+	if mode := s.Context.Compaction.Mode; mode != "" && mode != "trim" && mode != "summary" {
+		add("context.compaction.mode", "context.compaction.mode must be trim or summary")
+	}
+	if s.Context.Compaction.KeepTurns < 0 {
+		add("context.compaction.keep_turns", "context.compaction.keep_turns must not be negative")
+	}
+	if n := s.Limits.MaxOutputTokens; n < 0 || n > 1<<30 {
+		add("limits.max_output_tokens", "limits.max_output_tokens must be between 0 and %d", 1<<30)
+	}
+
 	// --- capabilities.tools ---
 	declared := map[string]bool{}
 	for i, ref := range s.Capabilities.Tools {

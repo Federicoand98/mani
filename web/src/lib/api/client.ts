@@ -14,6 +14,8 @@ import type {
 	DeviceStatus,
 	Health,
 	ModelList,
+	ModelLimits,
+	Settings,
 	Provider,
 	ProviderInput,
 	ProviderList,
@@ -60,11 +62,14 @@ const p = (name: string) => '/providers/' + encodeURIComponent(name);
 
 export const api = {
 	health: () => call<Health>('GET', '/health'),
+	settings: () => call<Settings>('GET', '/settings'),
+	saveSettings: (input: Settings) => call<Settings>('PUT', '/settings', input),
 	providers: () => call<ProviderList>('GET', '/providers'),
 	saveProvider: (name: string, input: ProviderInput) => call<Provider>('PUT', p(name), input),
 	removeProvider: (name: string) => call<Provider>('DELETE', p(name)),
 	testProvider: (name: string, input: ProviderInput) => call<TestResult>('POST', p(name) + '/test', input),
 	models: (name: string) => call<ModelList>('GET', p(name) + '/models'),
+	modelLimits: (name: string, model: string) => call<ModelLimits>('POST', p(name) + '/model-limits', { model }),
 	deviceStart: () => call<DeviceStart>('POST', '/providers/copilot/device'),
 	deviceStatus: () => call<DeviceStatus>('GET', '/providers/copilot/device'),
 	conversations: () => call<ConversationList>('GET', '/conversations'),

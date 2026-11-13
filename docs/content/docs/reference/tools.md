@@ -34,6 +34,15 @@ Every filesystem tool is confined to `capabilities.workspace`, which defaults to
 directory. Paths are relative to it, and a path that would leave it is refused after cleaning, so
 neither `../../etc/passwd` nor a symlink pointing outside gets through.
 
+## Output size
+
+A tool result longer than 32 KiB (about 8k tokens) is clipped before the model sees it: the
+first and the last 16 KiB stay, with a marker in between that says how much was cut. This keeps
+one large file or one long command output from filling the context window. The model reads the
+rest in smaller pieces: a narrower `grep`, a command that prints less. Redaction runs first, so a
+masked secret is never split by the cut. The marker adds a small amount beyond the retained
+32 KiB; this is not a token-window guarantee. `fetch` also limits its extracted text separately.
+
 ## read
 
 Reads a file.

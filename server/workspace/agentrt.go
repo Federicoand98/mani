@@ -17,8 +17,8 @@ var buildAgent = app.Build
 
 // agentRuntimes keeps one Runtime per manifest (decision M3-9): built on the
 // first message, shared by every conversation with that agent, and replaced
-// when the file changes. A replaced Runtime is closed (with its MCP servers)
-// only once no reply is using it.
+// when the file or saved provider/runtime settings change. A replaced Runtime
+// is closed (with its MCP servers) only once no reply is using it.
 type agentRuntimes struct {
 	mu sync.Mutex
 	m  map[string]*agentRT
@@ -93,6 +93,18 @@ func (a *agentRuntimes) releaser(e *agentRT) func() {
 				e.rt.Close()
 			}
 		})
+	}
+}
+
+func (a *agentRuntimes) invalidate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for rel, e := range a.m {
+		e.stale = true
+		if e.refs == 0 {
+			e.rt.Close()
+		}
+		delete(a.m, rel)
 	}
 }
 

@@ -105,3 +105,30 @@ func ProviderModels(ctx context.Context, cfg config.Config, auth config.Auth, pr
 	}
 	return ml.ListModels(ctx)
 }
+
+// ProviderModelLimits builds a client for provider+model from cfg and auth and asks
+// it for that model's limits. A provider or model that does not support discovery
+// answers zero ModelLimits, not an error: unsupported is data, not failure. An
+// unreachable URL or a rejected key still comes back as an error, worded by the
+// provider, same as ProviderModels.
+func ProviderModelLimits(ctx context.Context, cfg config.Config, auth config.Auth, provider, model string) (core.ModelLimits, error) {
+	// cfg.Providers is a map: clone it before SetActiveModel mutates an entry, so
+	// the caller's config is never touched.
+	providers := make(map[string]config.ProviderConfig, len(cfg.Providers))
+	for name, pc := range cfg.Providers {
+		providers[name] = pc
+	}
+	cfg.Providers = providers
+	cfg.Provider = provider
+	cfg.SetActiveModel(model)
+
+	client, err := newLLMClient(cfg, auth)
+	if err != nil {
+		return core.ModelLimits{}, err
+	}
+	mi, ok := client.(core.ModelInformer)
+	if !ok {
+		return core.ModelLimits{}, nil
+	}
+	return mi.ModelInfo(ctx)
+}

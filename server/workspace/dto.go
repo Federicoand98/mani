@@ -1,5 +1,7 @@
 package workspace
 
+import "github.com/Federicoand98/mani/core"
+
 // The JSON the console reads and writes. `go generate` turns these structs into
 // web/src/lib/api/types.ts, so a field added here reaches the frontend typed.
 
@@ -9,6 +11,11 @@ package workspace
 type Health struct {
 	Version string `json:"version"`
 	Dir     string `json:"dir"`
+}
+
+// Settings holds runtime defaults editable from the console, not browser preferences.
+type Settings struct {
+	MaxOutputTokens int `json:"maxOutputTokens"`
 }
 
 // Provider is one model provider mani knows, added by the user or not.
@@ -22,9 +29,10 @@ type Provider struct {
 	KeyHint string `json:"keyHint,omitempty"` // last four characters of the saved key
 	Model   string `json:"model,omitempty"`   // the default model for this provider
 	// A custom endpoint: declared by the user, speaking the API in Type.
-	Custom bool     `json:"custom"`
-	Type   string   `json:"type,omitempty"`   // "openai", "anthropic" or "ollama"
-	Models []string `json:"models,omitempty"` // declared models, when the endpoint does not list them
+	Custom      bool                        `json:"custom"`
+	Type        string                      `json:"type,omitempty"`   // "openai", "anthropic" or "ollama"
+	Models      []string                    `json:"models,omitempty"` // declared models, when the endpoint does not list them
+	ModelLimits map[string]core.ModelLimits `json:"modelLimits,omitempty" tstype:"{ [key: string]: ModelLimits }"`
 }
 
 type ProviderList struct {
@@ -37,9 +45,33 @@ type ProviderInput struct {
 	Key     string `json:"key,omitempty"`
 	Model   string `json:"model,omitempty"`
 	// Custom endpoints only. Models replaces the declared list when present.
-	Label  string   `json:"label,omitempty"`
-	Type   string   `json:"type,omitempty"`
-	Models []string `json:"models,omitempty"`
+	Label       string                      `json:"label,omitempty"`
+	Type        string                      `json:"type,omitempty"`
+	Models      []string                    `json:"models,omitempty"`
+	ModelLimits map[string]core.ModelLimits `json:"modelLimits,omitempty" tstype:"{ [key: string]: ModelLimits }"`
+}
+
+type ModelLimitsInput struct {
+	Model string `json:"model"`
+}
+
+type ModelLimits struct {
+	ContextWindow   int `json:"context_window,omitempty"`
+	MaxInputTokens  int `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+}
+
+type ContextUsage struct {
+	EstimatedInput  int    `json:"estimated_input"`
+	InputBudget     int    `json:"input_budget"`
+	OutputLimit     int    `json:"output_limit"`
+	ContextWindow   int    `json:"context_window"`
+	MaxInputTokens  int    `json:"max_input_tokens"`
+	MaxOutputTokens int    `json:"max_output_tokens"`
+	LimitSource     string `json:"limit_source"`
+	LastInput       *int   `json:"last_input,omitempty"`
+	State           string `json:"state"`
+	Compacted       bool   `json:"compacted"`
 }
 
 // TestResult reports a connection test. A provider that refuses is not a server
@@ -91,7 +123,8 @@ type ConversationList struct {
 // Conversation is a conversation with its messages, as the page shows them.
 type Conversation struct {
 	ConversationMeta `tstype:",extends"`
-	Messages         []ChatMessage `json:"messages"`
+	Messages         []ChatMessage      `json:"messages"`
+	Context          *core.ContextUsage `json:"context,omitempty" tstype:"ContextUsage"`
 }
 
 type ChatMessage struct {

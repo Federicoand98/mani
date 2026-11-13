@@ -114,12 +114,20 @@ func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 	}
 
 	// 2. context
+	rt.declaredWindow = spec.Context.Window
 	if spec.Context.Inject {
 		registerContextInjectionWith(rt, sysPrompt, ws)
 	}
 
 	if spec.Context.Compaction.Enabled {
-		RegisterTrimCompaction(rt, spec.Context.Compaction.Keep)
+		if spec.Context.Compaction.Mode != "summary" {
+			RegisterTrimCompaction(rt, spec.Context.Compaction.Keep)
+		}
+	}
+	if spec.Context.Compaction.Mode == "summary" {
+		if err := RegisterContextManagement(rt, spec.Context.Compaction.Enabled, spec.Context.Compaction.KeepTurns, spec.Context.Window); err != nil {
+			return nil, fmt.Errorf("build: %w", err)
+		}
 	}
 
 	// 3. policy
@@ -241,6 +249,10 @@ func resolveRetry(r manifest.RetrySpec) manifest.RetrySpec {
 // mergeConfig merges spec > base config.
 func mergeConfig(base config.Config, spec manifest.Spec) config.Config {
 	c := base
+	c.Providers = make(map[string]config.ProviderConfig, len(base.Providers))
+	for name, pc := range base.Providers {
+		c.Providers[name] = pc
+	}
 	if spec.Identity.Provider != "" {
 		c.Provider = spec.Identity.Provider
 	}
@@ -252,6 +264,9 @@ func mergeConfig(base config.Config, spec manifest.Spec) config.Config {
 	}
 	if spec.Limits.MaxIterations != 0 {
 		c.MaxIterations = spec.Limits.MaxIterations
+	}
+	if spec.Limits.MaxOutputTokens != 0 {
+		c.MaxOutputTokens = spec.Limits.MaxOutputTokens
 	}
 	return c
 }

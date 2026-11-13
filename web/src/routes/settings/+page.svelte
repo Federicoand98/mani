@@ -3,17 +3,34 @@
 	import { m } from '#lib/messages/en.ts';
 	import { getReduceMotion, getTheme, setReduceMotion, setTheme, type Theme } from '#lib/theme.ts';
 	import { getKeep, KEEP_MAX, KEEP_MIN, setKeep } from '#lib/prefs.ts';
+	import { api } from '#lib/api/client.ts';
+	import { toast } from '#lib/state.svelte.ts';
 
 	const t = m.settings;
 	let theme = $state<Theme>('system');
 	let reduce = $state(false);
 	let keep = $state(getKeep());
+	let output = $state<number | undefined>();
+	let outputError = $state('');
+	let saving = $state(false);
+	const outputValid = $derived(Number.isSafeInteger(output) && (output ?? 0) > 0 && (output ?? 0) <= 1_073_741_824);
 	const keepValid = $derived(Number.isInteger(keep) && keep >= KEEP_MIN && keep <= KEEP_MAX);
 
 	onMount(() => {
 		theme = getTheme();
 		reduce = getReduceMotion();
+		api.settings().then((s) => { output = s.maxOutputTokens; }, (e) => { outputError = (e as Error).message; });
 	});
+
+	async function saveOutput() {
+		if (!outputValid) { outputError = m.context.invalid; return; }
+		saving = true; outputError = '';
+		try {
+			await api.saveSettings({ maxOutputTokens: output! });
+			toast(m.context.outputSaved);
+		} catch (e) { outputError = (e as Error).message; }
+		finally { saving = false; }
+	}
 
 	const themes: Theme[] = ['system', 'light', 'dark'];
 </script>
@@ -48,6 +65,15 @@
 
 <section class="card stack" style="max-width:640px">
 	<h2>{t.chat}</h2>
+	<form class="stack" onsubmit={(e) => (e.preventDefault(), saveOutput())}>
+		<div class="field">
+			<label for="requested-output">{m.context.requestedOutput}</label>
+			<input id="requested-output" class="input" type="number" min="1" max="1073741824" step="1" bind:value={output} disabled={saving} aria-describedby="requested-output-help" />
+			<p class="help" id="requested-output-help">{m.context.requestedHelp}</p>
+		</div>
+		{#if outputError}<p class="help error" role="alert">{outputError}</p>{/if}
+		<button class="btn secondary" type="submit" disabled={saving || !outputValid}>{m.context.save}</button>
+	</form>
 	<div class="field" style="max-width:260px">
 		<label for="keep">{t.keep}</label>
 		<input id="keep" class="input" type="number" min={KEEP_MIN} max={KEEP_MAX} bind:value={keep} aria-invalid={!keepValid} aria-describedby="keep-help" onchange={() => keepValid && setKeep(keep)} />

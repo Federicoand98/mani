@@ -11,6 +11,12 @@ export interface Health {
   dir: string;
 }
 /**
+ * Settings holds runtime defaults editable from the console, not browser preferences.
+ */
+export interface Settings {
+  maxOutputTokens: number /* int */;
+}
+/**
  * Provider is one model provider mani knows, added by the user or not.
  */
 export interface Provider {
@@ -28,6 +34,7 @@ export interface Provider {
   custom: boolean;
   type?: string; // "openai", "anthropic" or "ollama"
   models?: string[]; // declared models, when the endpoint does not list them
+  modelLimits?: { [key: string]: ModelLimits };
 }
 export interface ProviderList {
   providers: Provider[];
@@ -45,6 +52,27 @@ export interface ProviderInput {
   label?: string;
   type?: string;
   models?: string[];
+  modelLimits?: { [key: string]: ModelLimits };
+}
+export interface ModelLimitsInput {
+  model: string;
+}
+export interface ModelLimits {
+  context_window?: number /* int */;
+  max_input_tokens?: number /* int */;
+  max_output_tokens?: number /* int */;
+}
+export interface ContextUsage {
+  estimated_input: number /* int */;
+  input_budget: number /* int */;
+  output_limit: number /* int */;
+  context_window: number /* int */;
+  max_input_tokens: number /* int */;
+  max_output_tokens: number /* int */;
+  limit_source: string;
+  last_input?: number /* int */;
+  state: string;
+  compacted: boolean;
 }
 /**
  * TestResult reports a connection test. A provider that refuses is not a server
@@ -100,6 +128,7 @@ export interface ConversationList {
  */
 export interface Conversation extends ConversationMeta {
   messages: ChatMessage[];
+  context?: ContextUsage;
 }
 export interface ChatMessage {
   role: string; // "user" or "assistant"

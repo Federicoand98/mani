@@ -82,6 +82,7 @@ func newDelegateTool(rt *Runtime, maxDepth int) tool.Tool {
 		}
 
 		childCtx := withDepth(ctx, depth+1)
+		childCtx = scopedChildContext(childCtx, mem, rt.ModelName())
 
 		res, err := child.Run(childCtx, mem, task, nil)
 		if err != nil {
@@ -139,6 +140,7 @@ func newNamedDelegateTool(rt *Runtime, maxDepth int, names []string) tool.Tool {
 		}
 
 		childCtx := withDepth(ctx, depth+1)
+		childCtx = scopedChildContext(childCtx, mem, spec.Model)
 
 		res, err := child.Run(childCtx, mem, task, nil)
 		if err != nil {

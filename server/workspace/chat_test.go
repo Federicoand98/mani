@@ -21,6 +21,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 
 	"github.com/Federicoand98/mani/config"
+	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/server/wire"
 )
 
@@ -41,6 +42,10 @@ func newFakeOllama(t *testing.T) *fakeOllama {
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			_, _ = w.Write([]byte(`{"models":[{"name":"qwen3.5:9b"}]}`))
+			return
+		}
+		if r.URL.Path == "/api/show" {
+			_, _ = w.Write([]byte(`{"model_info":{"llama.context_length":8192}}`))
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -96,7 +101,8 @@ func newChatEnv(t *testing.T) *chatEnv {
 	os.Unsetenv("MANI_MODEL")
 	ollama := newFakeOllama(t)
 	if err := config.Update(func(c *config.Config) error {
-		c.Providers["ollama"] = config.ProviderConfig{BaseURL: ollama.URL, Model: "qwen3.5:9b", Enabled: true}
+		c.Providers["ollama"] = config.ProviderConfig{BaseURL: ollama.URL, Model: "qwen3.5:9b", Enabled: true,
+			ModelLimits: map[string]core.ModelLimits{"qwen3.5:9b": {ContextWindow: 8192}}}
 		c.Thinking = false
 		return nil
 	}); err != nil {
@@ -204,6 +210,16 @@ func (s *socket) next() wire.ServerMsg {
 	return m
 }
 
+func (s *socket) nextTurnEvent() wire.ServerMsg {
+	s.t.Helper()
+	for {
+		m := s.next()
+		if m.Type != "context" {
+			return m
+		}
+	}
+}
+
 // until reads messages up to one of the given types, returning the text of the
 // tokens on the way and the last message.
 func (s *socket) until(types ...string) (string, wire.ServerMsg) {
@@ -277,7 +293,7 @@ func TestChat_TheReplyOutlivesTheTab(t *testing.T) {
 
 	ws := e.mustDial(c.ID)
 	ws.send(wire.ClientMsg{Type: "input", Input: "hello"})
-	if m := ws.next(); m.Type != "token" {
+	if m := ws.nextTurnEvent(); m.Type != "token" {
 		t.Fatalf("first message = %+v", m)
 	}
 	ws.conn.Close(websocket.StatusGoingAway, "tab closed")
@@ -306,7 +322,7 @@ func TestChat_ReopeningDuringAReplySaysBusy(t *testing.T) {
 
 	first := e.mustDial(c.ID)
 	first.send(wire.ClientMsg{Type: "input", Input: "hello"})
-	first.next() // the first word
+	first.nextTurnEvent() // the first word
 
 	second := e.mustDial(c.ID)
 	if m := second.next(); m.Type != "busy" {
@@ -334,7 +350,7 @@ func TestChat_StopKeepsTheQuestion(t *testing.T) {
 
 	ws := e.mustDial(c.ID)
 	ws.send(wire.ClientMsg{Type: "input", Input: "a long question"})
-	ws.next()
+	ws.nextTurnEvent()
 	ws.send(wire.ClientMsg{Type: "cancel"})
 	if _, m := ws.until("cancelled", "done", "error"); m.Type != "cancelled" {
 		t.Fatalf("after cancel: %+v", m)

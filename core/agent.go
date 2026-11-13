@@ -90,9 +90,9 @@ func (a *Agent) Run(ctx context.Context, memory Memory, userInput string, em Emi
 		// HOOK: post llm call
 		post := &PostLLMCallPayload{Response: &resp}
 		if err := a.hooks.Fire(ctx, HookEvent{Type: HookPostLLMCall, Payload: post}); err != nil {
+			em.Usage(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 			return RunResult{}, fmt.Errorf("agent: post llm call hook: %w", err)
 		}
-
 		em.Usage(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 
 		memory.Add(Message{Role: RoleAssistant, Content: resp.Content})

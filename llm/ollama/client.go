@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,6 +83,10 @@ func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools 
 		Tools:    mapToolsToOllama(tools),
 		Stream:   tokenHandler != nil,
 	}
+	limits := core.TokenLimitsFrom(ctx)
+	if limits.ContextWindow > 0 || limits.OutputTokens > 0 {
+		ollamaReq.Options = &ollamaOptions{NumCtx: limits.ContextWindow, NumPredict: limits.OutputTokens}
+	}
 
 	// 2. serializzare json
 	ollamaReqBytes, err := json.Marshal(ollamaReq)
@@ -110,6 +115,69 @@ func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools 
 		return c.readStream(resp.Body, tokenHandler)
 	}
 	return c.readBlocking(resp.Body)
+}
+
+func (c *OllamaClient) ModelInfo(ctx context.Context) (core.ModelLimits, error) {
+	raw, err := json.Marshal(map[string]string{"model": c.Model})
+	if err != nil {
+		return core.ModelLimits{}, fmt.Errorf("ollama: show request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/api/show", bytes.NewReader(raw))
+	if err != nil {
+		return core.ModelLimits{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return core.ModelLimits{}, fmt.Errorf("ollama: show: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		return core.ModelLimits{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return core.ModelLimits{}, fmt.Errorf("ollama: show response: %w", err)
+		}
+		return core.ModelLimits{}, &core.ProviderError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
+	}
+	var result struct {
+		Parameters string                     `json:"parameters"`
+		ModelInfo  map[string]json.RawMessage `json:"model_info"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return core.ModelLimits{}, fmt.Errorf("ollama: show decode: %w", err)
+	}
+	window := 0
+	for key, raw := range result.ModelInfo {
+		if strings.HasSuffix(key, ".context_length") {
+			var n int
+			if err := json.Unmarshal(raw, &n); err != nil {
+				return core.ModelLimits{}, fmt.Errorf("ollama: context metadata: %w", err)
+			}
+			if window == 0 || n < window {
+				window = n
+			}
+		}
+	}
+	for _, line := range strings.Split(result.Parameters, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "num_ctx" {
+			n, err := strconv.Atoi(fields[1])
+			if err != nil {
+				return core.ModelLimits{}, fmt.Errorf("ollama: num_ctx metadata: %w", err)
+			}
+			if window == 0 || n < window {
+				window = n
+			}
+		}
+	}
+	limits := core.ModelLimits{ContextWindow: window}
+	if err := limits.Validate(); err != nil {
+		return limits, fmt.Errorf("ollama: model limits: %w", err)
+	}
+	return limits, nil
 }
 
 func (c *OllamaClient) readBlocking(body io.Reader) (core.LLMResponse, error) {

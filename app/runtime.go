@@ -38,7 +38,10 @@ type Runtime struct {
 	current         *session.Session // sessione attiva
 	tools           []tool.Tool
 	maxDuration     time.Duration // 0 = no timeout
-	toolOutputLimit int           // bytes a tool result may keep, 0 = no limit; subagents inherit it
+	maxTokens       int
+	contextPolicy   *contextPolicy
+	declaredWindow  int
+	toolOutputLimit int // bytes a tool result may keep, 0 = no limit; subagents inherit it
 	mcpSessions     []*mcp.Session
 	subagents       map[string]manifest.SubagentSpec
 	journal         journal.Journal
@@ -63,7 +66,7 @@ func NewFromConfig(cfg config.Config) *Runtime {
 	agent.SetContextLimit(cfg.ContextWindow)
 	agent.SetMaxIterations(cfg.MaxIterations)
 
-	return &Runtime{
+	rt := &Runtime{
 		agent:           agent,
 		cfg:             cfg,
 		clientErr:       clientErr,
@@ -71,6 +74,8 @@ func NewFromConfig(cfg config.Config) *Runtime {
 		store:           session.NewInMemoryStore(),
 		current:         session.New(cfg.ActiveModel()),
 	}
+	rt.agent.Client = &contextClient{inner: client, rt: rt, cfg: cfg}
+	return rt
 }
 
 // WithTool adds a tool to the runtime and returns a new runtime instance.
@@ -162,6 +167,7 @@ func (r *Runtime) rebuildClient() error {
 		return err
 	}
 
+	client = &contextClient{inner: client, rt: r, cfg: r.cfg}
 	r.agent.Client = client
 	r.clientErr = nil
 	return nil
@@ -203,12 +209,17 @@ func (r *Runtime) spawnNamed(name string) (*core.Agent, manifest.SubagentSpec, e
 	if spec.Model != "" {
 		auth, _ := config.LoadAuth()
 		cfg := r.cfg
+		cfg.Providers = make(map[string]config.ProviderConfig, len(r.cfg.Providers))
+		for k, pc := range r.cfg.Providers {
+			cfg.Providers[k] = pc
+		}
 		cfg.SetActiveModel(spec.Model)
 		c, err := newLLMClient(cfg, auth)
 		if err != nil {
 			return nil, spec, fmt.Errorf("sub-agent %q: model %q: %w", name, spec.Model, err)
 		}
 		client = c
+		client = &contextClient{inner: c, rt: r, cfg: cfg}
 	}
 
 	child := core.NewAgent(client)
@@ -351,11 +362,27 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 	}
 
 	runID := newRunID()
+	output := r.cfg.MaxOutputTokens
+	if output == 0 {
+		output = 4096
+	}
+	runCtx = core.WithTokenLimits(runCtx, core.TokenLimits{OutputTokens: output})
 	runCtx = context.WithValue(runCtx, runIDKey{}, runID)
 	runCtx = context.WithValue(runCtx, budgetKey{}, &budgetState{})
 	source := sourceFrom(ctx)
 
 	em := &channelEmitter{ch: ch, thinking: r.thinkingEnabled}
+	var contextState *contextRun
+	if _, tracked := r.agent.Client.(*contextClient); tracked {
+		start := len(sess.Memory().Messages())
+		contextState = &contextRun{
+			session:     sess,
+			activeStart: &start,
+			emit:        func(ev Event) { ch <- ev },
+			persist:     func() error { return r.store.Save(sess) },
+		}
+		runCtx = context.WithValue(runCtx, contextRunKey{}, contextState)
+	}
 	runCtx = WithPermissionEmit(runCtx, func(prp PermissionRequestPayload) {
 		ch <- Event{Type: EventPermissionRequest, Payload: prp}
 	})
@@ -371,17 +398,46 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 		defer cancel()
 
 		res, err := r.agent.Run(runCtx, sess.Memory(), input, em, attachments...)
+		if contextState != nil && contextState.initialized {
+			messages, contextErr := projected(contextState.prefix, sess.Memory().Messages(), sess.Compaction)
+			if contextErr == nil {
+				state := "ready"
+				if err != nil {
+					state = "error"
+				}
+				contextErr = contextState.publish(messages, state, false)
+			}
+			err = errors.Join(err, contextErr)
+		}
+		if contextState != nil && contextState.trackingInitialized && !contextState.initialized {
+			history := sess.Memory().Messages()
+			if contextState.historyLen > len(history) {
+				err = errors.Join(err, fmt.Errorf("context: history changed during the run"))
+			} else {
+				messages := append(append([]core.Message(nil), contextState.view...), history[contextState.historyLen:]...)
+				state := "ready"
+				if contextState.budget == 0 {
+					state = "unknown"
+				}
+				if err != nil {
+					state = "error"
+				}
+				err = errors.Join(err, contextState.publish(messages, state, false))
+			}
+		}
+		saveErr := r.store.Save(sess)
+		if saveErr != nil {
+			err = errors.Join(err, fmt.Errorf("save session: %w", saveErr))
+		}
 
 		switch {
-		case errors.Is(err, context.Canceled):
-			_ = r.store.Save(sess)
+		case errors.Is(err, context.Canceled) && saveErr == nil:
 			r.finishRun(runID, "cancelled", nil)
 			ch <- Event{Type: EventCancelled}
 		case err != nil:
 			r.finishRun(runID, "error", nil)
 			ch <- Event{Type: EventError, Payload: ErrorPayload{RunID: runID, Err: err}}
 		default:
-			_ = r.store.Save(sess)
 			r.finishRun(runID, "ok", res.FinalResult)
 			ch <- Event{Type: EventDone, Payload: DonePayload{
 				RunID:  runID,
@@ -482,6 +538,8 @@ func (r *Runtime) ToggleThinking() bool {
 
 func (r *Runtime) ClearMemory() {
 	r.current.Memory().Clear()
+	r.current.Compaction = nil
+	r.current.Context = nil
 }
 
 func (r *Runtime) Memory() string {

@@ -28,15 +28,22 @@ type PlanStep struct {
 }
 
 type Session struct {
-	ID        string
-	Title     string
-	Model     string
-	Provider  string // empty in sessions written before it existed
-	Agent     string // the manifest answering, relative to the working folder; empty = the model alone
-	Plan      []PlanStep
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	memory    core.Memory
+	ID         string
+	Title      string
+	Model      string
+	Provider   string // empty in sessions written before it existed
+	Agent      string // the manifest answering, relative to the working folder; empty = the model alone
+	Plan       []PlanStep
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	Compaction *CompactionCheckpoint
+	Context    *core.ContextUsage
+	memory     core.Memory
+}
+
+type CompactionCheckpoint struct {
+	Summary         string `json:"summary"`
+	CoveredMessages int    `json:"covered_messages"`
 }
 
 func New(model string) *Session {
@@ -49,6 +56,13 @@ func New(model string) *Session {
 		UpdatedAt: now,
 		memory:    core.NewInMemory(),
 	}
+
+}
+
+func NewWithMemory(model string, memory core.Memory) *Session {
+	s := New(model)
+	s.memory = memory
+	return s
 }
 
 func (s *Session) Memory() core.Memory { return s.memory }
