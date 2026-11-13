@@ -60,7 +60,7 @@
 	}
 </script>
 
-<svelte:head><title>{t.title} · mani</title></svelte:head>
+<svelte:head><title>{t.title} - mani</title></svelte:head>
 
 <div class="head">
 	<div>

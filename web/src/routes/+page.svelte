@@ -4,14 +4,16 @@
 	import { app, enabledProviders } from '#lib/state.svelte.ts';
 
 	const t = m.home;
-	import { api } from '#lib/api/client.ts';
+	import { agentsApi, api } from '#lib/api/client.ts';
 
 	const connected = $derived(enabledProviders().length);
 	let chats = $state(0);
+	let agentCount = $state(0);
+	agentsApi.list().then((r) => (agentCount = r.agents.length), () => {});
 	api.conversations().then((r) => (chats = r.conversations.length), () => {});
 </script>
 
-<svelte:head><title>{t.title} · mani</title></svelte:head>
+<svelte:head><title>{t.title} - mani</title></svelte:head>
 
 <div>
 	<h1>{t.title}</h1>
@@ -35,6 +37,13 @@
 			<span class="sm mu">{chats > 0 ? t.chatDone(chats) : t.chatTodo}</span>
 		</span>
 		{#if chats > 0}<span class="cap">{t.done}</span>{/if}
+	</a>
+	<a class="step" href="/agents">
+		<span class:done={agentCount > 0} class="tick"><Icon name={agentCount > 0 ? 'check' : 'circle'} /></span>
+		<span class="grow">
+			<b>{t.agents}</b>
+			<span class="sm mu">{agentCount > 0 ? t.agentsDone(agentCount) : t.agentsTodo}</span>
+		</span>
 	</a>
 	<div class="next">
 		<span class="cap">{t.next}</span>

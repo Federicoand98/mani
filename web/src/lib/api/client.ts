@@ -1,5 +1,10 @@
 import type {
+	AgentFile,
+	AgentList,
+	AgentWrite,
 	APIError,
+	CheckResult,
+	FolderList,
 	Conversation,
 	ConversationInput,
 	ConversationList,
@@ -65,6 +70,18 @@ export const api = {
 	createConversation: (input: ConversationInput) => call<Conversation>('POST', '/conversations', input),
 	updateConversation: (id: string, input: ConversationInput) => call<Conversation>('PATCH', c(id), input),
 	deleteConversation: (id: string) => call<null>('DELETE', c(id))
+};
+
+const a = (path: string) => '/agents/file/' + path.split('/').map(encodeURIComponent).join('/');
+
+export const agentsApi = {
+	list: () => call<AgentList>('GET', '/agents'),
+	get: (path: string) => call<AgentFile>('GET', a(path)),
+	save: (path: string, body: AgentWrite) => call<AgentFile>('PUT', a(path), body),
+	create: (path: string, text: string) => call<AgentFile>('POST', a(path), { text }),
+	remove: (path: string) => call<null>('DELETE', a(path)),
+	check: (text: string, path: string) => call<CheckResult>('POST', '/agents/check', { text, path }),
+	folders: (path: string) => call<FolderList>('GET', '/folders?path=' + encodeURIComponent(path))
 };
 
 const c = (id: string) => '/conversations/' + encodeURIComponent(id);

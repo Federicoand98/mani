@@ -121,3 +121,22 @@ func TestRun_EnumReachesTheProvider(t *testing.T) {
 		}
 	}
 }
+
+// mani validate lists every problem with its line, not just the first.
+func TestValidate_ListsEveryProblem(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	body := "identity:\n  name: demo\n  provider: ollama\n  model: m\ncapabilities:\n  tools:\n    - name: read\n    - name: teleport\nlimits:\n  max_duration: 2 minutes\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runMani(t, t.TempDir(), "validate", "--config", path)
+	if res.code != exitUsage {
+		t.Fatalf("exit %d, want %d", res.code, exitUsage)
+	}
+	for _, want := range []string{"2 problems", `line 8: tool unknown "teleport"`, "line 10: limits.max_duration"} {
+		if !strings.Contains(res.stderr, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, res.stderr)
+		}
+	}
+}

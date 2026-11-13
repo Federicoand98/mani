@@ -17,7 +17,10 @@
 
 	type Item = { href: string; icon: IconName; label: string };
 	const top: Item[] = [{ href: '/', icon: 'home', label: m.nav.home }];
-	const build: Item[] = [{ href: '/chat', icon: 'chat', label: m.nav.chat }];
+	const build: Item[] = [
+		{ href: '/chat', icon: 'chat', label: m.nav.chat },
+		{ href: '/agents', icon: 'agent', label: m.nav.agents }
+	];
 	const system: Item[] = [
 		{ href: '/providers', icon: 'cube', label: m.nav.providers },
 		{ href: '/settings', icon: 'sliders', label: m.nav.settings }
@@ -72,7 +75,7 @@
 					<span class="dot"></span>
 					{app.connection === 'offline' ? m.status.offline : app.connection === 'ok' ? m.status.connected : m.status.checking}
 				</b>
-				<span class="mu">{location.host}{app.health ? ` · mani ${app.health.version}` : ''}</span>
+				<span class="mu">{location.host}{app.health ? ` - mani ${app.health.version}` : ''}</span>
 			</div>
 		</nav>
 		{#if menuOpen}<button class="side-scrim" aria-label="Close the menu" onclick={() => (menuOpen = false)}></button>{/if}

@@ -108,3 +108,66 @@ export interface ConversationInput {
   provider?: string;
   model?: string;
 }
+/**
+ * AgentSummary is one row of the agent list.
+ */
+export interface AgentSummary {
+  path: string; // relative to the working directory, with forward slashes
+  name: string;
+  description: string;
+  provider: string;
+  model: string;
+  tools: number /* int */;
+  triggers: string[]; // "every 30m", "daily 07:00", "webhook /hook"
+  status: string; // "ok", "problems" or "invalid" (the YAML does not parse)
+  problems: number /* int */;
+  updatedAt: string;
+}
+export interface AgentList {
+  agents: AgentSummary[];
+}
+/**
+ * AgentFile is a manifest as the editor needs it: its text, the version that
+ * a save must match, and what is wrong with it.
+ */
+export interface AgentFile {
+  path: string;
+  text: string;
+  version: string;
+  problems: Problem[];
+}
+/**
+ * Problem is a manifest problem with its line (0 when unknown).
+ */
+export interface Problem {
+  path: string;
+  line: number /* int */;
+  message: string;
+}
+/**
+ * AgentWrite saves a manifest. Version is the one the editor loaded: a file
+ * changed since then is refused, unless Force says to overwrite it.
+ */
+export interface AgentWrite {
+  text: string;
+  version?: string;
+  force?: boolean;
+}
+/**
+ * CheckInput validates a text that is not saved yet. Path places it, so
+ * !include resolves next to the file.
+ */
+export interface CheckInput {
+  text: string;
+  path: string;
+}
+export interface CheckResult {
+  problems: Problem[];
+}
+/**
+ * FolderList is the subfolders of one folder, for the workspace picker.
+ */
+export interface FolderList {
+  path: string;
+  folders: string[];
+}

@@ -21,7 +21,7 @@ for (const [scheme, vw] of [['light', { width: 1360, height: 860 }], ['dark', { 
 	await page.waitForTimeout(200);
 	await page.screenshot({ path: `${out}/add-${scheme}-${vw.width}.png` });
 	if (scheme === 'light' && vw.width > 400) {
-		await page.getByRole('button', { name: /Local · Ollama/ }).click();
+		await page.getByRole('button', { name: /Local - Ollama/ }).click();
 		await page.getByLabel('Address').fill(ollama);
 		await page.getByRole('button', { name: 'Find Ollama' }).click();
 		await page.waitForTimeout(300);

@@ -18,7 +18,7 @@
 	const themes: Theme[] = ['system', 'light', 'dark'];
 </script>
 
-<svelte:head><title>{t.title} · mani</title></svelte:head>
+<svelte:head><title>{t.title} - mani</title></svelte:head>
 
 <div>
 	<h1>{t.title}</h1>

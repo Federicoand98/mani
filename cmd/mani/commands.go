@@ -152,9 +152,26 @@ func runValidate(ctx context.Context, args []string) error {
 		return usagef("--set is for flows: a manifest takes its values from ${VAR}")
 	}
 
-	spec, err := manifest.Load(*configPath)
+	data, err := os.ReadFile(*configPath)
 	if err != nil {
 		return usagef("%v", err)
+	}
+	// Every problem, not just the first: fixing one at a time is a loop of runs.
+	spec, problems := manifest.Check(data, filepath.Dir(*configPath))
+	if len(problems) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s: %d problem", *configPath, len(problems))
+		if len(problems) > 1 {
+			b.WriteString("s")
+		}
+		for _, p := range problems {
+			if p.Line > 0 {
+				fmt.Fprintf(&b, "\n  line %d: %s", p.Line, p.Message)
+			} else {
+				fmt.Fprintf(&b, "\n  %s", p.Message)
+			}
+		}
+		return usagef("%s", b.String())
 	}
 
 	fmt.Printf("%s: ok\n", *configPath)

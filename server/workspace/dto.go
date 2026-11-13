@@ -103,3 +103,62 @@ type ConversationInput struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 }
+
+// AgentSummary is one row of the agent list.
+type AgentSummary struct {
+	Path        string   `json:"path"` // relative to the working directory, with forward slashes
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Provider    string   `json:"provider"`
+	Model       string   `json:"model"`
+	Tools       int      `json:"tools"`
+	Triggers    []string `json:"triggers"` // "every 30m", "daily 07:00", "webhook /hook"
+	Status      string   `json:"status"`   // "ok", "problems" or "invalid" (the YAML does not parse)
+	Problems    int      `json:"problems"`
+	UpdatedAt   string   `json:"updatedAt"`
+}
+
+type AgentList struct {
+	Agents []AgentSummary `json:"agents"`
+}
+
+// AgentFile is a manifest as the editor needs it: its text, the version that
+// a save must match, and what is wrong with it.
+type AgentFile struct {
+	Path     string    `json:"path"`
+	Text     string    `json:"text"`
+	Version  string    `json:"version"`
+	Problems []Problem `json:"problems"`
+}
+
+// Problem is a manifest problem with its line (0 when unknown).
+type Problem struct {
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Message string `json:"message"`
+}
+
+// AgentWrite saves a manifest. Version is the one the editor loaded: a file
+// changed since then is refused, unless Force says to overwrite it.
+type AgentWrite struct {
+	Text    string `json:"text"`
+	Version string `json:"version,omitempty"`
+	Force   bool   `json:"force,omitempty"`
+}
+
+// CheckInput validates a text that is not saved yet. Path places it, so
+// !include resolves next to the file.
+type CheckInput struct {
+	Text string `json:"text"`
+	Path string `json:"path"`
+}
+
+type CheckResult struct {
+	Problems []Problem `json:"problems"`
+}
+
+// FolderList is the subfolders of one folder, for the workspace picker.
+type FolderList struct {
+	Path    string   `json:"path"`
+	Folders []string `json:"folders"`
+}

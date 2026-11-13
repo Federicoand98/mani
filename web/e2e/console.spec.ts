@@ -26,7 +26,7 @@ test('add Ollama, see its models, then remove it', async ({ page, mani }) => {
 	await expect(page.getByRole('heading', { name: 'No provider connected' })).toBeVisible();
 
 	await page.getByRole('button', { name: 'Add provider' }).click();
-	await page.getByRole('button', { name: /Local · Ollama/ }).click();
+	await page.getByRole('button', { name: /Local - Ollama/ }).click();
 	await page.getByLabel('Address').fill(mani.ollama);
 	await page.getByRole('button', { name: 'Find Ollama' }).click();
 	await expect(page.getByText('Found. 2 models already downloaded')).toBeVisible();
@@ -41,7 +41,7 @@ test('add Ollama, see its models, then remove it', async ({ page, mani }) => {
 	expect(cfg.providers.ollama).toMatchObject({ enabled: true, base_url: mani.ollama });
 
 	await row.getByRole('button', { name: 'Test' }).click();
-	await expect(row.getByText('Connected · 2 models')).toBeVisible();
+	await expect(row.getByText('Connected - 2 models')).toBeVisible();
 
 	await row.getByRole('button', { name: 'Remove' }).click();
 	await row.getByRole('button', { name: 'Confirm' }).click();

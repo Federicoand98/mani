@@ -95,7 +95,29 @@ library.
   The WebSocket messages of `mani serve` move to `server/wire`, and `mani web` speaks the same
   protocol. Nothing changes on the wire for existing clients.
 
+- **Agents in `mani web` (third milestone, first half).** The Agents page lists every manifest in
+  the folder and its subfolders, with its model, tools, triggers and state: ready, with problems,
+  or not valid YAML. Agents can be duplicated, renamed (file and `identity.name` together) and
+  deleted. The editor opens one on its eight blocks, each with a form, next to the YAML in an
+  editable panel; fields and text follow each other both ways. Saving changes only the characters
+  of the values you touched: comments, their alignment, key order, quoting and `!include` stay as
+  written. Problems are listed with their line as you type, and each leads to its field. A file
+  changed on disk reloads by itself when there are no local edits; with local edits, saving over
+  it is refused until you choose to reload or overwrite.
+
 ### Changed
+
+- **`mani validate` lists every problem, each with its line,** instead of stopping at the first:
+
+  ```
+  mani validate: agent.yaml: 2 problems
+    line 8: tool unknown "teleport" (built-in: bash, delegate, …)
+    line 13: limits.max_duration: time: unknown unit " minutes" in duration "2 minutes"
+  ```
+
+  Behind it, `manifest.Check(data, baseDir)` returns `[]manifest.Problem` (field, line, message),
+  and `Spec.Problems()` collects what `Validate` checks. `Validate` and `Load` still return the
+  first problem, with the same wording as before.
 
 - **`app/` is split into packages along its boundaries.** Breaking for library users, at the
   import level only — no behaviour changes:

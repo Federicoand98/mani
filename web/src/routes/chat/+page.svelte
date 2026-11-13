@@ -362,7 +362,7 @@
 	}
 </script>
 
-<svelte:head><title>{current?.title && current.title !== '(no title)' ? current.title : t.title} · mani</title></svelte:head>
+<svelte:head><title>{current?.title && current.title !== '(no title)' ? current.title : t.title} - mani</title></svelte:head>
 
 {#if app.providersLoaded && !providers.length}
 	<div class="center">
@@ -400,7 +400,7 @@
 						{:else}
 							<a href="/chat?c={c.id}" aria-current={c.id === id ? 'page' : undefined}>
 								<b>{c.title === '(no title)' ? t.untitled : c.title}</b>
-								<span>{c.model} · {relative(c.updatedAt)}{c.running ? ' · …' : ''}</span>
+								<span>{c.model} - {relative(c.updatedAt)}{c.running ? ' - …' : ''}</span>
 							</a>
 							<div class="row-actions">
 								<button class="icon-btn" title={t.rename} aria-label="{t.rename} {c.title}" onclick={() => ((renaming = c.id), (renameText = c.title))}><Icon name="pencil" size={14} /></button>

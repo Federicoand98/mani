@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/tool"
@@ -211,190 +210,63 @@ func Load(path string) (Spec, error) {
 	if err != nil {
 		return Spec{}, fmt.Errorf("[manifest]: read %s: %w", path, err)
 	}
+	spec, _, err := parse(data, filepath.Dir(path), path)
+	if err != nil {
+		return Spec{}, err
+	}
+	return spec, spec.Validate()
+}
+
+// parse decodes a manifest: unknown fields, ${VAR}, defaults and !include. It
+// returns the tree as written too, before ${VAR}, so a problem can be traced to
+// its line. name labels the errors and may be empty.
+func parse(data []byte, baseDir, name string) (Spec, *yaml.Node, error) {
+	wrap := func(stage string, err error) error {
+		if name == "" {
+			return fmt.Errorf("[manifest]: %s: %w", stage, err)
+		}
+		return fmt.Errorf("[manifest]: %s %s: %w", stage, name, err)
+	}
 
 	{
 		probe := Default()
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
 		if err := dec.Decode(&probe); err != nil && !errors.Is(err, io.EOF) {
-			return Spec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+			return Spec{}, nil, wrap("decode", err)
 		}
 	}
 
-	var root yaml.Node
+	var written, root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
-		return Spec{}, fmt.Errorf("[manifest]: unmarshal %s: %w", path, err)
+		return Spec{}, nil, wrap("unmarshal", err)
 	}
+	_ = yaml.Unmarshal(data, &written) // same bytes, cannot fail now
 
 	if err := expandEnvNodes(&root); err != nil {
-		return Spec{}, fmt.Errorf("[manifest]: expand env %s: %w", path, err)
+		return Spec{}, nil, wrap("expand env", err)
 	}
 
 	spec := Default()
 
 	if len(root.Content) > 0 {
 		if err := root.Decode(&spec); err != nil {
-			return Spec{}, fmt.Errorf("[manifest]: decode %s: %w", path, err)
+			return Spec{}, nil, wrap("decode", err)
 		}
 	}
 
-	if err := spec.resolveIncludes(filepath.Dir(path)); err != nil {
-		return Spec{}, fmt.Errorf("[manifest]: resolve includes %s: %w", path, err)
+	if err := spec.resolveIncludes(baseDir); err != nil {
+		return Spec{}, nil, wrap("resolve includes", err)
 	}
 
-	return spec, spec.Validate()
+	return spec, &written, nil
 }
 
+// Validate reports the first problem of the manifest, or nil.
 func (s Spec) Validate() error {
-	// --- capabilities.tools ---
-	declared := map[string]bool{}
-	for _, ref := range s.Capabilities.Tools {
-		if ref.Name == "" {
-			return fmt.Errorf("[manifest]: capabilities.tools: tool name required")
-		}
-		if declared[ref.Name] {
-			return fmt.Errorf("[manifest]: tool %q declarated too many times", ref.Name)
-		}
-		declared[ref.Name] = true
-
-		if ref.IsSubprocess() {
-			if ref.Schema.Type == "" {
-				return fmt.Errorf("[manifest]: tool subprocess %q requires schema.type", ref.Name)
-			}
-		} else if !IsBuiltinTool(ref.Name) {
-			return fmt.Errorf("[manifest]: tool unknown %q (built-in: %s)", ref.Name, strings.Join(BuiltinTools(), ", "))
-		}
+	if ps := s.Problems(); len(ps) > 0 {
+		return ps[0]
 	}
-
-	if len(s.Capabilities.Subagents) > 0 && !declared["delegate"] {
-		return fmt.Errorf("[manifest]: capabilities.subagents but \"delegate\" tool not declared")
-	}
-
-	seen := map[string]bool{}
-	for _, sa := range s.Capabilities.Subagents {
-		if sa.Name == "" {
-			return fmt.Errorf("[manifest]: subagent: name required")
-		}
-		if sa.Description == "" {
-			return fmt.Errorf("[manifest]: subagent %q: description required", sa.Name)
-		}
-		if seen[sa.Name] {
-			return fmt.Errorf("[manifest]: subagent %q: duplicate", sa.Name)
-		}
-		seen[sa.Name] = true
-		for _, t := range sa.Tools {
-			if !IsBuiltinTool(t) && !declared[t] {
-				return fmt.Errorf("[manifest]: subagent %q: tool unknown %q", sa.Name, t)
-			}
-		}
-	}
-
-	// --- policy ---
-	for name, p := range s.Policy.Tools {
-		switch p {
-		case RiskPolicyAllow, RiskPolicyAsk, RiskPolicyDeny:
-		default:
-			return fmt.Errorf("[manifest]: policy.tools[%s]: invalid value %q (allow|ask|deny)", name, p)
-		}
-	}
-	for i, r := range s.Policy.Rules {
-		if r.Pattern == "" {
-			return fmt.Errorf("[manifest]: policy.rules[%d]: pattern required", i)
-		}
-		if _, err := regexp.Compile(r.Pattern); err != nil {
-			return fmt.Errorf("[manifest]: policy.rules[%d]: invalid regex: %w", i, err)
-		}
-		if r.Action != "" && r.Action != "deny" {
-			return fmt.Errorf("[manifest]: policy.rules[%d]: action %q not supported (only \"deny\")", i, r.Action)
-		}
-	}
-	for i, m := range s.Policy.Redact {
-		if _, err := regexp.Compile(m.Pattern); err != nil {
-			return fmt.Errorf("[manifest]: policy.redact[%d]: invalid regex: %w", i, err)
-		}
-	}
-
-	// --- output ---
-	if s.Output.Schema.Type != "" && s.Output.Schema.Type != "object" {
-		return fmt.Errorf("[manifest]: output.schema.type must be \"object\", found %q", s.Output.Schema.Type)
-	}
-
-	// --- limits (le durate) ---
-	for name, v := range map[string]string{
-		"limits.max_duration": s.Limits.MaxDuration,
-		"limits.tool_timeout": s.Limits.ToolTimeout,
-	} {
-		if v == "" {
-			continue
-		}
-		if _, err := time.ParseDuration(v); err != nil {
-			return fmt.Errorf("manifest: %s: %w", name, err)
-		}
-	}
-
-	// --- run ---
-	if s.Run.Scheduler.Concurrency < 0 {
-		return fmt.Errorf("[manifest]: run.scheduler.concurrency must be >= 0")
-	}
-	if b := s.Run.Scheduler.Retry.Backoff; b != "" {
-		if _, err := time.ParseDuration(b); err != nil {
-			return fmt.Errorf("[manifest]: run.scheduler.retry.backoff: %w", err)
-		}
-	}
-	seenTrigger := map[string]bool{}
-	seenPath := map[string]bool{}
-	webhookAddr := ""
-	for i, t := range s.Run.Triggers {
-		switch t.Type {
-		case "every", "daily", "webhook":
-		default:
-			return fmt.Errorf("[manifest]: run.triggers[%d]: type %q not valid (every|daily|webhook)", i, t.Type)
-		}
-		if t.Memory != "" && t.Memory != "fresh" && t.Memory != "persistent" {
-			return fmt.Errorf("[manifest]: run.triggers[%d]: memory must be fresh|persistent, found %q", i, t.Memory)
-		}
-		if t.Type == "daily" {
-			if _, _, err := ParseClock(t.At); err != nil {
-				return fmt.Errorf("[manifest]: run.triggers[%d].at: %w", i, err)
-			}
-		}
-		if t.Type == "webhook" {
-			path := t.HookPath()
-			if !strings.HasPrefix(path, "/") {
-				return fmt.Errorf("[manifest]: run.triggers[%d].path: must start with \"/\", found %q", i, path)
-			}
-			if seenPath[path] {
-				return fmt.Errorf("[manifest]: run.triggers[%d].path: %q declared twice", i, path)
-			}
-			seenPath[path] = true
-
-			// il listener e' uno solo: due addr diversi sarebbero un webhook muto
-			if t.Addr != "" {
-				if webhookAddr != "" && webhookAddr != t.Addr {
-					return fmt.Errorf("[manifest]: run.triggers: webhook triggers must share one addr, found %q and %q", webhookAddr, t.Addr)
-				}
-				webhookAddr = t.Addr
-			}
-		}
-		if t.Name != "" {
-			if seenTrigger[t.Name] {
-				return fmt.Errorf("[manifest]: run.triggers: name %q duplicate", t.Name)
-			}
-			seenTrigger[t.Name] = true
-		}
-	}
-
-	// --- observability ---
-	switch backend := strings.ToLower(strings.TrimSpace(s.Observability.Journal.Backend)); backend {
-	case "", "jsonl":
-	case "sqlite":
-		if s.Observability.Journal.Enabled && s.Observability.Journal.Path == "" {
-			return fmt.Errorf("[manifest]: observability.journal: sqlite backend requires path")
-		}
-	default:
-		return fmt.Errorf("[manifest]: observability.journal.backend: unsupported backend %q (jsonl|sqlite)", s.Observability.Journal.Backend)
-	}
-
 	return nil
 }
 

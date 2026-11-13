@@ -461,3 +461,91 @@ kbd {
 	gap: 12px;
 	flex-wrap: wrap;
 }
+
+/* Editor forms. */
+.form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+}
+.form-grid.three {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.field > label code,
+.label code {
+	overflow-wrap: anywhere;
+	font-size: 11.5px;
+	font-weight: 400;
+	background: none;
+	padding: 0;
+	color: var(--mu);
+	margin-left: 6px;
+}
+textarea.input {
+	height: auto;
+	padding: 10px 12px;
+	line-height: 20px;
+	resize: vertical;
+}
+select.input {
+	appearance: auto;
+}
+.toggle {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 14px;
+	cursor: pointer;
+}
+.toggle input {
+	width: 18px;
+	height: 18px;
+	accent-color: var(--pr);
+	flex: none;
+}
+.subhead {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+.subhead h3 {
+	font-size: 15px;
+}
+.seg.small button {
+	height: 30px;
+	padding: 0 10px;
+	font-size: 12.5px;
+}
+.seg button[aria-pressed='true'].allow {
+	background: var(--okt);
+	color: var(--ok);
+}
+.seg button[aria-pressed='true'].deny {
+	background: var(--ert);
+	color: var(--er);
+}
+.readonly-list {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--bd);
+	border-radius: 10px;
+}
+.readonly-list > div {
+	display: flex;
+	gap: 10px;
+	align-items: baseline;
+	padding: 10px 12px;
+	font-size: 14px;
+	flex-wrap: wrap;
+}
+.readonly-list > div + div {
+	border-top: 1px solid var(--bd);
+}
+@media (max-width: 640px) {
+	.form-grid,
+	.form-grid.three {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

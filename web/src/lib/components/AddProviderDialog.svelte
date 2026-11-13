@@ -142,7 +142,7 @@
 				<div class="choices">
 					{#each providers as p (p.name)}
 						<button class="choice" disabled={p.enabled} onclick={() => pick(p)}>
-							<b>{p.local ? `Local · ${p.label}` : p.label}</b>
+							<b>{p.local ? `Local - ${p.label}` : p.label}</b>
 							<span class="sm mu">{t.about[p.name]}</span>
 							{#if p.enabled}
 								<span class="badge ok">{t.alreadyAdded}</span>

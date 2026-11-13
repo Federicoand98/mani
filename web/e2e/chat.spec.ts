@@ -24,7 +24,7 @@ test('a conversation: reply in streaming, saved in the folder, listed with its t
 	await page.getByLabel('Write a message…').fill('hello');
 	await page.keyboard.press('Enter');
 	await expect(page.getByText('Hello there, friend')).toBeVisible();
-	await expect(page.getByText(/12 in · 4 out/)).toBeVisible();
+	await expect(page.getByText(/12 in - 4 out/)).toBeVisible();
 	await expect(page).toHaveURL(/\/chat\?c=[0-9a-f]+/);
 
 	const item = page.getByRole('complementary', { name: 'Conversations' }).getByRole('link', { name: /hello/ });

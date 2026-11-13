@@ -315,7 +315,7 @@ func TestStatic_ServesTheAppAndFallsBackToIndex(t *testing.T) {
 		return f.raw(httptest.NewRequest("GET", "http://"+host+p, nil))
 	}
 
-	for _, p := range []string{"/", "/providers", "/settings/theme"} {
+	for _, p := range []string{"/", "/providers", "/settings/theme", "/agents/team/reviewer.yaml"} {
 		if w := get(p); w.Code != 200 || !strings.Contains(w.Body.String(), "console") || w.Header().Get("Cache-Control") != "no-cache" {
 			t.Errorf("%s: %d %q cache=%q", p, w.Code, w.Body.String(), w.Header().Get("Cache-Control"))
 		}

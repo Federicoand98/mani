@@ -8,8 +8,9 @@ import (
 	"strings"
 )
 
-// handleStatic serves the single-page app. A path with no file behind it and no
-// extension is a client route, so it gets index.html; a missing asset is a 404.
+// handleStatic serves the single-page app. A missing file under _app/ is a
+// missing asset and answers 404; any other path is a client route, so it gets
+// index.html (routes may end in .yaml: /agents/reviewer.yaml).
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -30,7 +31,7 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		name = "index.html"
 	}
 	if fi, err := fs.Stat(s.opt.Assets, name); err != nil || fi.IsDir() {
-		if path.Ext(name) != "" {
+		if strings.HasPrefix(name, "_app/") {
 			http.NotFound(w, r)
 			return
 		}
