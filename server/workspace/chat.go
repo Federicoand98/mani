@@ -59,6 +59,14 @@ type chats struct {
 	// allowed holds "Allow for this conversation" answers, per conversation and
 	// tool. It lives as long as mani web: the manifest never changes (M3-8).
 	allowed map[string]map[string]bool
+
+	// drafts are trial conversations with an agent not saved yet (M4-4).
+	drafts map[string]*draft
+}
+
+type draft struct {
+	rt    *app.Runtime
+	store session.Store // in memory: nothing of a trial reaches the disk
 }
 
 type turn struct {
@@ -89,6 +97,7 @@ func newChats(workdir string) *chats {
 		dir:        filepath.Join(workdir, ".mani", "sessions"),
 		turns:      map[string]*turn{},
 		allowed:    map[string]map[string]bool{},
+		drafts:     map[string]*draft{},
 		ctx:        ctx,
 		stop:       stop,
 		newRuntime: modelRuntime,
@@ -133,6 +142,12 @@ func (c *chats) running(id string) bool {
 func (c *chats) close() {
 	c.stop()
 	c.wg.Wait()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, d := range c.drafts {
+		d.rt.Close()
+		delete(c.drafts, id)
+	}
 }
 
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +356,11 @@ func (s *Server) handleChatSocket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.serveSocket(w, r, sess, st)
+}
+
+// serveSocket runs the socket of one conversation, saved or a draft's.
+func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, sess *session.Session, st session.Store) {
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -521,6 +541,9 @@ func (c *chats) start(id string, st session.Store, msg wire.ClientMsg, sub *subs
 // runtimeFor picks who answers: the conversation's agent (shared Runtime) or
 // the model alone (built for this reply). Called with c.mu held.
 func (c *chats) runtimeFor(sess *session.Session, st session.Store, keep int) (*app.Runtime, func(), error) {
+	if d := c.drafts[sess.ID]; d != nil {
+		return d.rt, func() {}, nil
+	}
 	if sess.Agent != "" {
 		rt, release, err := c.agent(c.ctx, sess.Agent)
 		if err != nil {

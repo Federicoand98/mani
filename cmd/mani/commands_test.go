@@ -8,29 +8,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Federicoand98/mani/internal/templates"
 	"github.com/Federicoand98/mani/manifest"
 )
 
-func TestTemplates_AllParseAndValidate(t *testing.T) {
-	for _, name := range templateNames() {
+// mani init writes every template as a manifest that loads.
+func TestInit_EveryTemplate(t *testing.T) {
+	for _, name := range templates.Names() {
 		t.Run(name, func(t *testing.T) {
-			data, err := templatesFS.ReadFile("templates/" + name + ".yaml")
-			if err != nil {
-				t.Fatal(err)
+			path := filepath.Join(t.TempDir(), "agent.yaml")
+			if res := runMani(t, t.TempDir(), "init", "--template", name, "-o", path); res.code != 0 {
+				t.Fatalf("exit %d\n%s", res.code, res.stderr)
 			}
-			dir := t.TempDir()
-			path := filepath.Join(dir, "agent.yaml")
-			if err := os.WriteFile(path, data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			spec, err := manifest.Load(path)
-			if err != nil {
-				t.Fatalf("LoadManifest: %v", err)
-			}
-			if err := spec.Validate(); err != nil {
-				t.Fatalf("Validate: %v", err)
+			if _, err := manifest.Load(path); err != nil {
+				t.Fatalf("Load: %v", err)
 			}
 		})
+	}
+	res := runMani(t, t.TempDir(), "init", "--template", "nope")
+	if res.code != exitUsage || !strings.Contains(res.stderr, "available: agent, docs, monitor, classifier, blank") {
+		t.Errorf("unknown template: %d %s", res.code, res.stderr)
 	}
 }
 

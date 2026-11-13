@@ -38,7 +38,7 @@
 		</span>
 		{#if chats > 0}<span class="cap">{t.done}</span>{/if}
 	</a>
-	<a class="step" href="/agents">
+	<a class="step" href={agentCount > 0 ? "/agents" : "/agents/new"}>
 		<span class:done={agentCount > 0} class="tick"><Icon name={agentCount > 0 ? 'check' : 'circle'} /></span>
 		<span class="grow">
 			<b>{t.agents}</b>

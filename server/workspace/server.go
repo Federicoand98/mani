@@ -69,6 +69,10 @@ func (s *Server) Handler() http.Handler {
 	s.api(mux, "DELETE /api/agents/file/{path...}", s.handleDeleteAgent)
 	s.api(mux, "POST /api/agents/check", s.handleCheckAgent)
 	s.api(mux, "GET /api/folders", s.handleFolders)
+	s.api(mux, "GET /api/templates", s.handleTemplates)
+	s.api(mux, "POST /api/drafts", s.handleCreateDraft)
+	s.api(mux, "GET /api/drafts/{id}/ws", s.handleDraftSocket)
+	s.api(mux, "DELETE /api/drafts/{id}", s.handleDeleteDraft)
 	s.api(mux, "/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
 	})

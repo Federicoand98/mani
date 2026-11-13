@@ -52,6 +52,11 @@ limits:                      # how much may it consume?
   tool_timeout: 60s
 ```
 
+This is the `agent` template. `mani init --template docs` (or `monitor`, `classifier`, `blank`)
+starts from another one; `mani init --help` lists them, and the
+[CLI reference](../../reference/cli/#mani-init) says what each gives you. In `mani web`, "New
+agent" walks through the same templates and lets you try the agent before saving it.
+
 Three things worth knowing before you run it:
 
 - `workspace` confines every filesystem tool. The agent cannot read or write outside it, whatever

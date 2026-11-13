@@ -157,13 +157,17 @@ type socket struct {
 }
 
 func (e *chatEnv) dial(id string, header http.Header) (*socket, error) {
+	return e.dialPath("/api/conversations/"+id+"/ws", header)
+}
+
+func (e *chatEnv) dialPath(path string, header http.Header) (*socket, error) {
 	if header == nil {
 		header = http.Header{}
 	}
 	header.Set("Cookie", e.cookie)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(e.base, "http")+"/api/conversations/"+id+"/ws", &websocket.DialOptions{HTTPHeader: header})
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(e.base, "http")+path, &websocket.DialOptions{HTTPHeader: header})
 	if err != nil {
 		return nil, err
 	}

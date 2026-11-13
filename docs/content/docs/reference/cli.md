@@ -162,6 +162,17 @@ stopping `mani web` stops it and saves what was written.
 | `-o PATH` | `agent.yaml` | output file |
 | `--force` | `false` | overwrite the output file if it exists |
 
+Every template is commented block by block, and the blocks it does not use are there as
+commented examples. `mani web` offers the same templates when you create an agent.
+
+| Template | What you get |
+|---|---|
+| `agent` | Reads and writes files in its folder; writing asks first. |
+| `docs` | Reads and searches the documents of its folder and answers with sources. |
+| `monitor` | Runs read-only checks every morning; rules forbid deleting and `sudo`. |
+| `classifier` | One text in, one checked JSON answer out. No tools. |
+| `blank` | Only a name and a model; every other block is a commented example. |
+
 ## `mani validate`
 
 Loads a manifest or a flow and reports what it found, without calling a model.

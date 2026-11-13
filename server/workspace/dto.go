@@ -178,3 +178,27 @@ type FolderList struct {
 	Path    string   `json:"path"`
 	Folders []string `json:"folders"`
 }
+
+// Template is a manifest to start a new agent from, shared with mani init.
+type Template struct {
+	Name  string `json:"name"`
+	Title string `json:"title"`
+	About string `json:"about"`
+	Text  string `json:"text"`
+}
+
+type TemplateList struct {
+	Templates []Template `json:"templates"`
+}
+
+// DraftInput starts a trial of a manifest not saved yet. Folder is where it
+// will be saved, relative to the working directory.
+type DraftInput struct {
+	Text   string `json:"text"`
+	Folder string `json:"folder,omitempty"`
+}
+
+// Draft is a trial conversation: open /api/drafts/{id}/ws to talk with it.
+type Draft struct {
+	ID string `json:"id"`
+}

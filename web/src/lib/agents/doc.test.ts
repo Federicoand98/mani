@@ -26,7 +26,8 @@ describe('Manifest', () => {
 	});
 
 	it('round-trips the init template and the examples', () => {
-		for (const f of ['../cmd/mani/templates/agent.yaml', '../_examples/flow/classify.yaml']) {
+		const tpl = ['agent', 'docs', 'monitor', 'classifier', 'blank'].map((n) => `../internal/templates/${n}.yaml`);
+		for (const f of [...tpl, '../_examples/flow/classify.yaml']) {
 			const text = readFileSync(f, 'utf8');
 			expect(new Manifest(text).toString(), f).toBe(text);
 		}
@@ -86,7 +87,7 @@ describe('Manifest', () => {
 	});
 
 	it('keeps the alignment of trailing comments around an edit', () => {
-		const t = readFileSync('../cmd/mani/templates/agent.yaml', 'utf8');
+		const t = readFileSync('../internal/templates/agent.yaml', 'utf8');
 		const m = new Manifest(t);
 		m.set(['identity', 'provider'], 'openai');
 		expect(m.toString()).toBe(t.replace('  provider: ollama           #', '  provider: openai           #'));

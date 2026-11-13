@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AgentEditor } from '../../agents/editor.svelte.ts';
+	import type { ManifestState as AgentEditor } from '../../agents/editor.svelte.ts';
 
 	let { ed }: { ed: AgentEditor } = $props();
 	const num = (v: string) => (v === '' ? '' : Number(v));

@@ -4,6 +4,8 @@ import type {
 	AgentWrite,
 	APIError,
 	CheckResult,
+	Draft,
+	TemplateList,
 	FolderList,
 	Conversation,
 	ConversationInput,
@@ -81,7 +83,10 @@ export const agentsApi = {
 	create: (path: string, text: string) => call<AgentFile>('POST', a(path), { text }),
 	remove: (path: string) => call<null>('DELETE', a(path)),
 	check: (text: string, path: string) => call<CheckResult>('POST', '/agents/check', { text, path }),
-	folders: (path: string) => call<FolderList>('GET', '/folders?path=' + encodeURIComponent(path))
+	folders: (path: string) => call<FolderList>('GET', '/folders?path=' + encodeURIComponent(path)),
+	templates: () => call<TemplateList>('GET', '/templates'),
+	draft: (text: string, folder: string) => call<Draft>('POST', '/drafts', { text, folder }),
+	endDraft: (id: string) => call<null>('DELETE', '/drafts/' + encodeURIComponent(id))
 };
 
 const c = (id: string) => '/conversations/' + encodeURIComponent(id);

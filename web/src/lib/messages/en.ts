@@ -43,9 +43,9 @@ export const en = {
 		chatDone: (n: number) => `${n} conversation${n === 1 ? '' : 's'}`,
 		next: 'Coming next in the console',
 		agents: 'Edit your agents',
-		agentsTodo: 'Open an agent to change its model, tools and permissions.',
+		agentsTodo: 'Create one from a template, then try it in the chat.',
 		agentsDone: (n: number) => `${n} agent${n === 1 ? '' : 's'} in this folder`,
-		nextItems: ['Create agents step by step', 'Chat with an agent', 'Runs and approvals', 'Flows'],
+		nextItems: ['Runs and approvals', 'Flows'],
 		done: 'Done'
 	},
 	providers: {
@@ -196,7 +196,7 @@ export const en = {
 		problems: (n: number) => `${n} problem${n === 1 ? '' : 's'}`,
 		invalid: 'YAML not valid',
 		emptyTitle: 'No agents in this folder',
-		emptyBody: 'An agent is a .yaml file with an identity block. Create one with mani init, or with the guided creation that comes next in the console.',
+		emptyBody: 'An agent is a .yaml file with an identity block. Start from a template, from scratch, or import one you have.',
 		duplicate: 'Duplicate',
 		rename: 'Rename',
 		delete: 'Delete',

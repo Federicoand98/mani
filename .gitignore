@@ -61,3 +61,8 @@ web/node_modules/
 web/.svelte-kit/
 web/test-results/
 web/playwright-report/
+# Copilot instructions and the exported Claude Code history, private like CLAUDE.md
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/copilot/

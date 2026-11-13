@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '../../api/client.ts';
-	import type { AgentEditor } from '../../agents/editor.svelte.ts';
+	import type { ManifestState as AgentEditor } from '../../agents/editor.svelte.ts';
 	import { app } from '../../state.svelte.ts';
 
 	let { ed }: { ed: AgentEditor } = $props();

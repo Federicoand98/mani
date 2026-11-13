@@ -14,13 +14,15 @@ export class ChatSocket {
 	constructor(
 		private id: string,
 		private onMessage: (m: ServerMsg) => void,
-		private onState: (s: SocketState) => void
+		private onState: (s: SocketState) => void,
+		/** The socket path, for a trial of an unsaved agent (/api/drafts/{id}/ws). */
+		private path = `/api/conversations/${encodeURIComponent(id)}/ws`
 	) {
 		this.connect();
 	}
 
 	private connect() {
-		const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/conversations/${encodeURIComponent(this.id)}/ws`;
+		const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${this.path}`;
 		const ws = new WebSocket(url);
 		this.ws = ws;
 		this.onState('connecting');

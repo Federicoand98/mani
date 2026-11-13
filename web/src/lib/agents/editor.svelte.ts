@@ -2,34 +2,27 @@ import { agentsApi, ApiError } from '../api/client.ts';
 import type { Problem } from '../api/types.ts';
 import { Manifest, type Path } from './doc.ts';
 
-// The state of one open manifest. Reads go through methods that touch `rev`,
-// so the fields re-render when the document changes; writes go through edit().
+// A manifest being edited: its text, the problems mani finds in it, and reads
+// that touch `rev`, so the fields re-render when the document changes. Writes
+// go through edit(). The editor of a saved file (AgentEditor) and the guided
+// creation of a new one share it.
 
-export class AgentEditor {
+export class ManifestState {
+	/** Where the file is, or will be: problems are checked against its folder. */
 	path: string;
 	text = $state('');
-	saved = $state('');
-	version = $state('');
 	problems = $state<Problem[]>([]);
 	rev = $state(0);
-	loading = $state(true);
-	saving = $state(false);
-	error = $state('');
-	/** The file changed on disk while there were local edits (M3-6). */
-	external = $state<{ text: string; version: string } | null>(null);
-	/** A save was refused because the file changed since it was loaded. */
-	conflict = $state(false);
 	m = new Manifest('');
 
 	private checkTimer: ReturnType<typeof setTimeout> | undefined;
-	private pollTimer: ReturnType<typeof setInterval> | undefined;
 
-	constructor(path: string) {
+	constructor(path: string, text = '') {
 		this.path = path;
-	}
-
-	get dirty() {
-		return this.text !== this.saved;
+		if (text) {
+			this.text = text;
+			this.m = new Manifest(text);
+		}
 	}
 
 	get parses() {
@@ -71,6 +64,39 @@ export class AgentEditor {
 		this.scheduleCheck();
 	}
 
+	scheduleCheck() {
+		clearTimeout(this.checkTimer);
+		this.checkTimer = setTimeout(() => this.check(), 350);
+	}
+
+	async check() {
+		try {
+			this.problems = (await agentsApi.check(this.text, this.path)).problems;
+		} catch {
+			// the next edit checks again
+		}
+	}
+}
+
+// The editor of a manifest saved on disk: load, save with a version, and watch
+// the file for changes made elsewhere (M3-6).
+export class AgentEditor extends ManifestState {
+	saved = $state('');
+	version = $state('');
+	loading = $state(true);
+	saving = $state(false);
+	error = $state('');
+	/** The file changed on disk while there were local edits (M3-6). */
+	external = $state<{ text: string; version: string } | null>(null);
+	/** A save was refused because the file changed since it was loaded. */
+	conflict = $state(false);
+
+	private pollTimer: ReturnType<typeof setInterval> | undefined;
+
+	get dirty() {
+		return this.text !== this.saved;
+	}
+
 	private adopt(text: string, version: string, problems: Problem[]) {
 		this.text = this.saved = text;
 		this.version = version;
@@ -90,17 +116,6 @@ export class AgentEditor {
 		} finally {
 			this.loading = false;
 		}
-	}
-
-	scheduleCheck() {
-		clearTimeout(this.checkTimer);
-		this.checkTimer = setTimeout(async () => {
-			try {
-				this.problems = (await agentsApi.check(this.text, this.path)).problems;
-			} catch {
-				// the next edit checks again
-			}
-		}, 350);
 	}
 
 	/** Saves; returns false when the file changed on disk since it was loaded. */

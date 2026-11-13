@@ -191,3 +191,29 @@ export interface FolderList {
   path: string;
   folders: string[];
 }
+/**
+ * Template is a manifest to start a new agent from, shared with mani init.
+ */
+export interface Template {
+  name: string;
+  title: string;
+  about: string;
+  text: string;
+}
+export interface TemplateList {
+  templates: Template[];
+}
+/**
+ * DraftInput starts a trial of a manifest not saved yet. Folder is where it
+ * will be saved, relative to the working directory.
+ */
+export interface DraftInput {
+  text: string;
+  folder?: string;
+}
+/**
+ * Draft is a trial conversation: open /api/drafts/{id}/ws to talk with it.
+ */
+export interface Draft {
+  id: string;
+}

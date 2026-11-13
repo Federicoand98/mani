@@ -62,9 +62,12 @@
 
 <svelte:head><title>{t.title} - mani</title></svelte:head>
 
-<div>
-	<h1>{t.title}</h1>
-	<p class="sm mu">{t.subtitle}</p>
+<div class="head">
+	<div>
+		<h1>{t.title}</h1>
+		<p class="sm mu">{t.subtitle}</p>
+	</div>
+	<a class="btn primary" href="/agents/new"><Icon name="plus" size={16} />New agent</a>
 </div>
 
 {#if agents === null}
@@ -75,7 +78,7 @@
 			<div class="icon"><Icon name="agent" size={24} /></div>
 			<h2 class="h3">{t.emptyTitle}</h2>
 			<p>{t.emptyBody}</p>
-			<div class="command"><span>mani init</span></div>
+			<a class="btn primary" href="/agents/new"><Icon name="plus" size={16} />New agent</a>
 		</div>
 	</div>
 {:else}
@@ -134,6 +137,13 @@
 {/if}
 
 <style>
+	.head {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
 	.h3 {
 		font-size: 16px;
 		line-height: 24px;

@@ -22,7 +22,9 @@
 	const t = m.editor;
 	const path = page.params.path ?? '';
 	const ed = new AgentEditor(path);
-	let block = $state<BlockKey>('identity');
+	// ?block=run opens a block directly ("Schedule it" after creating an agent).
+	const asked = page.url.searchParams.get('block');
+	let block = $state<BlockKey>(BLOCKS.some((b) => b.key === asked) ? (asked as BlockKey) : 'identity');
 	let yaml: { gotoLine(n: number): void } | undefined = $state();
 	// Form or YAML, one at a time and full width; the choice is remembered.
 	let view = $state<'form' | 'yaml'>(read('mani:editor-view') === 'yaml' ? 'yaml' : 'form');

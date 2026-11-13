@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AgentEditor } from '../../agents/editor.svelte.ts';
+	import type { ManifestState as AgentEditor } from '../../agents/editor.svelte.ts';
 	import { RISK_CLASS, RISK_LABEL, TOOL_INFO } from '../../agents/tools.ts';
 	import Icon from '../Icon.svelte';
 

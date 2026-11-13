@@ -2,20 +2,19 @@ package main
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
 	"unicode/utf8"
 
 	"github.com/Federicoand98/mani/app"
+	"github.com/Federicoand98/mani/internal/templates"
 	"github.com/Federicoand98/mani/journal"
 	"github.com/Federicoand98/mani/journal/sqlite"
 	"github.com/Federicoand98/mani/manifest"
@@ -76,30 +75,22 @@ Run "mani <command> --help" for the flags of a single command.
 // commands
 //
 
-//go:embed templates/*.yaml
-var templatesFS embed.FS
-
-func templateNames() []string {
-	entries, _ := templatesFS.ReadDir("templates")
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, strings.TrimSuffix(e.Name(), ".yaml"))
-	}
-	sort.Strings(names)
-	return names
-}
-
 func runInit(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	tmpl := fs.String("template", "agent", "template to scaffold: "+strings.Join(templateNames(), ", "))
+	var list strings.Builder
+	for _, t := range templates.List() {
+		fmt.Fprintf(&list, "\n  %-11s %s", t.Name, t.About)
+	}
+	tmpl := fs.String("template", "agent", "template to scaffold:"+list.String())
 	out := fs.String("o", "agent.yaml", "output file")
 	force := fs.Bool("force", false, "overwrite the output file if it already exists")
 	_ = fs.Parse(args)
 
-	data, err := templatesFS.ReadFile("templates/" + *tmpl + ".yaml")
-	if err != nil {
-		return usagef("unknown template %q (available: %s)", *tmpl, strings.Join(templateNames(), ", "))
+	tp, ok := templates.Get(*tmpl)
+	if !ok {
+		return usagef("unknown template %q (available: %s)", *tmpl, strings.Join(templates.Names(), ", "))
 	}
+	data := []byte(tp.Text)
 
 	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if *force {

@@ -119,6 +119,18 @@ library.
   manifest (`workspace`, `observability.journal.path`) count from the folder `mani web` manages,
   as if `mani run` started there, and replies land in the agent's journal with `source=web`.
 
+- **New agent in `mani web` (fourth milestone).** "New agent" on the Agents page starts from a
+  template, walks through name and model, tools, permissions and limits, shows the file with its
+  problems ("Fix" goes back to the step that owns each one), and opens a real conversation with
+  the agent before it is saved: tools and approvals work, nothing is written to disk and the
+  journal stays off. After saving, "Your agent works" opens it in the chat, in the editor or on
+  its triggers. A draft left halfway is kept in the browser and comes back on return. "Import
+  YAML" checks a pasted or chosen manifest and saves it into the editor.
+
+- **Four more `mani init` templates:** `docs`, `monitor`, `classifier` and `blank`, next to
+  `agent`. `mani init --help` lists them with what each gives you. The templates move to
+  `internal/templates`, shared by `mani init` and `mani web`.
+
 - **Custom model endpoints.** A provider can be any server that speaks the OpenAI, Anthropic or
   Ollama API: LM Studio, vLLM, llama.cpp, a company gateway. It lives in `config.json` with a
   `type`, an optional `label`, and an optional `models` list that wins over what the server
