@@ -1,8 +1,25 @@
 package core
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type TokenHandler func(token string, isThinking bool)
+
+// ProviderError is a provider answering a request with an HTTP status other than
+// 200. Adapters return it so a caller can tell a request worth repeating (429,
+// 5xx) from one that fails the same way every time (400, 401, 404).
+type ProviderError struct {
+	Provider   string // "openai", "anthropic", "ollama"
+	StatusCode int
+	Body       string
+	RetryAfter string // the raw Retry-After header, empty when absent
+}
+
+func (e *ProviderError) Error() string {
+	return fmt.Sprintf("%s: HTTP %d: %s", e.Provider, e.StatusCode, e.Body)
+}
 
 type LLMClient interface {
 	Send(ctx context.Context, messages []Message, tools []ToolDefinition, tokenHandler TokenHandler) (LLMResponse, error)

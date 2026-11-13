@@ -60,7 +60,7 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return core.LLMResponse{}, fmt.Errorf("anthropic: HTTP %d: %s", resp.StatusCode, b)
+		return core.LLMResponse{}, &core.ProviderError{Provider: "anthropic", StatusCode: resp.StatusCode, Body: string(b), RetryAfter: resp.Header.Get("Retry-After")}
 	}
 	return c.readSSE(resp.Body, h)
 }

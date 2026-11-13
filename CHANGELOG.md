@@ -170,6 +170,20 @@ library.
 
 ### Fixed
 
+- **One large tool result could break every request after it.** `read` returned a whole file and
+  `bash` a whole command output, with no limit: one `ls -R` or one big file filled a 128k-token
+  context, and from then on the provider refused each request (`HTTP 400`, context length
+  exceeded). Every tool result is now clipped at 32 KiB (`app.DefaultToolOutputLimit`, about 8k
+  tokens), keeping its start and its end around a marker that tells the model how much was cut
+  and to read less at once. It applies to manifest agents, the TUI and their subagents, and runs
+  after `policy.redact`, so a secret is masked before the cut and no half of it survives.
+- **Requests that could never succeed were sent three times.** The retry around every provider
+  retried any error, so a refused request (a context too long, a wrong key, an unknown model)
+  failed three times with growing pauses and came back as `retry: 3 failed attempts`. Only 408,
+  409, 429, 5xx and network errors are retried now, as the official OpenAI and Anthropic SDKs
+  do; any other status is reported at once, as it is. A `Retry-After` up to 60 seconds is
+  honoured, a longer one fails the request at once. Adapters return `*core.ProviderError`, so a
+  library caller can read the status too; the message text is unchanged.
 - **Images never reached the model.** `mani run --image` and the image attachments of the chat
   were accepted and then dropped twice over: `Runtime.ExecuteIn` did not pass attachments to the
   agent, and none of the provider adapters (Ollama, OpenAI and the ones built on it, Anthropic)

@@ -56,6 +56,7 @@ func runTUI(ctx context.Context, cfg config.Config) error {
 	app.RegisterPlanning(runtime)
 	app.RegisterSubagents(runtime, 3)
 	app.RegisterTracing(runtime)
+	app.RegisterToolOutputTruncation(runtime, app.DefaultToolOutputLimit)
 
 	_ = runtime.AddMCPServer(ctx, mcp.ServerSpec{Name: "deepwiki", URL: "https://mcp.deepwiki.com/sse"})
 

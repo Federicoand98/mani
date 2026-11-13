@@ -131,6 +131,9 @@ func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 		RegisterNetworkPolicy(rt, spec.Policy.Network)
 	}
 
+	// After the redaction rules: see RegisterToolOutputTruncation.
+	RegisterToolOutputTruncation(rt, DefaultToolOutputLimit)
+
 	// 4. limits
 	if spec.Limits.MaxTokens > 0 || spec.Limits.MaxToolCalls > 0 {
 		RegisterBudget(rt, spec.Limits)

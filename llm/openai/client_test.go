@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,28 @@ func TestSend_HTTPErrorPropagates(t *testing.T) {
 	_, err := newClient(srv.URL).Send(context.Background(), userMsg("x"), nil, func(string, bool) {})
 	if err == nil {
 		t.Fatal("un 401 deve produrre un errore")
+	}
+}
+
+// The status and the Retry-After header stay readable, so the retry decorator
+// can tell a context too long (400) from a rate limit (429).
+func TestSend_HTTPErrorIsAProviderError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "3")
+		http.Error(w, `{"error":"slow down"}`, http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, err := newClient(srv.URL).Send(context.Background(), userMsg("x"), nil, func(string, bool) {})
+	var pe *core.ProviderError
+	if !errors.As(err, &pe) {
+		t.Fatalf("want a *core.ProviderError, got %T: %v", err, err)
+	}
+	if pe.StatusCode != http.StatusTooManyRequests || pe.RetryAfter != "3" || !strings.Contains(pe.Body, "slow down") {
+		t.Errorf("got %+v", pe)
+	}
+	if !strings.HasPrefix(err.Error(), "openai: HTTP 429: ") {
+		t.Errorf("the message must keep its old shape, got %q", err)
 	}
 }
 

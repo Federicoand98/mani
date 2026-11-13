@@ -38,6 +38,7 @@ type Runtime struct {
 	current         *session.Session // sessione attiva
 	tools           []tool.Tool
 	maxDuration     time.Duration // 0 = no timeout
+	toolOutputLimit int           // bytes a tool result may keep, 0 = no limit; subagents inherit it
 	mcpSessions     []*mcp.Session
 	subagents       map[string]manifest.SubagentSpec
 	journal         journal.Journal
@@ -185,6 +186,10 @@ func (r *Runtime) spawnChild() *core.Agent {
 		attachJournalHooks(child.Hooks(), r.journal)
 	}
 
+	if r.toolOutputLimit > 0 {
+		child.Hooks().OnPostToolUse(truncationHook(r.toolOutputLimit))
+	}
+
 	return child
 }
 
@@ -227,6 +232,10 @@ func (r *Runtime) spawnNamed(name string) (*core.Agent, manifest.SubagentSpec, e
 
 	if r.journal != nil {
 		attachJournalHooks(child.Hooks(), r.journal)
+	}
+
+	if r.toolOutputLimit > 0 {
+		child.Hooks().OnPostToolUse(truncationHook(r.toolOutputLimit))
 	}
 
 	return child, spec, nil

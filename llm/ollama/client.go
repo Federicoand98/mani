@@ -103,7 +103,7 @@ func (c *OllamaClient) Send(ctx context.Context, messages []core.Message, tools 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return core.LLMResponse{}, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(body))
+		return core.LLMResponse{}, &core.ProviderError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body), RetryAfter: resp.Header.Get("Retry-After")}
 	}
 
 	if tokenHandler != nil {
