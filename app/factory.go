@@ -63,15 +63,25 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 		client = anthropic.New(anthropic.Config{BaseURL: base, Model: model, APIKey: cred.Key})
 
 	default:
-		// return nil, fmt.Errorf("provider %s: unknown", provider)
+		// Any other name is a custom endpoint: its type says which API it speaks,
+		// and the key is optional, since local servers often take none.
 		if base == "" {
-			return nil, fmt.Errorf("provider %s: no base url in config", provider)
+			return nil, fmt.Errorf("provider %s: unknown, or no base url in config", provider)
 		}
-		cred, ok := auth.Get(provider)
-		if !ok || cred.Key == "" {
-			return nil, fmt.Errorf("provider %s: no creds, use /login %s before", provider, provider)
+		cred, _ := auth.Get(provider)
+		switch t := cfg.Providers[provider].Type; t {
+		case "", "openai":
+			client = openai.New(openai.Config{BaseURL: base, Model: model, AuthFn: openai.StaticKey(cred.Key)})
+		case "anthropic":
+			if cred.Key == "" {
+				return nil, fmt.Errorf("provider %s: an Anthropic-compatible endpoint needs an API key", provider)
+			}
+			client = anthropic.New(anthropic.Config{BaseURL: base, Model: model, APIKey: cred.Key})
+		case "ollama":
+			client = ollama.NewOllamaClient(base, model)
+		default:
+			return nil, fmt.Errorf("provider %s: unknown API type %q (openai, anthropic or ollama)", provider, t)
 		}
-		client = openai.New(openai.Config{BaseURL: base, Model: model, AuthFn: openai.StaticKey(cred.Key)})
 	}
 
 	return NewRetryClient(client, 3, 500*time.Millisecond), nil
@@ -81,6 +91,9 @@ func newLLMClient(cfg config.Config, auth config.Auth) (core.LLMClient, error) {
 // the models it offers. It doubles as a connection test: an unreachable URL or a
 // rejected key comes back as the error, worded by the provider.
 func ProviderModels(ctx context.Context, cfg config.Config, auth config.Auth, provider string) ([]string, error) {
+	if ms := cfg.Providers[provider].Models; len(ms) > 0 {
+		return ms, nil // declared by the user: the endpoint may not list them
+	}
 	cfg.Provider = provider
 	client, err := newLLMClient(cfg, auth)
 	if err != nil {

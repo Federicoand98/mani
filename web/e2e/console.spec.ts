@@ -52,7 +52,7 @@ test('a refused key is reported and nothing is saved', async ({ page, mani }) =>
 	await page.goto(mani.link);
 	await page.goto(mani.url + '/providers');
 	await page.getByRole('button', { name: 'Add provider' }).click();
-	await page.getByRole('button', { name: /OpenAI/ }).click();
+	await page.getByRole('button', { name: /^OpenAI/ }).click();
 
 	await page.getByRole('button', { name: 'Test and add' }).click();
 	await expect(page.getByText('Enter the API key.')).toBeVisible();
@@ -79,4 +79,52 @@ test('the theme choice survives a reload of a deep route', async ({ page, mani }
 	await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 	await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a custom endpoint: added, used in chat, removed', async ({ page, mani }) => {
+	await page.goto(mani.link);
+	await page.goto(mani.url + '/providers');
+	await page.getByRole('button', { name: 'Add provider' }).click();
+	await page.getByRole('button', { name: /Custom endpoint/ }).click();
+	await page.getByLabel('Name', { exact: true }).fill('homebox');
+	await page.getByLabel('Shown as').fill('Home box');
+	await page.getByLabel('API type').selectOption('ollama');
+	await page.getByLabel('Address of the API').fill(mani.ollama);
+	await page.getByRole('button', { name: 'Test and add' }).click();
+	await expect(page.getByText('Home box added')).toBeVisible();
+	const row = page.getByRole('row', { name: /Home box/ });
+	await expect(row.getByText('Custom, ollama API')).toBeVisible();
+	await expect(row.getByText('2 models')).toBeVisible();
+
+	const cfg = JSON.parse(readFileSync(join(mani.home, 'config/mani/config.json'), 'utf8'));
+	expect(cfg.providers.homebox).toMatchObject({ type: 'ollama', label: 'Home box', enabled: true });
+
+	await page.goto(mani.url + '/chat');
+	await page.getByLabel('Model').selectOption({ label: 'qwen3.5:9b' });
+	await page.getByLabel('Write a message…').fill('hello');
+	await page.keyboard.press('Enter');
+	await expect(page.getByText('Hello there, friend')).toBeVisible();
+
+	await page.goto(mani.url + '/providers');
+	await page.getByRole('row', { name: /Home box/ }).getByRole('button', { name: 'Remove' }).click();
+	await page.getByRole('row', { name: /Home box/ }).getByRole('button', { name: 'Confirm' }).click();
+	await expect(page.getByRole('heading', { name: 'No provider connected' })).toBeVisible();
+	const after = JSON.parse(readFileSync(join(mani.home, 'config/mani/config.json'), 'utf8'));
+	expect(after.providers.homebox).toBeUndefined();
+});
+
+test('a custom endpoint that lists no models takes a declared list', async ({ page, mani }) => {
+	await page.goto(mani.link);
+	await page.goto(mani.url + '/providers');
+	await page.getByRole('button', { name: 'Add provider' }).click();
+	await page.getByRole('button', { name: /Custom endpoint/ }).click();
+	await page.getByLabel('Name', { exact: true }).fill('gateway');
+	await page.getByLabel('Address of the API').fill(mani.ollama + '/v1'); // answers 404 to /v1/models
+	await page.getByRole('button', { name: 'Test and add' }).click();
+	await expect(page.getByText(/did not answer as expected/)).toBeVisible();
+
+	await page.getByLabel('Models (optional)').fill('team-model-a\nteam-model-b');
+	await page.getByRole('button', { name: 'Test and add' }).click();
+	await expect(page.getByText('gateway added')).toBeVisible();
+	await expect(page.getByRole('row', { name: /gateway/ }).getByText('2 models')).toBeVisible();
 });

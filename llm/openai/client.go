@@ -57,7 +57,9 @@ func (c *Client) Send(ctx context.Context, msgs []core.Message, tools []core.Too
 	raw, _ := json.Marshal(body)
 	req, _ := http.NewRequestWithContext(ctx, "POST", c.cfg.BaseURL+"/chat/completions", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" { // local endpoints (LM Studio, vLLM, llama.cpp) often take no key
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	for k, v := range c.cfg.Headers {
 		req.Header.Set(k, v)
 	}
@@ -81,7 +83,9 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", c.cfg.BaseURL+"/models", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	for k, v := range c.cfg.Headers {
 		req.Header.Set(k, v)

@@ -44,6 +44,27 @@ reads to decide whether to call it. Write the description for a model, not for a
 If the provider has no credentials or no base URL, the run fails. mani never switches to another
 model on your behalf.
 
+`provider` can also name an endpoint you declared yourself: any server that speaks the OpenAI,
+Anthropic or Ollama API, such as LM Studio, vLLM, llama.cpp or a company gateway. Add it from the
+Providers page of `mani web`, or by hand in `~/.config/mani/config.json`:
+
+```json
+"providers": {
+  "lmstudio": {
+    "base_url": "http://localhost:1234/v1",
+    "type": "openai",
+    "label": "LM Studio",
+    "models": ["qwen2.5-coder-7b"],
+    "enabled": true
+  }
+}
+```
+
+`type` says which API the server speaks: `openai`, `anthropic` or `ollama`. `models` is optional
+and wins over what the server lists, which helps with endpoints that list nothing. A key, when the
+server wants one, goes in `auth.json` like any other; an OpenAI-compatible server without a key gets
+no `Authorization` header at all. Then the manifest writes `provider: lmstudio`.
+
 ## `capabilities`
 
 ```yaml

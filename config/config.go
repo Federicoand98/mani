@@ -21,7 +21,18 @@ type ProviderConfig struct {
 	// Enabled marks a provider the user added (from mani web). Providers have a
 	// default base URL whether or not anyone uses them, so presence alone says nothing.
 	Enabled bool `json:"enabled,omitempty"`
+
+	// A custom provider (an endpoint mani has no adapter named after) says which
+	// API it speaks: "openai", "anthropic" or "ollama". Empty for the built-in ones.
+	Type string `json:"type,omitempty"`
+	// Label is the name the console shows for a custom provider.
+	Label string `json:"label,omitempty"`
+	// Models, when set, is the list offered, for endpoints that do not list theirs.
+	Models []string `json:"models,omitempty"`
 }
+
+// Custom reports whether the provider is one the user declared, not one of mani's.
+func (p ProviderConfig) Custom() bool { return p.Type != "" }
 
 type Config struct {
 	Provider      string                    `json:"provider"`

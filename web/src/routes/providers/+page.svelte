@@ -101,7 +101,8 @@
 					<tr>
 						<td>
 							<b>{p.label}</b>
-							<div class="cap mono">{p.keyHint ? `key ${p.keyHint}` : p.baseUrl}</div>
+							{#if p.custom}<span class="badge muted">{t.custom(p.type ?? 'openai')}</span>{/if}
+							<div class="cap mono">{p.custom ? `${p.name} - ${p.baseUrl}` : p.keyHint ? `key ${p.keyHint}` : p.baseUrl}</div>
 						</td>
 						<td>
 							{#if p.local}

@@ -194,13 +194,13 @@ func checkModel(provider, model string) string {
 	if provider == "" || model == "" {
 		return "a conversation needs a provider and a model"
 	}
-	e, ok := lookup(provider)
-	if !ok {
-		return fmt.Sprintf("unknown provider %q", provider)
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err.Error()
+	}
+	e, ok := lookup(provider, cfg)
+	if !ok {
+		return fmt.Sprintf("unknown provider %q", provider)
 	}
 	if !cfg.Providers[provider].Enabled {
 		return e.label + " is not added: add it in Providers first"

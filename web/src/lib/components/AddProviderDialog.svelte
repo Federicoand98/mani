@@ -25,8 +25,19 @@
 	let device = $state<{ code: string; uri: string; minutes: number } | null>(null);
 	let poll: ReturnType<typeof setInterval> | undefined;
 
+	// A custom endpoint: any server speaking the OpenAI, Anthropic or Ollama API.
+	const CUSTOM: Provider = { name: '', label: 'Custom endpoint', local: false, auth: 'custom', baseUrl: '', enabled: false, custom: true };
+	let cName = $state('');
+	let cLabel = $state('');
+	let cType = $state('openai');
+	let cModels = $state('');
+	let warning = $state('');
+	const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
 	function reset() {
 		chosen = null;
+		cName = cLabel = cModels = warning = '';
+		cType = 'openai';
 		url = key = error = fieldError = '';
 		found = null;
 		device = null;
@@ -102,6 +113,36 @@
 		}
 	}
 
+	async function testAndAddCustom() {
+		fieldError = '';
+		error = '';
+		warning = '';
+		const name = cName.trim();
+		if (!NAME_RE.test(name)) fieldError = t.customNameError;
+		else if (providers.some((p) => p.name === name)) fieldError = t.customNameTaken(name);
+		else if (validateBaseUrl(url)) fieldError = m.errors.badUrl;
+		else if (cType === 'anthropic' && validateKey(key)) fieldError = m.errors.required('API key');
+		if (fieldError) return;
+		const models = cModels.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+		const input = { type: cType, baseUrl: url.trim(), key: key.trim() || undefined, models: models.length ? models : undefined };
+		busy = true;
+		try {
+			const r = await api.testProvider(name, input);
+			if (!r.ok) {
+				error = `${t.customRefused} ${r.error ?? ''}`.trim();
+				return;
+			}
+			const p = await api.saveProvider(name, { ...input, label: cLabel.trim() || undefined });
+			open = false;
+			reset();
+			onadded(p);
+		} catch (e) {
+			fail(e);
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function startDevice() {
 		busy = true;
 		try {
@@ -140,7 +181,7 @@
 					<p class="sm mu">{t.pickBody}</p>
 				</div>
 				<div class="choices">
-					{#each providers as p (p.name)}
+					{#each providers.filter((p) => !p.custom) as p (p.name)}
 						<button class="choice" disabled={p.enabled} onclick={() => pick(p)}>
 							<b>{p.local ? `Local - ${p.label}` : p.label}</b>
 							<span class="sm mu">{t.about[p.name]}</span>
@@ -151,6 +192,10 @@
 							{/if}
 						</button>
 					{/each}
+					<button class="choice" onclick={() => ((chosen = CUSTOM), (url = ''))}>
+						<b>{t.customTitle}</b>
+						<span class="sm mu">{t.customAbout}</span>
+					</button>
 				</div>
 				<div class="modal-foot">
 					<span></span>
@@ -159,7 +204,7 @@
 			{:else}
 				<div>
 					<Dialog.Title>{#snippet child({ props })}<h2 {...props}>{chosen?.label}</h2>{/snippet}</Dialog.Title>
-					<p class="sm mu">{t.about[chosen.name]}</p>
+					<p class="sm mu">{chosen.auth === 'custom' ? t.customAbout : t.about[chosen.name]}</p>
 				</div>
 
 				{#if chosen.auth === 'none'}
@@ -197,6 +242,43 @@
 							<p class="help">{t.endpointHelp}</p>
 						</div>
 					</details>
+				{:else if chosen.auth === 'custom'}
+					<div class="form-grid">
+						<div class="field">
+							<label for="cp-name">{t.customName}</label>
+							<input id="cp-name" class="input mono" placeholder="lmstudio" bind:value={cName} autocomplete="off" aria-describedby="cp-name-help" />
+							<p class="help" id="cp-name-help">{t.customNameHelp}</p>
+						</div>
+						<div class="field">
+							<label for="cp-label">{t.customLabel}</label>
+							<input id="cp-label" class="input" placeholder="LM Studio" bind:value={cLabel} />
+						</div>
+					</div>
+					<div class="form-grid">
+						<div class="field">
+							<label for="cp-type">{t.customType}</label>
+							<select id="cp-type" class="input" bind:value={cType}>
+								<option value="openai">OpenAI-compatible</option>
+								<option value="anthropic">Anthropic-compatible</option>
+								<option value="ollama">Ollama</option>
+							</select>
+						</div>
+						<div class="field">
+							<label for="cp-url">{t.customUrl}</label>
+							<input id="cp-url" class="input mono" placeholder={cType === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234/v1'} bind:value={url} />
+						</div>
+					</div>
+					<div class="field">
+						<label for="cp-key">{cType === 'anthropic' ? t.key : t.customKey}</label>
+						<input id="cp-key" class="input mono" type="password" autocomplete="off" bind:value={key} aria-describedby="cp-key-help" />
+						<p class="help" id="cp-key-help">{t.keyHelp}</p>
+					</div>
+					<div class="field">
+						<label for="cp-models">{t.customModels}</label>
+						<textarea id="cp-models" class="input mono" rows="3" placeholder="qwen2.5-coder-7b&#10;llama-3.1-70b" bind:value={cModels}></textarea>
+						<p class="help">{t.customModelsHelp}</p>
+					</div>
+					{#if fieldError}<p class="help error" role="alert">{fieldError}</p>{/if}
 				{:else if device}
 					<p class="sm">{t.deviceIntro}</p>
 					<div class="command"><span class="code">{device.code}</span><CopyButton text={device.code} /></div>
@@ -220,6 +302,8 @@
 						{/if}
 					{:else if chosen.auth === 'key'}
 						<button class="btn primary" disabled={busy} onclick={testAndAdd}>{busy ? t.working : t.testAndAdd}</button>
+					{:else if chosen.auth === 'custom'}
+						<button class="btn primary" disabled={busy} onclick={testAndAddCustom}>{busy ? t.working : t.testAndAdd}</button>
 					{/if}
 				</div>
 			{/if}

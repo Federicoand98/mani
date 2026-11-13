@@ -21,6 +21,10 @@ type Provider struct {
 	Enabled bool   `json:"enabled"`
 	KeyHint string `json:"keyHint,omitempty"` // last four characters of the saved key
 	Model   string `json:"model,omitempty"`   // the default model for this provider
+	// A custom endpoint: declared by the user, speaking the API in Type.
+	Custom bool     `json:"custom"`
+	Type   string   `json:"type,omitempty"`   // "openai", "anthropic" or "ollama"
+	Models []string `json:"models,omitempty"` // declared models, when the endpoint does not list them
 }
 
 type ProviderList struct {
@@ -32,14 +36,19 @@ type ProviderInput struct {
 	BaseURL string `json:"baseUrl,omitempty"`
 	Key     string `json:"key,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Custom endpoints only. Models replaces the declared list when present.
+	Label  string   `json:"label,omitempty"`
+	Type   string   `json:"type,omitempty"`
+	Models []string `json:"models,omitempty"`
 }
 
 // TestResult reports a connection test. A provider that refuses is not a server
 // error: OK is false and Error carries the provider's own words.
 type TestResult struct {
-	OK     bool     `json:"ok"`
-	Models []string `json:"models"`
-	Error  string   `json:"error,omitempty"`
+	OK      bool     `json:"ok"`
+	Models  []string `json:"models"`
+	Error   string   `json:"error,omitempty"`
+	Warning string   `json:"warning,omitempty"`
 }
 
 type ModelList struct {

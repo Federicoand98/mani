@@ -195,8 +195,9 @@ func TestProviders_StartEmptyAndRoundTrip(t *testing.T) {
 		t.Error("Remove kept the key in auth.json")
 	}
 
-	if code := f.do("PUT", "/api/providers/nope", `{}`, &e); code != 404 {
-		t.Errorf("unknown provider: %d", code)
+	// An unknown name is a new custom endpoint, which needs an API type.
+	if code := f.do("PUT", "/api/providers/nope", `{}`, &e); code != 400 || !strings.Contains(e.Error, "API type") {
+		t.Errorf("unknown provider without a type: %d %q", code, e.Error)
 	}
 	if code := f.do("PUT", "/api/providers/ollama", `{"baseUrl":"x","typo":1}`, &e); code != 400 {
 		t.Errorf("unknown field accepted: %d", code)

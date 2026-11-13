@@ -22,6 +22,12 @@ export interface Provider {
   enabled: boolean;
   keyHint?: string; // last four characters of the saved key
   model?: string; // the default model for this provider
+  /**
+   * A custom endpoint: declared by the user, speaking the API in Type.
+   */
+  custom: boolean;
+  type?: string; // "openai", "anthropic" or "ollama"
+  models?: string[]; // declared models, when the endpoint does not list them
 }
 export interface ProviderList {
   providers: Provider[];
@@ -33,6 +39,12 @@ export interface ProviderInput {
   baseUrl?: string;
   key?: string;
   model?: string;
+  /**
+   * Custom endpoints only. Models replaces the declared list when present.
+   */
+  label?: string;
+  type?: string;
+  models?: string[];
 }
 /**
  * TestResult reports a connection test. A provider that refuses is not a server
@@ -42,6 +54,7 @@ export interface TestResult {
   ok: boolean;
   models: string[];
   error?: string;
+  warning?: string;
 }
 export interface ModelList {
   models: string[];

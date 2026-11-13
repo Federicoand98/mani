@@ -119,6 +119,14 @@ library.
   manifest (`workspace`, `observability.journal.path`) count from the folder `mani web` manages,
   as if `mani run` started there, and replies land in the agent's journal with `source=web`.
 
+- **Custom model endpoints.** A provider can be any server that speaks the OpenAI, Anthropic or
+  Ollama API: LM Studio, vLLM, llama.cpp, a company gateway. It lives in `config.json` with a
+  `type`, an optional `label`, and an optional `models` list that wins over what the server
+  reports, for endpoints that list nothing. Its key is optional and goes in `auth.json`; an
+  OpenAI-compatible endpoint without one gets no `Authorization` header. A manifest names it in
+  `identity.provider` like any other. `mani web` adds, tests and removes them from the Providers
+  page; removing one deletes it from `config.json`.
+
 ### Changed
 
 - **`mani validate` lists every problem, each with its line,** instead of stopping at the first:
