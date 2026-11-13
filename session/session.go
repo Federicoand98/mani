@@ -32,6 +32,7 @@ type Session struct {
 	Title     string
 	Model     string
 	Provider  string // empty in sessions written before it existed
+	Agent     string // the manifest answering, relative to the working folder; empty = the model alone
 	Plan      []PlanStep
 	CreatedAt time.Time
 	UpdatedAt time.Time

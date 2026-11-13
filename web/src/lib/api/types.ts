@@ -75,6 +75,7 @@ export interface ConversationMeta {
   title: string;
   provider: string;
   model: string;
+  agent: string; // the manifest answering, relative to the working folder; empty = the model alone
   updatedAt: string; // RFC 3339
   running: boolean; // a reply is being written right now
 }
@@ -92,21 +93,27 @@ export interface ChatMessage {
   parts: ChatPart[];
 }
 /**
- * ChatPart is text or an image; images come back base64-encoded.
+ * ChatPart is one piece of a message: text, an image (base64), a tool call the
+ * assistant made (Input is its JSON) or the result that came back.
  */
 export interface ChatPart {
-  type: string; // "text" or "image"
+  type: string; // "text", "image", "tool_call" or "tool_result"
   text?: string;
   mediaType?: string;
   data?: string;
+  name?: string;
+  input?: string;
+  isError?: boolean;
 }
 /**
- * ConversationInput creates or edits a conversation. Empty fields keep what is saved.
+ * ConversationInput creates or edits a conversation. Empty fields keep what is
+ * saved; Agent set to "" removes the agent, and the model alone answers.
  */
 export interface ConversationInput {
   title?: string;
   provider?: string;
   model?: string;
+  agent?: string;
 }
 /**
  * AgentSummary is one row of the agent list.

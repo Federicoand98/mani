@@ -14,6 +14,7 @@ type sessionDTO struct {
 	Title     string       `json:"title"`
 	Model     string       `json:"model"`
 	Provider  string       `json:"provider,omitempty"`
+	Agent     string       `json:"agent,omitempty"`
 	Plan      []PlanStep   `json:"plan,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
@@ -54,6 +55,7 @@ func toSessionDTO(s *Session) sessionDTO {
 		Title:     s.Title,
 		Model:     s.Model,
 		Provider:  s.Provider,
+		Agent:     s.Agent,
 		Plan:      s.Plan,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
@@ -100,6 +102,7 @@ func (d sessionDTO) toSession() *Session {
 		Title:     d.Title,
 		Model:     d.Model,
 		Provider:  d.Provider,
+		Agent:     d.Agent,
 		Plan:      d.Plan,
 		CreatedAt: d.CreatedAt,
 		UpdatedAt: d.UpdatedAt,

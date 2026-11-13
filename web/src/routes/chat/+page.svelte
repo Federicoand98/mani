@@ -2,14 +2,16 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onDestroy, tick } from 'svelte';
-	import { api } from '#lib/api/client.ts';
-	import type { ChatPart, Conversation, ConversationMeta } from '#lib/api/types.ts';
+	import { agentsApi, api } from '#lib/api/client.ts';
+	import type { AgentSummary, ChatPart, Conversation, ConversationMeta } from '#lib/api/types.ts';
 	import type { ServerMsg } from '#lib/api/wire.ts';
 	import { commandHelp, findModel, parseCommand, type Command } from '#lib/chat/commands.ts';
 	import { checkImage, readImage, type Attachment } from '#lib/chat/images.ts';
 	import { ChatSocket, type SocketState } from '#lib/chat/socket.ts';
-	import { idle, reduce, start, type Turn } from '#lib/chat/turn.ts';
+	import { idle, reduce, start, type Ask, type Turn } from '#lib/chat/turn.ts';
+	import AskCard from '#lib/components/AskCard.svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import ToolCard from '#lib/components/ToolCard.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import { m } from '#lib/messages/en.ts';
 	import { getKeep, getLastModel, getShowThinking, setLastModel, setShowThinking } from '#lib/prefs.ts';
@@ -43,11 +45,18 @@
 	let socket: ChatSocket | null = null;
 	let socketId = '';
 
+	// Who answers: an agent (a manifest path) or, when empty, the model alone (M3-10).
+	let agents = $state<AgentSummary[]>([]);
+	let agent = $state('');
+	let pickerOpen = $state(false);
+	agentsApi.list().then((r) => (agents = r.agents), () => {});
+	const agentInfo = $derived(agents.find((a) => a.path === agent));
+
 	const id = $derived(page.url.searchParams.get('c'));
 	const providers = $derived(enabledProviders());
 	const answering = $derived(turn.status === 'answering');
 	const busy = $derived(turn.status === 'busy');
-	const who = $derived(current?.model ?? selected?.model ?? '');
+	const who = $derived(agent ? (agentInfo?.name ?? agent) : (current?.model ?? selected?.model ?? ''));
 
 	// --- data -------------------------------------------------------------------
 
@@ -76,6 +85,7 @@
 	$effect(() => {
 		if (selected || current) return;
 		const lastUsed = getLastModel();
+		if (!Object.keys(models).length) return;
 		if (lastUsed && models[lastUsed.provider]?.includes(lastUsed.model)) selected = lastUsed;
 		else {
 			const p = providers.find((p) => models[p.name]?.length);
@@ -100,11 +110,13 @@
 		showList = false;
 		if (!want) {
 			current = null;
+			agent = page.url.searchParams.get('agent') ?? '';
 			return;
 		}
 		try {
 			current = await api.conversation(want);
-			selected = { provider: current.provider, model: current.model };
+			agent = current.agent;
+			if (current.provider && current.model) selected = { provider: current.provider, model: current.model };
 		} catch (e) {
 			toast((e as Error).message);
 			goto('/chat', { replaceState: true });
@@ -159,12 +171,12 @@
 			else await runCommand(cmd);
 			return;
 		}
-		if (!selected) return;
+		if (!agent && !selected) return;
 
 		let cid = id;
 		if (!cid) {
 			try {
-				const c = await api.createConversation({ provider: selected.provider, model: selected.model });
+				const c = await api.createConversation(agent ? { agent } : { provider: selected!.provider, model: selected!.model });
 				cid = c.id;
 				current = c;
 				socketId = c.id;
@@ -186,7 +198,7 @@
 		attachError = '';
 		last = null;
 		turn = start(Date.now());
-		setLastModel(selected.provider, selected.model);
+		if (!agent && selected) setLastModel(selected.provider, selected.model);
 		await scrollDown(true);
 		await socket?.send({
 			type: 'input',
@@ -199,6 +211,31 @@
 
 	function stop() {
 		socket?.send({ type: 'cancel' });
+	}
+
+	function answer(ask: Ask, decision: string) {
+		socket?.send({ type: 'permission_response', request_id: ask.id, decision });
+	}
+
+	async function chooseAgent(path: string) {
+		pickerOpen = false;
+		if (path === agent) return;
+		if (!path && !selected) {
+			toast(t.pickModelFirst);
+			return;
+		}
+		if (!current) {
+			agent = path;
+			return;
+		}
+		try {
+			current = await api.updateConversation(current.id, path ? { agent: path } : { agent: '', provider: selected!.provider, model: selected!.model });
+			agent = current.agent;
+			if (current.messages.length) note(path ? t.agentNow(agentInfo?.name ?? path) : t.modelAlone(selected!.model));
+			loadList();
+		} catch (e) {
+			toast((e as Error).message);
+		}
 	}
 
 	function note(text: string) {
@@ -349,7 +386,44 @@
 		...(pending ? [{ role: 'user', parts: pending }] : [])
 	]);
 	const forgetBefore = $derived(shown.length > keep ? shown.length - keep : -1);
-	const lastAssistant = $derived(shown.findLastIndex((x) => x.role === 'assistant'));
+	// What the log shows: text stays a message, each tool call becomes a card,
+	// and a saved result is matched back to its call.
+	type Item =
+		| { kind: 'msg'; i: number; role: string; parts: ChatPart[] }
+		| { kind: 'tool'; i: number; name: string; input: string; result?: string; isError?: boolean };
+	const items = $derived.by(() => {
+		const out: Item[] = [];
+		shown.forEach((msg, i) => {
+			if (msg.role === 'tool') {
+				for (const p of msg.parts) {
+					const open = out.findLast((x): x is Extract<Item, { kind: 'tool' }> => x.kind === 'tool' && x.name === p.name && x.result === undefined);
+					if (open) {
+						open.result = p.text ?? '';
+						open.isError = p.isError;
+					}
+				}
+				return;
+			}
+			let text: ChatPart[] = [];
+			const flush = () => {
+				if (text.length) out.push({ kind: 'msg', i, role: msg.role, parts: text });
+				text = [];
+			};
+			for (const p of msg.parts) {
+				if (p.type === 'tool_call' && p.name === 'respond') {
+					// A structured answer arrives as a call to respond: show it as the reply.
+					text.push({ type: 'text', text: '```json\n' + JSON.stringify(JSON.parse(p.input || '{}'), null, 2) + '\n```' });
+				} else if (p.type === 'tool_call') {
+					flush();
+					out.push({ kind: 'tool', i, name: p.name ?? '', input: p.input ?? '' });
+				} else text.push(p);
+			}
+			flush();
+		});
+		return out;
+	});
+	const firstItemOf = $derived(new Map(items.map((it, k) => [it.i, k] as const).reverse()));
+	const lastAssistant = $derived(items.findLastIndex((x) => x.kind === 'msg' && x.role === 'assistant'));
 
 	onDestroy(() => socket?.close());
 
@@ -361,6 +435,8 @@
 		return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 	}
 </script>
+
+<svelte:window onclick={(e) => pickerOpen && !(e.target as Element).closest('.pick-wrap') && (pickerOpen = false)} />
 
 <svelte:head><title>{current?.title && current.title !== '(no title)' ? current.title : t.title} - mani</title></svelte:head>
 
@@ -400,7 +476,7 @@
 						{:else}
 							<a href="/chat?c={c.id}" aria-current={c.id === id ? 'page' : undefined}>
 								<b>{c.title === '(no title)' ? t.untitled : c.title}</b>
-								<span>{c.model} - {relative(c.updatedAt)}{c.running ? ' - …' : ''}</span>
+								<span>{c.agent ? (agents.find((a) => a.path === c.agent)?.name ?? c.agent) : c.model} - {relative(c.updatedAt)}{c.running ? ' - …' : ''}</span>
 							</a>
 							<div class="row-actions">
 								<button class="icon-btn" title={t.rename} aria-label="{t.rename} {c.title}" onclick={() => ((renaming = c.id), (renameText = c.title))}><Icon name="pencil" size={14} /></button>
@@ -420,8 +496,8 @@
 			<header class="conv-head">
 				<button class="icon-btn list-toggle" aria-label={t.listLabel} onclick={() => (showList = !showList)}><Icon name="runs" size={18} /></button>
 				<h1 class="title">{current && current.title !== '(no title)' ? current.title : t.untitled}</h1>
-				{#if selected}
-					{@const p = providers.find((x) => x.name === selected?.provider)}
+				{#if agent ? agentInfo : selected}
+					{@const p = providers.find((x) => x.name === (agent ? agentInfo?.provider : selected?.provider))}
 					{#if p}
 						<span class="badge" class:local={p.local} class:warn={!p.local}>{#if p.local}<span class="dot"></span>{:else}<Icon name="net" size={12} />{/if}{p.label}</span>
 					{/if}
@@ -432,8 +508,8 @@
 				{#if !shown.length && !notes.length}
 					<div class="hello">
 						<div class="empty-icon"><Icon name="chat" size={24} /></div>
-						<h2>{t.helloTitle(selected?.model ?? '…')}</h2>
-						<p class="sm mu">{t.helloBody}</p>
+						<h2>{t.helloTitle(agent ? (agentInfo?.name ?? agent) : (selected?.model ?? '…'))}</h2>
+						<p class="sm mu">{agent ? `${agentInfo?.description ? agentInfo.description + '. ' : ''}${t.helloAgent}` : t.helloBody}</p>
 						<div class="suggestions">
 							{#each t.suggestions as s (s)}
 								<button class="chip" onclick={() => ((input = s), textarea?.focus())}>{s}</button>
@@ -442,38 +518,46 @@
 					</div>
 				{/if}
 
-				{#each shown as msg, i (i)}
-					{#each notes.filter((n) => n.at === i) as n, j (j)}
-						<pre class="system note">{n.text}</pre>
-					{/each}
-					{#if i === forgetBefore}
-						<div class="forget" role="note"><span>{t.forgotten}</span> <a href="/settings">{t.forgottenHelp}</a></div>
+				{#each items as it, k (k)}
+					{#if firstItemOf.get(it.i) === k}
+						{#each notes.filter((n) => n.at === it.i) as n, j (j)}
+							<pre class="system note">{n.text}</pre>
+						{/each}
+						{#if it.i === forgetBefore}
+							<div class="forget" role="note"><span>{t.forgotten}</span> <a href="/settings">{t.forgottenHelp}</a></div>
+						{/if}
 					{/if}
-					<ChatMessage
-						role={msg.role}
-						parts={msg.parts}
-						who={who}
-						{showThinking}
-						thinking={i === lastAssistant && last ? last.thinking : ''}
-						thinkingMs={last?.thinkingMs ?? 0}
-						meta={i === lastAssistant && last ? last.meta : ''}
-					/>
+					{#if it.kind === 'tool'}
+						<ToolCard name={it.name} input={it.input} result={it.result} isError={it.isError} />
+					{:else}
+						<ChatMessage
+							role={it.role}
+							parts={it.parts}
+							{who}
+							{showThinking}
+							thinking={k === lastAssistant && last ? last.thinking : ''}
+							thinkingMs={last?.thinkingMs ?? 0}
+							meta={k === lastAssistant && last ? last.meta : ''}
+						/>
+					{/if}
 				{/each}
 				{#each notes.filter((n) => n.at >= shown.length) as n, j (j)}
 					<pre class="system note">{n.text}</pre>
 				{/each}
 
-				{#if answering}
-					<ChatMessage
-						role="assistant"
-						parts={[{ type: 'text', text: turn.text }]}
-						{who}
-						streaming
-						{showThinking}
-						thinking={turn.thinking}
-						thinkingMs={turn.thinkingMs}
-						thinkingLive={!turn.firstTokenAt}
-					/>
+				{#if answering && (turn.thinking || !turn.segments.length)}
+					<ChatMessage role="assistant" parts={[]} {who} streaming={!turn.segments.length} {showThinking} thinking={turn.thinking} thinkingMs={turn.thinkingMs} thinkingLive={!turn.firstTokenAt} />
+				{/if}
+				{#if answering || busy}
+					{#each turn.segments as seg, k (k)}
+						{#if seg.kind === 'text'}
+							<ChatMessage role="assistant" parts={[{ type: 'text', text: seg.text }]} {who} streaming={answering && k === turn.segments.length - 1} />
+						{:else if seg.kind === 'tool'}
+							<ToolCard name={seg.name} input={seg.input} result={seg.result} isError={seg.isError} running={answering && seg.result === undefined} />
+						{:else}
+							<AskCard ask={seg} agent={who} onanswer={(d) => answer(seg, d)} />
+						{/if}
+					{/each}
 				{/if}
 
 				{#if busy}
@@ -514,7 +598,7 @@
 						bind:value={input}
 						rows="1"
 						placeholder={t.placeholder}
-						disabled={busy || !selected}
+						disabled={busy || (!agent && !selected)}
 						oninput={resize}
 						{onkeydown}
 						{onpaste}
@@ -522,8 +606,29 @@
 					<div class="bar">
 						<button type="button" class="icon-btn" aria-label={t.attach} title={t.attach} onclick={() => fileInput?.click()}><Icon name="image" size={16} /></button>
 						<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple class="sr-only" tabindex="-1" onchange={(e) => (addFiles((e.target as HTMLInputElement).files ?? []), ((e.target as HTMLInputElement).value = ''))} />
+						<div class="pick-wrap">
+							{#if agent}
+								<span class="achip"><Icon name="agent" size={14} /><button type="button" aria-haspopup="true" aria-label={t.changeAgent} onclick={() => (pickerOpen = !pickerOpen)}>{agentInfo?.name ?? agent}</button><button type="button" aria-label={t.removeAgent} onclick={() => chooseAgent('')} disabled={answering || busy}><Icon name="x" size={12} /></button></span>
+							{:else}
+								<button type="button" class="chip-btn" aria-haspopup="true" onclick={() => (pickerOpen = !pickerOpen)} disabled={answering || busy}><Icon name="plus" size={14} />{t.agent}</button>
+							{/if}
+							{#if pickerOpen}
+								<div class="pop" role="menu">
+									<div class="cap pop-h">{t.pickAgentTitle}</div>
+									<button type="button" role="menuitem" aria-current={!agent ? 'true' : undefined} onclick={() => chooseAgent('')}><b>{t.noAgent}</b><span>{t.noAgentBody}</span></button>
+									{#each agents as a (a.path)}
+										<button type="button" role="menuitem" disabled={a.status === 'invalid'} aria-current={a.path === agent ? 'true' : undefined} onclick={() => chooseAgent(a.path)}>
+											<b>{a.name}</b><span>{a.description || a.path}</span><span class="cap">{a.tools} tools - {a.model}{a.status !== 'ok' ? ' - ' + (a.status === 'invalid' ? 'YAML not valid' : `${a.problems} problems`) : ''}</span>
+										</button>
+									{:else}
+										<p class="sm mu" style="padding:8px 10px">{t.noAgents}</p>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						{#if agent}<span class="cap mono">{agentInfo?.model ?? ''}</span>{/if}
 						<label class="sr-only" for="chat-model">{t.model}</label>
-						<select id="chat-model" class="input model" value={selected ? `${selected.provider}|${selected.model}` : ''} onchange={onModelChange} disabled={answering || busy}>
+						<select hidden={!!agent} id="chat-model" class="input model" value={selected ? `${selected.provider}|${selected.model}` : ''} onchange={onModelChange} disabled={answering || busy}>
 							{#each providers as p (p.name)}
 								<optgroup label={p.label}>
 									{#each models[p.name] ?? [] as mo (mo)}
@@ -681,6 +786,97 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		min-width: 0;
+	}
+	.pick-wrap {
+		position: relative;
+	}
+	.chip-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 32px;
+		padding: 0 12px;
+		border-radius: 999px;
+		border: 1px solid var(--bs);
+		background: var(--sf);
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.achip {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		height: 32px;
+		padding: 0 4px 0 10px;
+		border-radius: 999px;
+		background: var(--prt);
+		color: var(--pr);
+		font-size: 13px;
+		font-weight: 700;
+	}
+	.achip button {
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		padding: 0 6px;
+		height: 28px;
+		display: inline-grid;
+		place-items: center;
+		border-radius: 999px;
+	}
+	.achip button:hover {
+		background: var(--sf);
+	}
+	.pop {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 0;
+		width: 340px;
+		max-width: 80vw;
+		max-height: 380px;
+		overflow: auto;
+		background: var(--sf);
+		border: 1px solid var(--bd);
+		border-radius: 12px;
+		box-shadow: var(--sh3);
+		padding: 6px;
+		z-index: 40;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.pop-h {
+		padding: 6px 10px;
+	}
+	.pop button {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+		text-align: left;
+		border: 0;
+		background: none;
+		padding: 8px 10px;
+		border-radius: 8px;
+		cursor: pointer;
+	}
+	.pop button:hover:not(:disabled),
+	.pop button[aria-current='true'] {
+		background: var(--prt);
+	}
+	.pop button:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+	.pop button b {
+		font-size: 14px;
+	}
+	.pop button span {
+		font-size: 12.5px;
+		color: var(--mu);
 	}
 	.drop {
 		position: absolute;

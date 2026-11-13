@@ -37,6 +37,24 @@ function fakeOllama(): Promise<Server> {
 				last = body;
 				const msgs = JSON.parse(body).messages as { role: string; content: string }[];
 				const said = msgs.filter((m) => m.role === 'user').at(-1)?.content ?? '';
+				// A model that uses tools: "read notes" reads notes.txt, "run" runs a
+				// command; after a tool result it reports it.
+				const lastMsg = msgs.at(-1)!;
+				const toolCall =
+					lastMsg.role === 'user' && said.includes('read notes')
+						? { name: 'read', arguments: { path: 'notes.txt' } }
+						: lastMsg.role === 'user' && said.includes('run it')
+							? { name: 'bash', arguments: { command: 'echo hello-from-bash' } }
+							: null;
+				if (toolCall || lastMsg.role === 'tool') {
+					res.setHeader('Content-Type', 'application/x-ndjson');
+					const message = toolCall
+						? { role: 'assistant', content: '', tool_calls: [{ function: toolCall }] }
+						: { role: 'assistant', content: 'The tool said: ' + lastMsg.content.trim() };
+					res.write(JSON.stringify({ message, done: false }) + '\n');
+					res.end(JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop' }) + '\n');
+					return;
+				}
 				const reply = said.includes('code')
 					? 'Here it is:\n\n```js\nconsole.log(1)\n```'
 					: said.includes('slow')

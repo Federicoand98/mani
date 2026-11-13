@@ -21,6 +21,7 @@ export const paths = {
 	trash: '<path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11"/>',
 	image: '<rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="M17 13l-4-4-7 7"/>',
 	send: '<path d="M3 10l14-6-5 14-2-6z"/>',
+	tool: '<path d="M12 4a4 4 0 0 0-3 6l-6 6 1.5 1.5 6-6a4 4 0 0 0 6-3l-2.5 2.5-2-.5-.5-2z"/>',
 	copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V4H4v9h3"/>',
 	code: '<path d="M7 6l-4 4 4 4M13 6l4 4-4 4"/>',
 	form: '<rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6 7h8M6 10h8M6 13h5"/>',

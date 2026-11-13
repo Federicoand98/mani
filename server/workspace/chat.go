@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -52,13 +53,30 @@ type chats struct {
 
 	// newRuntime builds the model-only runtime for a reply; tests swap it.
 	newRuntime func(cfg config.Config, store session.Store, keep int) (*app.Runtime, error)
+	// agent hands out the shared Runtime of a manifest (Server.acquireAgent).
+	agent func(ctx context.Context, rel string) (*app.Runtime, func(), error)
+
+	// allowed holds "Allow for this conversation" answers, per conversation and
+	// tool. It lives as long as mani web: the manifest never changes (M3-8).
+	allowed map[string]map[string]bool
 }
 
 type turn struct {
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	subs   map[*subscriber]bool
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	subs    map[*subscriber]bool
+	pending map[string]*ask // permission requests waiting for an answer
 }
+
+type ask struct {
+	tool    string
+	respond chan app.Decision
+	msg     wire.ServerMsg
+	timer   *time.Timer
+}
+
+// permissionTimeout matches mani serve: an unanswered request is denied.
+var permissionTimeout = 10 * time.Minute
 
 type subscriber struct {
 	ctx context.Context
@@ -70,6 +88,7 @@ func newChats(workdir string) *chats {
 	return &chats{
 		dir:        filepath.Join(workdir, ".mani", "sessions"),
 		turns:      map[string]*turn{},
+		allowed:    map[string]map[string]bool{},
 		ctx:        ctx,
 		stop:       stop,
 		newRuntime: modelRuntime,
@@ -130,7 +149,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	out := ConversationList{Conversations: []ConversationMeta{}}
 	for _, m := range metas {
 		out.Conversations = append(out.Conversations, ConversationMeta{
-			ID: m.ID, Title: m.Title, Provider: m.Provider, Model: m.Model,
+			ID: m.ID, Title: m.Title, Provider: m.Provider, Model: m.Model, Agent: m.Agent,
 			UpdatedAt: m.UpdatedAt.UTC().Format(time.RFC3339), Running: s.chats.running(m.ID),
 		})
 	}
@@ -143,7 +162,14 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "bad request body: "+err.Error())
 		return
 	}
-	if msg := checkModel(in.Provider, in.Model); msg != "" {
+	agent := ""
+	if in.Agent != nil && *in.Agent != "" {
+		if _, err := s.resolve(*in.Agent, true); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		agent = *in.Agent
+	} else if msg := checkModel(in.Provider, in.Model); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -154,6 +180,7 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 	}
 	sess := session.New(in.Model)
 	sess.Provider = in.Provider
+	sess.Agent = agent
 	sess.Title = in.Title
 	if err := st.Save(sess); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -226,6 +253,18 @@ func (s *Server) handlePatchConversation(w http.ResponseWriter, r *http.Request)
 		}
 		sess.Provider, sess.Model = p, m
 	}
+	if in.Agent != nil {
+		if *in.Agent != "" {
+			if _, err := s.resolve(*in.Agent, true); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		} else if sess.Provider == "" || sess.Model == "" {
+			writeError(w, http.StatusBadRequest, "pick a model before removing the agent")
+			return
+		}
+		sess.Agent = *in.Agent
+	}
 	if in.Title != "" {
 		sess.Title = in.Title
 	}
@@ -262,13 +301,14 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 func (c *chats) toDTO(sess *session.Session) Conversation {
 	out := Conversation{
 		ConversationMeta: ConversationMeta{
-			ID: sess.ID, Title: sess.Title, Provider: sess.Provider, Model: sess.Model,
+			ID: sess.ID, Title: sess.Title, Provider: sess.Provider, Model: sess.Model, Agent: sess.Agent,
 			UpdatedAt: sess.UpdatedAt.UTC().Format(time.RFC3339), Running: c.running(sess.ID),
 		},
 		Messages: []ChatMessage{},
 	}
+	names := map[string]string{} // tool_use id → tool name, for the results
 	for _, m := range sess.Memory().Messages() {
-		if m.Role != core.RoleUser && m.Role != core.RoleAssistant {
+		if m.Role == core.RoleSystem {
 			continue
 		}
 		msg := ChatMessage{Role: string(m.Role), Parts: []ChatPart{}}
@@ -278,6 +318,12 @@ func (c *chats) toDTO(sess *session.Session) Conversation {
 				msg.Parts = append(msg.Parts, ChatPart{Type: "text", Text: v.Text})
 			case core.ImageBlock:
 				msg.Parts = append(msg.Parts, ChatPart{Type: "image", MediaType: v.MediaType, Data: base64.StdEncoding.EncodeToString(v.Data)})
+			case core.ToolUseBlock:
+				names[v.ID] = v.Name
+				in, _ := json.Marshal(v.Input)
+				msg.Parts = append(msg.Parts, ChatPart{Type: "tool_call", Name: v.Name, Input: string(in)})
+			case core.ToolResultBlock:
+				msg.Parts = append(msg.Parts, ChatPart{Type: "tool_result", Name: names[v.ToolUseID], Text: v.Content, IsError: v.IsError})
 			}
 		}
 		if len(msg.Parts) > 0 {
@@ -335,6 +381,8 @@ func (s *Server) handleChatSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		case "cancel":
 			s.chats.cancel(sess.ID)
+		case "permission_response":
+			s.chats.decide(sess.ID, msg.RequestID, msg.Decision)
 		default:
 			sub.send(wire.ErrorMsg(fmt.Sprintf("unknown message type %q", msg.Type)))
 		}
@@ -357,8 +405,15 @@ func (c *chats) attach(id string, sub *subscriber) {
 	}
 	t.mu.Lock()
 	t.subs[sub] = true
+	waiting := make([]wire.ServerMsg, 0, len(t.pending))
+	for _, a := range t.pending {
+		waiting = append(waiting, a.msg)
+	}
 	t.mu.Unlock()
 	sub.send(wire.ServerMsg{Type: "busy"})
+	for _, m := range waiting { // a reopened tab can still answer
+		sub.send(m)
+	}
 }
 
 func (c *chats) detach(id string, sub *subscriber) {
@@ -409,25 +464,14 @@ func (c *chats) start(id string, st session.Store, msg wire.ClientMsg, sub *subs
 		c.mu.Unlock()
 		return errors.New("no such conversation")
 	}
-	if msg := checkModel(sess.Provider, sess.Model); msg != "" {
-		c.mu.Unlock()
-		return errors.New(msg)
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	cfg.Provider = sess.Provider
-	cfg.SetActiveModel(sess.Model)
-	rt, err := c.newRuntime(cfg, st, keep)
+	rt, release, err := c.runtimeFor(sess, st, keep)
 	if err != nil {
 		c.mu.Unlock()
 		return err
 	}
 
 	ctx, cancel := context.WithCancel(app.WithSource(c.ctx, "web"))
-	t := &turn{cancel: cancel, subs: map[*subscriber]bool{sub: true}}
+	t := &turn{cancel: cancel, subs: map[*subscriber]bool{sub: true}, pending: map[string]*ask{}}
 	c.turns[id] = t
 	c.wg.Add(1)
 	c.mu.Unlock()
@@ -441,8 +485,18 @@ func (c *chats) start(id string, st session.Store, msg wire.ClientMsg, sub *subs
 	go func() {
 		defer c.wg.Done()
 		defer cancel()
+		defer release()
 		var last wire.ServerMsg
 		for ev := range events {
+			if ev.Type == app.EventPermissionRequest {
+				c.ask(id, t, ev.Payload.(app.PermissionRequestPayload))
+				continue
+			}
+			if ev.Type == app.EventDone {
+				if p, ok := ev.Payload.(app.DonePayload); ok && p.Result != nil {
+					t.broadcast(wire.ServerMsg{Type: "structured", Payload: p.Result})
+				}
+			}
 			if m, ok := wire.FromEvent(ev); ok {
 				last = m
 				if m.Type == "done" || m.Type == "error" || m.Type == "cancelled" {
@@ -462,6 +516,93 @@ func (c *chats) start(id string, st session.Store, msg wire.ClientMsg, sub *subs
 		t.broadcast(last)
 	}()
 	return nil
+}
+
+// runtimeFor picks who answers: the conversation's agent (shared Runtime) or
+// the model alone (built for this reply). Called with c.mu held.
+func (c *chats) runtimeFor(sess *session.Session, st session.Store, keep int) (*app.Runtime, func(), error) {
+	if sess.Agent != "" {
+		rt, release, err := c.agent(c.ctx, sess.Agent)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rt, release, nil
+	}
+	if msg := checkModel(sess.Provider, sess.Model); msg != "" {
+		return nil, nil, errors.New(msg)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg.Provider = sess.Provider
+	cfg.SetActiveModel(sess.Model)
+	rt, err := c.newRuntime(cfg, st, keep)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rt, func() {}, nil
+}
+
+// ask handles a permission request: answered at once when the tool was allowed
+// for this conversation, otherwise shown to every tab of it until someone
+// answers or it times out.
+func (c *chats) ask(conv string, t *turn, p app.PermissionRequestPayload) {
+	c.mu.Lock()
+	ok := c.allowed[conv][p.ToolName]
+	c.mu.Unlock()
+	if ok {
+		go func() { p.Respond <- app.AllowOnce }()
+		return
+	}
+	reqID := RandomToken()[:16]
+	msg := wire.ServerMsg{Type: "permission_request", Payload: wire.PermissionRequest{
+		RequestID: reqID, ToolName: p.ToolName, RiskLevel: p.RiskLevel, Input: p.Input, Preview: p.Preview,
+	}}
+	a := &ask{tool: p.ToolName, respond: p.Respond, msg: msg}
+	t.mu.Lock()
+	t.pending[reqID] = a
+	t.mu.Unlock()
+	a.timer = time.AfterFunc(permissionTimeout, func() { c.decide(conv, reqID, "deny") })
+	t.broadcast(msg)
+}
+
+// decide answers a pending request. "allow_conversation" is remembered for the
+// rest of this conversation; the Runtime, shared with other conversations,
+// only ever hears "once" (decision M3-8).
+func (c *chats) decide(conv, reqID, decision string) {
+	c.mu.Lock()
+	t := c.turns[conv]
+	c.mu.Unlock()
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	a := t.pending[reqID]
+	delete(t.pending, reqID)
+	t.mu.Unlock()
+	if a == nil {
+		return // already answered, or timed out
+	}
+	a.timer.Stop()
+
+	d := app.Deny
+	switch decision {
+	case "allow_once":
+		d = app.AllowOnce
+	case "allow_conversation":
+		d = app.AllowOnce
+		c.mu.Lock()
+		if c.allowed[conv] == nil {
+			c.allowed[conv] = map[string]bool{}
+		}
+		c.allowed[conv][a.tool] = true
+		c.mu.Unlock()
+	default:
+		decision = "deny"
+	}
+	go func() { a.respond <- d }()
+	t.broadcast(wire.ServerMsg{Type: "permission_resolved", Payload: wire.PermissionResolved{RequestID: reqID, Decision: decision}})
 }
 
 func (t *turn) broadcast(m wire.ServerMsg) {

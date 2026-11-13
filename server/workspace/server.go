@@ -29,10 +29,12 @@ type Server struct {
 	mu     sync.Mutex // serialises writes to config.json and auth.json
 	device deviceFlow
 	chats  *chats
+	agents agentRuntimes
 }
 
 func New(opt Options) *Server {
 	s := &Server{opt: opt, auth: newSessions(opt.Token, opt.OnLogin), chats: newChats(opt.Dir)}
+	s.chats.agent = s.acquireAgent
 	if opt.Assets != nil {
 		if fi, err := fs.Stat(opt.Assets, "index.html"); err == nil && !fi.IsDir() {
 			s.built = true
@@ -78,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 // Close stops the replies being written; each saves what it has.
 func (s *Server) Close() {
 	s.chats.close()
+	s.agents.close()
 }
 
 // api registers an endpoint that needs a signed-in browser.

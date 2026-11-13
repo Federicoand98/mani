@@ -105,6 +105,20 @@ library.
   changed on disk reloads by itself when there are no local edits; with local edits, saving over
   it is refused until you choose to reload or overwrite.
 
+- **Chat with an agent in `mani web` (third milestone, second half).** "+ Agent" next to the
+  message box makes an agent of the folder answer, with its model, tools, policy and limits; it can
+  be changed or removed halfway, with a line in the conversation saying so. Tool calls appear in
+  order with their results. A tool set to `ask` shows its request in the conversation, with the
+  command or path it would act on and three answers: allow once, allow for this conversation, deny.
+  "For this conversation" never touches the manifest, and other conversations with the same agent
+  still ask. A request survives a reload of the tab, and an unanswered one is denied after 10
+  minutes, as in `mani serve`. The editor has "Try in chat".
+
+  Each agent has one runtime, built on its first message and shared by its conversations; saving
+  the file replaces it, and its MCP servers close once no reply uses them. Relative paths in the
+  manifest (`workspace`, `observability.journal.path`) count from the folder `mani web` manages,
+  as if `mani run` started there, and replies land in the agent's journal with `source=web`.
+
 ### Changed
 
 - **`mani validate` lists every problem, each with its line,** instead of stopping at the first:

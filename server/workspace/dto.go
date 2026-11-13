@@ -70,6 +70,7 @@ type ConversationMeta struct {
 	Title     string `json:"title"`
 	Provider  string `json:"provider"`
 	Model     string `json:"model"`
+	Agent     string `json:"agent"`     // the manifest answering, relative to the working folder; empty = the model alone
 	UpdatedAt string `json:"updatedAt"` // RFC 3339
 	Running   bool   `json:"running"`   // a reply is being written right now
 }
@@ -89,19 +90,25 @@ type ChatMessage struct {
 	Parts []ChatPart `json:"parts"`
 }
 
-// ChatPart is text or an image; images come back base64-encoded.
+// ChatPart is one piece of a message: text, an image (base64), a tool call the
+// assistant made (Input is its JSON) or the result that came back.
 type ChatPart struct {
-	Type      string `json:"type"` // "text" or "image"
+	Type      string `json:"type"` // "text", "image", "tool_call" or "tool_result"
 	Text      string `json:"text,omitempty"`
 	MediaType string `json:"mediaType,omitempty"`
 	Data      string `json:"data,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Input     string `json:"input,omitempty"`
+	IsError   bool   `json:"isError,omitempty"`
 }
 
-// ConversationInput creates or edits a conversation. Empty fields keep what is saved.
+// ConversationInput creates or edits a conversation. Empty fields keep what is
+// saved; Agent set to "" removes the agent, and the model alone answers.
 type ConversationInput struct {
-	Title    string `json:"title,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
+	Title    string  `json:"title,omitempty"`
+	Provider string  `json:"provider,omitempty"`
+	Model    string  `json:"model,omitempty"`
+	Agent    *string `json:"agent,omitempty"`
 }
 
 // AgentSummary is one row of the agent list.

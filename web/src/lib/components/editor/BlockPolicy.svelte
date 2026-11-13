@@ -5,7 +5,7 @@
 
 	let { ed }: { ed: AgentEditor } = $props();
 
-	const tools = $derived(ed.toolNames().filter(Boolean));
+	const tools = $derived(ed.toolNames().filter((t) => t && t !== 'default'));
 	const verdicts = $derived(ed.map(['policy', 'tools']) as Record<string, string>);
 	const rules = $derived(ed.list(['policy', 'rules']) as Record<string, string>[]);
 	const redact = $derived(ed.list(['policy', 'redact']) as Record<string, string>[]);
@@ -44,7 +44,15 @@
 	{:else}
 		<p class="sm mu">No tools: add some in the Tools block.</p>
 	{/each}
-	<p class="help">Default decides by risk: tools that only read run alone, the others ask.</p>
+	<div class="tool-row" data-path="policy.tools.default">
+		<div class="grow"><b>Tools without a choice</b><span class="cap">what "Default" above means for this agent</span></div>
+		<div class="seg small" role="group" aria-label="Decision for tools without a choice">
+			{#each [['', 'Allow'], ['ask', 'Ask'], ['deny', 'Deny']] as [v, label] (v)}
+				<button class={v || 'allow'} aria-pressed={(verdicts.default ?? '') === v || (v === '' && verdicts.default === 'allow')} onclick={() => ed.set(['policy', 'tools', 'default'], v)}>{label}</button>
+			{/each}
+		</div>
+	</div>
+	<p class="help">A tool without a choice follows the last row; when that is not set either, it is allowed. Set it to Ask or Deny to make this agent cautious by default.</p>
 </div>
 
 <div class="stack" style="gap:8px">

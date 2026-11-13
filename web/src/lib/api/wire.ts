@@ -18,7 +18,7 @@ export interface ClientMsg {
   images?: Image[];
   keep?: number /* int */; // messages the model remembers (mani web only)
   request_id?: string;
-  decision?: string; // allow_once | allow_always | deny
+  decision?: string; // allow_once | allow_always | allow_conversation (mani web) | deny
 }
 /**
  * Image travels base64-encoded.
@@ -59,6 +59,14 @@ export interface PermissionRequest {
   risk_level: string;
   input: { [key: string]: any};
   preview: string;
+}
+/**
+ * PermissionResolved tells every tab watching a conversation that a request
+ * was answered, so the others can close it (mani web).
+ */
+export interface PermissionResolved {
+  request_id: string;
+  decision: string;
 }
 export interface Error {
   message: string;

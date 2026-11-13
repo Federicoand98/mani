@@ -139,6 +139,7 @@
 		</div>
 		<div class="row">
 			{#if ed.dirty}<span class="badge warn">{t.unsaved}</span>{/if}
+			<a class="btn secondary" href="/chat?agent={encodeURIComponent(path)}"><Icon name="chat" size={16} />{t.tryInChat}</a>
 			<button class="btn secondary" aria-pressed={view === 'yaml'} onclick={() => setView(view === 'yaml' ? 'form' : 'yaml')}>
 				<Icon name={view === 'yaml' ? 'form' : 'code'} size={16} />{view === 'yaml' ? t.editAsForm : t.editAsYaml}
 			</button>

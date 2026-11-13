@@ -13,7 +13,7 @@ type ClientMsg struct {
 	Images    []Image `json:"images,omitempty"`
 	Keep      int     `json:"keep,omitempty"` // messages the model remembers (mani web only)
 	RequestID string  `json:"request_id,omitempty"`
-	Decision  string  `json:"decision,omitempty"` // allow_once | allow_always | deny
+	Decision  string  `json:"decision,omitempty"` // allow_once | allow_always | allow_conversation (mani web) | deny
 }
 
 // Image travels base64-encoded.
@@ -57,6 +57,13 @@ type PermissionRequest struct {
 	RiskLevel string         `json:"risk_level"`
 	Input     map[string]any `json:"input"`
 	Preview   string         `json:"preview"`
+}
+
+// PermissionResolved tells every tab watching a conversation that a request
+// was answered, so the others can close it (mani web).
+type PermissionResolved struct {
+	RequestID string `json:"request_id"`
+	Decision  string `json:"decision"`
 }
 
 type Error struct {

@@ -73,7 +73,7 @@ func (f *FileStore) List() ([]Meta, error) {
 			continue
 		}
 
-		out = append(out, Meta{ID: s.ID, Title: s.Title, Model: s.Model, Provider: s.Provider, UpdatedAt: s.UpdatedAt})
+		out = append(out, Meta{ID: s.ID, Title: s.Title, Model: s.Model, Provider: s.Provider, Agent: s.Agent, UpdatedAt: s.UpdatedAt})
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
