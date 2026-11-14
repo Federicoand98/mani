@@ -290,7 +290,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		m.output += "\n> " + text + "\n"
 		m.viewport.SetContent(m.rendered())
-		m.events = m.runtime.Execute(context.Background(), text)
+		m.events = m.runtime.Execute(app.WithSource(context.Background(), "tui"), text)
 		m.state = stateRunning
 		return m, tea.Batch(m.spinner.Tick, waitForEvent(m.events))
 	}

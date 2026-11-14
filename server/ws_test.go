@@ -82,8 +82,9 @@ func TestForwardPermission_DeniesWhenNobodyAnswers(t *testing.T) {
 
 	_, respond := request(t, cn)
 
-	if got := waitDecision(t, respond, time.Second); got != app.Deny {
-		t.Errorf("decision = %v, want Deny", got)
+	// Expired, not a plain deny: the journal tells "nobody answered" from "no".
+	if got := waitDecision(t, respond, time.Second); got != app.DenyExpired {
+		t.Errorf("decision = %v, want DenyExpired", got)
 	}
 	cn.mu.Lock()
 	left := len(cn.pending)
@@ -156,8 +157,8 @@ func TestShutdown_DeniesEverythingPending(t *testing.T) {
 	cn.shutdown()
 
 	for name, ch := range map[string]chan app.Decision{"first": a, "second": b} {
-		if got := waitDecision(t, ch, time.Second); got != app.Deny {
-			t.Errorf("%s decision = %v, want Deny", name, got)
+		if got := waitDecision(t, ch, time.Second); got != app.DenyExpired {
+			t.Errorf("%s decision = %v, want DenyExpired", name, got)
 		}
 	}
 	cn.mu.Lock()

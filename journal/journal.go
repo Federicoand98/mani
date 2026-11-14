@@ -28,6 +28,8 @@ type Journal interface {
 type RunOutcome struct {
 	Status string         // "ok" | "error" | "cancelled"
 	Result map[string]any // the structured result of the run
+	Answer string         // the final text of the run
+	Error  string         // why the run failed, when it did
 }
 
 type ListFilter struct {
@@ -35,6 +37,9 @@ type ListFilter struct {
 	Limit     int
 	Status    string
 	Since     time.Time
+	// Before keeps the runs started strictly before it: the cursor of a
+	// list that goes back in time one page at a time.
+	Before time.Time
 }
 
 func (f ListFilter) matches(m RunMeta) bool {
@@ -47,6 +52,10 @@ func (f ListFilter) matches(m RunMeta) bool {
 	}
 
 	if !f.Since.IsZero() && m.StartedAt.Before(f.Since) {
+		return false
+	}
+
+	if !f.Before.IsZero() && !m.StartedAt.Before(f.Before) {
 		return false
 	}
 
@@ -63,6 +72,9 @@ const (
 	EvToolCall   EventKind = "tool_call"
 	EvToolResult EventKind = "tool_result"
 	EvGuardrail  EventKind = "guardrail" // Data["action"] = "deny" | "mask" (vedi recordGovernance)
+	// EvPermission is the answer to a tool set to "ask": Data["decision"] is
+	// one of the Decision* values below.
+	EvPermission EventKind = "permission"
 	EvRunEnd     EventKind = "run_end"
 )
 
@@ -75,6 +87,38 @@ type RunEvent struct {
 	Data  map[string]any `json:"data,omitempty"`
 }
 
+// The answers an "ask" can get, as EvPermission records them.
+const (
+	DecisionAllowed       = "allowed"        // a person allowed this call
+	DecisionAllowedAlways = "allowed_always" // a person allowed the tool for the rest of the session
+	DecisionRemembered    = "remembered"     // allowed earlier, nobody was asked this time
+	DecisionDenied        = "denied"         // a person said no
+	DecisionExpired       = "expired"        // a person could have answered, nobody did in time
+	DecisionUnattended    = "unattended"     // nobody to ask: a trigger, mani run, an API call
+)
+
+// Denied reports whether a permission decision stopped the call.
+func Denied(decision string) bool {
+	return decision == DecisionDenied || decision == DecisionExpired || decision == DecisionUnattended
+}
+
+// Agent is who ran: the manifest's identity when the run started.
+type Agent struct {
+	Name     string `json:"name,omitempty"`
+	Manifest string `json:"manifest,omitempty"` // the file it was read from, as its runner named it
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+}
+
+// Limits are the limits in force when the run started, so a later change to
+// the manifest does not rewrite what this run was allowed. Zero means none.
+type Limits struct {
+	MaxTokens     int    `json:"max_tokens,omitempty"`
+	MaxToolCalls  int    `json:"max_tool_calls,omitempty"`
+	MaxIterations int    `json:"max_iterations,omitempty"`
+	MaxDuration   string `json:"max_duration,omitempty"`
+}
+
 type Summary struct {
 	LLMCalls  int `json:"llm_calls"`
 	ToolCalls int `json:"tool_calls"`
@@ -85,15 +129,21 @@ type Summary struct {
 	Errors    int `json:"errors"`
 }
 
-// RunRecord: header + logs
+// RunRecord: header + logs. Agent, Task, Answer, Error and Limits are empty in
+// runs recorded before they existed.
 type RunRecord struct {
 	ID        string         `json:"id"`
 	SessionID string         `json:"session_id,omitempty"`
 	Source    string         `json:"source"`
+	Agent     Agent          `json:"agent,omitzero"`
+	Task      string         `json:"task,omitempty"`
+	Limits    Limits         `json:"limits,omitzero"`
 	StartedAt time.Time      `json:"started_at"`
 	EndedAt   time.Time      `json:"ended_at,omitempty"`
 	Status    string         `json:"status"`
 	Summary   Summary        `json:"summary"`
+	Answer    string         `json:"answer,omitempty"`
+	Error     string         `json:"error,omitempty"`
 	Results   map[string]any `json:"results,omitempty"`
 	Events    []RunEvent     `json:"events,omitempty"`
 }
@@ -103,6 +153,8 @@ type RunMeta struct {
 	ID        string    `json:"id"`
 	SessionID string    `json:"session_id,omitempty"`
 	Source    string    `json:"source"`
+	Agent     string    `json:"agent,omitempty"` // the agent's name
+	Task      string    `json:"task,omitempty"`
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   time.Time `json:"ended_at,omitempty"`
 	Status    string    `json:"status"`
@@ -111,7 +163,7 @@ type RunMeta struct {
 
 func (r *RunRecord) Meta() RunMeta {
 	return RunMeta{
-		ID: r.ID, SessionID: r.SessionID, Source: r.Source,
+		ID: r.ID, SessionID: r.SessionID, Source: r.Source, Agent: r.Agent.Name, Task: r.Task,
 		StartedAt: r.StartedAt, EndedAt: r.EndedAt, Status: r.Status, Summary: r.Summary,
 	}
 }
@@ -132,6 +184,17 @@ func (r *RunRecord) Apply(ev RunEvent) {
 		if s, ok := ev.Data["session_id"].(string); ok && r.SessionID == "" {
 			r.SessionID = s
 		}
+		if r.Agent == (Agent{}) {
+			r.Agent = Agent{Name: str(ev.Data, "agent"), Manifest: str(ev.Data, "manifest"),
+				Provider: str(ev.Data, "provider"), Model: str(ev.Data, "model")}
+		}
+		if r.Task == "" {
+			r.Task = str(ev.Data, "task")
+		}
+		if l, ok := ev.Data["limits"].(map[string]any); ok && r.Limits == (Limits{}) {
+			r.Limits = Limits{MaxTokens: IntFrom(l, "max_tokens"), MaxToolCalls: IntFrom(l, "max_tool_calls"),
+				MaxIterations: IntFrom(l, "max_iterations"), MaxDuration: str(l, "max_duration")}
+		}
 		if r.Status == "" {
 			r.Status = "running"
 		}
@@ -145,6 +208,11 @@ func (r *RunRecord) Apply(ev RunEvent) {
 		r.Summary.ToolCalls++
 		if b, _ := ev.Data["is_error"].(bool); b {
 			r.Summary.Errors++
+		}
+
+	case EvPermission:
+		if Denied(str(ev.Data, "decision")) {
+			r.Summary.Blocked++
 		}
 
 	case EvGuardrail:
@@ -164,7 +232,55 @@ func (r *RunRecord) Apply(ev RunEvent) {
 		if res, ok := ev.Data["result"].(map[string]any); ok {
 			r.Results = res
 		}
+		r.Answer = str(ev.Data, "answer")
+		r.Error = str(ev.Data, "error")
 	}
+}
+
+func str(m map[string]any, k string) string {
+	s, _ := m[k].(string)
+	return s
+}
+
+// StartData is the payload of the run_start event of rec: what Apply reads
+// back. Adapters that store events use it so they all write the same keys.
+func StartData(rec RunRecord) map[string]any {
+	data := map[string]any{"source": rec.Source, "session_id": rec.SessionID}
+	for k, v := range map[string]string{"agent": rec.Agent.Name, "manifest": rec.Agent.Manifest,
+		"provider": rec.Agent.Provider, "model": rec.Agent.Model, "task": rec.Task} {
+		if v != "" {
+			data[k] = v
+		}
+	}
+	if rec.Limits != (Limits{}) {
+		l := map[string]any{}
+		for k, v := range map[string]int{"max_tokens": rec.Limits.MaxTokens, "max_tool_calls": rec.Limits.MaxToolCalls,
+			"max_iterations": rec.Limits.MaxIterations} {
+			if v != 0 {
+				l[k] = v
+			}
+		}
+		if rec.Limits.MaxDuration != "" {
+			l["max_duration"] = rec.Limits.MaxDuration
+		}
+		data["limits"] = l
+	}
+	return data
+}
+
+// EndData is the payload of the run_end event of out.
+func EndData(out RunOutcome) map[string]any {
+	data := map[string]any{"status": out.Status}
+	if out.Result != nil {
+		data["result"] = out.Result
+	}
+	if out.Answer != "" {
+		data["answer"] = out.Answer
+	}
+	if out.Error != "" {
+		data["error"] = out.Error
+	}
+	return data
 }
 
 // IntFrom reads an integer field from event data, whatever JSON made of it.
@@ -258,6 +374,8 @@ func (j *InMemory) Finish(runID string, out RunOutcome) error {
 	rec.EndedAt = time.Now()
 	rec.Status = out.Status
 	rec.Results = out.Result
+	rec.Answer = out.Answer
+	rec.Error = out.Error
 	return nil
 }
 
@@ -350,8 +468,7 @@ func (j *JSONL) writeEvent(ev RunEvent) error {
 
 func (j *JSONL) Start(rec RunRecord) error {
 	return j.writeEvent(RunEvent{
-		RunID: rec.ID, At: rec.StartedAt, Kind: EvRunStart,
-		Data: map[string]any{"source": rec.Source, "session_id": rec.SessionID},
+		RunID: rec.ID, At: rec.StartedAt, Kind: EvRunStart, Data: StartData(rec),
 	})
 }
 
@@ -360,12 +477,7 @@ func (j *JSONL) Append(ev RunEvent) error {
 }
 
 func (j *JSONL) Finish(runID string, out RunOutcome) error {
-	data := map[string]any{"status": out.Status}
-	if out.Result != nil {
-		data["result"] = out.Result
-	}
-
-	return j.writeEvent(RunEvent{RunID: runID, At: time.Now(), Kind: EvRunEnd, Data: data})
+	return j.writeEvent(RunEvent{RunID: runID, At: time.Now(), Kind: EvRunEnd, Data: EndData(out)})
 }
 
 func (j *JSONL) readRun(runID string) (RunRecord, error) {

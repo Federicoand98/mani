@@ -16,6 +16,10 @@ import (
 )
 
 type Spec struct {
+	// File is the path Load read the manifest from, as it was given. It is
+	// not a key of the manifest: runs record it to say which agent ran.
+	File string `yaml:"-"`
+
 	Identity      IdentitySpec      `yaml:"identity"`
 	Capabilities  CapabilitiesSpec  `yaml:"capabilities"`
 	Context       ContextSpec       `yaml:"context"`
@@ -217,6 +221,7 @@ func Load(path string) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
+	spec.File = path
 	return spec, spec.Validate()
 }
 

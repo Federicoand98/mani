@@ -190,7 +190,7 @@ func (d *Daemon) execute(ctx context.Context, t scheduler.Task, worker int) {
 			if d.policy == PolicyAllow {
 				p.Respond <- AllowOnce
 			} else {
-				p.Respond <- Deny
+				p.Respond <- DenyUnattended
 			}
 		case EventCancelled:
 			cancelled = true

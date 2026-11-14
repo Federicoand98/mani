@@ -230,3 +230,49 @@ func TestContract(t *testing.T) {
 	defer j.Close()
 	journaltest.Run(t, j)
 }
+
+// A database written by a mani that recorded neither agent nor task opens,
+// keeps its runs, and records both for the runs that come after.
+func TestSQLiteJournal_OpensADatabaseWithoutAgentAndTask(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "runs.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := `
+CREATE TABLE journal_events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, at INTEGER NOT NULL, depth INTEGER NOT NULL,
+    kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, seq));
+CREATE TABLE journal_sequences (run_id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL);
+CREATE TABLE journal_runs (run_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+    llm_calls INTEGER NOT NULL DEFAULT 0, tool_calls INTEGER NOT NULL DEFAULT 0, in_tokens INTEGER NOT NULL DEFAULT 0,
+    out_tokens INTEGER NOT NULL DEFAULT 0, blocked INTEGER NOT NULL DEFAULT 0, masked INTEGER NOT NULL DEFAULT 0,
+    errors INTEGER NOT NULL DEFAULT 0);
+INSERT INTO journal_events VALUES ('old', 0, 1000, 0, 'run_start', '{"source":"cli"}');
+INSERT INTO journal_sequences VALUES ('old', 1);
+INSERT INTO journal_runs (run_id, started_at, status, source) VALUES ('old', 1000, 'running', 'cli');`
+	if _, err := db.Exec(old); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	j, err := New(dbPath, 0)
+	if err != nil {
+		t.Fatalf("New on an older database: %v", err)
+	}
+	defer j.Close()
+	if err := j.Start(journal.RunRecord{ID: "new", Source: "web", StartedAt: time.Unix(5, 0), Task: "hello",
+		Agent: journal.Agent{Name: "docs"}}); err != nil {
+		t.Fatal(err)
+	}
+	metas, err := j.List(journal.ListFilter{})
+	if err != nil || len(metas) != 2 {
+		t.Fatalf("List = %+v, err=%v", metas, err)
+	}
+	if metas[0].ID != "new" || metas[0].Agent != "docs" || metas[0].Task != "hello" {
+		t.Errorf("new run = %+v", metas[0])
+	}
+	if metas[1].ID != "old" || metas[1].Agent != "" || metas[1].Task != "" {
+		t.Errorf("old run = %+v", metas[1])
+	}
+}

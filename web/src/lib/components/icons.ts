@@ -25,7 +25,14 @@ export const paths = {
 	copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V4H4v9h3"/>',
 	code: '<path d="M7 6l-4 4 4 4M13 6l4 4-4 4"/>',
 	form: '<rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6 7h8M6 10h8M6 13h5"/>',
-	stop: '<rect x="5" y="5" width="10" height="10" rx="1.5"/>'
+	stop: '<rect x="5" y="5" width="10" height="10" rx="1.5"/>',
+	play: '<path d="M6 4l10 6-10 6z"/>',
+	spark: '<path d="M10 3v4M10 13v4M3 10h4M13 10h4"/>',
+	hand: '<path d="M7 11V5a1.5 1.5 0 0 1 3 0v4m0-2a1.5 1.5 0 0 1 3 0v3m0-1.5a1.5 1.5 0 0 1 3 0V12c0 3-2 5-5 5s-6-2-6-5v-1.5a1.5 1.5 0 0 1 3 0"/>',
+	eye: '<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/><circle cx="10" cy="10" r="2.5"/>',
+	flag: '<path d="M5 17V3M5 4h9l-2 3 2 3H5"/>',
+	chevron: '<path d="M8 5l5 5-5 5"/>',
+	download: '<path d="M10 3v10M6 9l4 4 4-4M4 16h12"/>'
 } as const;
 
 export type IconName = keyof typeof paths;

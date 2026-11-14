@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Federicoand98/mani/core"
 	"github.com/Federicoand98/mani/journal"
@@ -30,7 +32,28 @@ func sourceFrom(ctx context.Context) string {
 	return ""
 }
 
-// attachJournalHooks: attachs the hooks of the journal for a single agent.
+// maxJournalText caps the task and the answer a run records, and
+// maxJournalPreview the output of each tool: a journal is read by people,
+// a 2 MB pasted document is not.
+const (
+	maxJournalText    = 16 << 10
+	maxJournalPreview = 2 << 10
+)
+
+// clip cuts s to at most n bytes, on a rune boundary, marking the cut.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "\n[... cut at " + strconv.Itoa(n) + " bytes]"
+}
+
+// attachJournalHooks: attachs the hooks of the journal for a single agent,
+// except tool results: see attachJournalResults.
 func attachJournalHooks(h *core.HookManager, j journal.Journal) {
 	h.OnPreLLMCall(func(ctx context.Context, plp *core.PreLLMCallPayload) error {
 		appendSafe(j, journal.RunEvent{
@@ -58,9 +81,17 @@ func attachJournalHooks(h *core.HookManager, j journal.Journal) {
 		return nil
 	})
 
+}
+
+// attachJournalResults records each tool result with a preview of its output.
+// Register it after every hook that rewrites results (redaction, truncation):
+// the preview must never show what the model was not shown.
+func attachJournalResults(h *core.HookManager, j journal.Journal) {
 	h.OnPostToolUse(func(ctx context.Context, ptup *core.PostToolUsePayload) error {
 		appendSafe(j, journal.RunEvent{
-			RunID: runIDFrom(ctx), Depth: depthFrom(ctx), At: time.Now(), Kind: journal.EvToolResult, Data: map[string]any{"tool": ptup.ToolName, "is_error": ptup.IsError, "result_len": len(ptup.Result)},
+			RunID: runIDFrom(ctx), Depth: depthFrom(ctx), At: time.Now(), Kind: journal.EvToolResult,
+			Data: map[string]any{"tool": ptup.ToolName, "is_error": ptup.IsError, "result_len": len(ptup.Result),
+				"preview": clip(ptup.Result, maxJournalPreview)},
 		})
 		return nil
 	})
@@ -91,10 +122,24 @@ func (r *Runtime) recordGovernance(ctx context.Context, action, tool, label stri
 	})
 }
 
-// RegisterJournal attaches the journal to the runtime and registers the journal hooks.
+// RegisterJournal attaches the journal to the runtime and registers the journal
+// hooks. Call it after the hooks that rewrite tool results, or the previews it
+// records will show results before they were rewritten.
 func RegisterJournal(rt *Runtime, j journal.Journal) {
 	rt.journal = j
 	attachJournalHooks(rt.agent.Hooks(), j)
+	attachJournalResults(rt.agent.Hooks(), j)
+}
+
+// recordPermission writes the answer to an "ask" in the journal.
+func (r *Runtime) recordPermission(ctx context.Context, tool, decision string) {
+	if r.journal == nil {
+		return
+	}
+	appendSafe(r.journal, journal.RunEvent{
+		RunID: runIDFrom(ctx), Depth: depthFrom(ctx), At: time.Now(), Kind: journal.EvPermission,
+		Data: map[string]any{"tool": tool, "decision": decision},
+	})
 }
 
 func newPersistentJournal(spec manifest.JournalSpec) (journal.Journal, error) {

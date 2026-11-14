@@ -21,6 +21,7 @@
 		{ href: '/chat', icon: 'chat', label: m.nav.chat },
 		{ href: '/agents', icon: 'agent', label: m.nav.agents }
 	];
+	const observe: Item[] = [{ href: '/runs', icon: 'runs', label: m.nav.runs }];
 	const system: Item[] = [
 		{ href: '/providers', icon: 'cube', label: m.nav.providers },
 		{ href: '/settings', icon: 'sliders', label: m.nav.settings }
@@ -64,6 +65,10 @@
 			{/each}
 			<div class="group">{m.nav.groupBuild}</div>
 			{#each build as it (it.href)}
+				<a class="nav" href={it.href} aria-current={current(it.href) ? 'page' : undefined}><Icon name={it.icon} />{it.label}</a>
+			{/each}
+			<div class="group">{m.nav.groupObserve}</div>
+			{#each observe as it (it.href)}
 				<a class="nav" href={it.href} aria-current={current(it.href) ? 'page' : undefined}><Icon name={it.icon} />{it.label}</a>
 			{/each}
 			<div class="group">{m.nav.groupSystem}</div>

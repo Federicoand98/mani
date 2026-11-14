@@ -611,3 +611,25 @@ func TestOpenJournal_FromSQLitePath(t *testing.T) {
 		t.Errorf("Get on the seeded run: %v", err)
 	}
 }
+
+// The detail of a run says who ran it, what it was asked, how each "ask" was
+// answered and what it replied, so `mani runs <id>` answers "what happened"
+// without opening the JSON.
+func TestPrintRun_TellsAgentTaskDecisionsAndAnswer(t *testing.T) {
+	rec := journal.RunRecord{
+		ID: "abc", Source: "daily", Status: "error", StartedAt: testStart, EndedAt: testStart.Add(time.Second),
+		Agent: journal.Agent{Name: "monitor", Manifest: "agents/monitor.yaml", Provider: "ollama", Model: "qwen3.5:9b"},
+		Task:  "check\nthe disks", Answer: "root is full", Error: "max_tool_calls reached",
+		Events: []journal.RunEvent{{Kind: journal.EvPermission, At: testStart, Data: map[string]any{"tool": "bash", "decision": "unattended"}}},
+	}
+	var b bytes.Buffer
+	if err := printRun(&b, rec, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"agent:  monitor (agents/monitor.yaml, ollama / qwen3.5:9b)", "task:   check the disks",
+		"bash       unattended", "answer root is full", "error  max_tool_calls reached"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, b.String())
+		}
+	}
+}

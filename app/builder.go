@@ -83,6 +83,7 @@ func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 
 	// 2. policy
 	rt.permission = NewPermissionManager()
+	rt.permission.record = rt.recordPermission
 	rt.agent.AddPreToolUseHook(manifestPolicyHook(spec.Policy.Tools, rt.permission, rt))
 
 	// 3. output schema (terminal tool `respond`)
@@ -105,12 +106,19 @@ func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 		RegisterTracing(rt)
 	}
 
+	// The journal's tool results are attached at the end, after the redaction
+	// and truncation hooks: what it keeps is what the model saw.
+	var j journal.Journal
 	if spec.Observability.Journal.Enabled {
-		j, err := buildJournal(spec.Observability.Journal)
+		j, err = buildJournal(spec.Observability.Journal)
 		if err != nil {
 			return nil, fmt.Errorf("build: journal: %w", err)
 		}
-		RegisterJournal(rt, j)
+		rt.journal = j
+		attachJournalHooks(rt.agent.Hooks(), j)
+		rt.agentInfo = journal.Agent{Name: spec.Identity.Name, Manifest: spec.File, Provider: cfg.Provider, Model: cfg.ActiveModel()}
+		rt.limitsInfo = journal.Limits{MaxTokens: spec.Limits.MaxTokens, MaxToolCalls: spec.Limits.MaxToolCalls,
+			MaxIterations: cfg.MaxIterations, MaxDuration: spec.Limits.MaxDuration}
 	}
 
 	// 2. context
@@ -141,6 +149,9 @@ func Build(ctx context.Context, spec manifest.Spec) (*Runtime, error) {
 
 	// After the redaction rules: see RegisterToolOutputTruncation.
 	RegisterToolOutputTruncation(rt, DefaultToolOutputLimit)
+	if j != nil {
+		attachJournalResults(rt.agent.Hooks(), j)
+	}
 
 	// 4. limits
 	if spec.Limits.MaxTokens > 0 || spec.Limits.MaxToolCalls > 0 {

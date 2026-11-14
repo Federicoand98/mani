@@ -108,7 +108,21 @@ func triggerText(t manifest.TriggerSpec) string {
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	out := AgentList{Agents: []AgentSummary{}}
-	err := filepath.WalkDir(s.opt.Dir, func(p string, d fs.DirEntry, err error) error {
+	err := s.eachManifest(func(rel, abs string, data []byte, mod time.Time) {
+		out.Agents = append(out.Agents, summarize(rel, data, filepath.Dir(abs), mod))
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sort.Slice(out.Agents, func(i, j int) bool { return out.Agents[i].Path < out.Agents[j].Path })
+	writeJSON(w, http.StatusOK, out)
+}
+
+// eachManifest calls fn for every agent manifest under the working directory,
+// with its path relative to it (forward slashes) and its absolute one.
+func (s *Server) eachManifest(fn func(rel, abs string, data []byte, mod time.Time)) error {
+	return filepath.WalkDir(s.opt.Dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // an unreadable folder is skipped, not fatal
 		}
@@ -130,15 +144,9 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		rel, _ := filepath.Rel(s.opt.Dir, p)
-		out.Agents = append(out.Agents, summarize(filepath.ToSlash(rel), data, filepath.Dir(p), info.ModTime()))
+		fn(filepath.ToSlash(rel), p, data, info.ModTime())
 		return nil
 	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	sort.Slice(out.Agents, func(i, j int) bool { return out.Agents[i].Path < out.Agents[j].Path })
-	writeJSON(w, http.StatusOK, out)
 }
 
 func summarize(rel string, data []byte, dir string, mod time.Time) AgentSummary {

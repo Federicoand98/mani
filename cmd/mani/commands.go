@@ -306,6 +306,16 @@ func printRun(w io.Writer, rec journal.RunRecord, asJSON bool) error {
 		rec.Source, rec.Summary.InTokens, rec.Summary.OutTokens,
 		rec.Summary.ToolCalls, rec.Summary.Blocked, rec.Summary.Masked)
 
+	if rec.Agent.Name != "" {
+		fmt.Fprintf(w, "agent:  %s (%s, %s / %s)\n", rec.Agent.Name, rec.Agent.Manifest, rec.Agent.Provider, rec.Agent.Model)
+	}
+	if rec.Task != "" {
+		fmt.Fprintf(w, "task:   %s\n", truncate(oneLine(rec.Task), 200))
+	}
+	if rec.Agent.Name != "" || rec.Task != "" {
+		fmt.Fprintln(w)
+	}
+
 	for _, ev := range rec.Events {
 		fmt.Fprintf(w, "%s  %s%-14s %s\n",
 			ev.At.Local().Format("15:04:05.0"),
@@ -318,9 +328,17 @@ func printRun(w io.Writer, rec journal.RunRecord, asJSON bool) error {
 		b, _ := json.Marshal(rec.Results)
 		fmt.Fprintf(w, "\nresult %s\n", truncate(string(b), 120))
 	}
+	if rec.Answer != "" {
+		fmt.Fprintf(w, "\nanswer %s\n", truncate(oneLine(rec.Answer), 200))
+	}
+	if rec.Error != "" {
+		fmt.Fprintf(w, "\nerror  %s\n", rec.Error)
+	}
 
 	return nil
 }
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 func endClock(t time.Time) string {
 	if t.IsZero() {
@@ -355,6 +373,8 @@ func describe(ev journal.RunEvent) string {
 		return fmt.Sprintf("%-10s %s  %d bytes", str(ev.Data, "tool"), outcome, num(ev.Data, "result_len"))
 	case journal.EvGuardrail:
 		return fmt.Sprintf("%-10s %s  %q", str(ev.Data, "tool"), str(ev.Data, "action"), str(ev.Data, "label"))
+	case journal.EvPermission:
+		return fmt.Sprintf("%-10s %s", str(ev.Data, "tool"), str(ev.Data, "decision"))
 	case journal.EvRunEnd:
 		return str(ev.Data, "status")
 	}

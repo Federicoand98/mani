@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS journal_runs (
     out_tokens INTEGER NOT NULL DEFAULT 0,
     blocked INTEGER NOT NULL DEFAULT 0,
     masked INTEGER NOT NULL DEFAULT 0,
-    errors INTEGER NOT NULL DEFAULT 0
+    errors INTEGER NOT NULL DEFAULT 0,
+    agent TEXT NOT NULL DEFAULT '',
+    task TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS journal_runs_started_at
     ON journal_runs (started_at DESC, run_id DESC);
@@ -97,6 +99,10 @@ func New(path string, retention int) (*Journal, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("journal: initialize sqlite %s: %w", path, err)
 	}
+	if err := addColumns(db, "journal_runs", "agent", "task"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("journal: migrate sqlite %s: %w", path, err)
+	}
 	if err := j.backfillRuns(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -107,6 +113,36 @@ func New(path string, retention int) (*Journal, error) {
 	}
 
 	return j, nil
+}
+
+// addColumns adds the TEXT columns a database created by an older mani lacks:
+// CREATE TABLE IF NOT EXISTS leaves an existing table as it was. Its rows keep
+// ” there, as runs recorded before the column existed.
+func addColumns(db *sql.DB, table string, cols ...string) error {
+	rows, err := db.Query("SELECT name FROM pragma_table_info(?)", table)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		have[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, c := range cols {
+		if !have[c] {
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''", table, c)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (j *Journal) Close() error {
@@ -121,8 +157,7 @@ func (j *Journal) Close() error {
 
 func (j *Journal) Start(rec journal.RunRecord) error {
 	return j.writeEvent(journal.RunEvent{
-		RunID: rec.ID, At: rec.StartedAt, Kind: journal.EvRunStart,
-		Data: map[string]any{"source": rec.Source, "session_id": rec.SessionID},
+		RunID: rec.ID, At: rec.StartedAt, Kind: journal.EvRunStart, Data: journal.StartData(rec),
 	})
 }
 
@@ -131,11 +166,7 @@ func (j *Journal) Append(ev journal.RunEvent) error {
 }
 
 func (j *Journal) Finish(runID string, out journal.RunOutcome) error {
-	data := map[string]any{"status": out.Status}
-	if out.Result != nil {
-		data["result"] = out.Result
-	}
-	return j.writeEvent(journal.RunEvent{RunID: runID, At: time.Now(), Kind: journal.EvRunEnd, Data: data})
+	return j.writeEvent(journal.RunEvent{RunID: runID, At: time.Now(), Kind: journal.EvRunEnd, Data: journal.EndData(out)})
 }
 
 func (j *Journal) writeEvent(ev journal.RunEvent) error {
@@ -215,11 +246,14 @@ UPDATE journal_runs SET
     END,
     source = CASE WHEN ? = ? AND source = '' THEN ? ELSE source END,
     session_id = CASE WHEN ? = ? AND session_id = '' THEN ? ELSE session_id END,
+    agent = CASE WHEN ? = ? AND agent = '' THEN ? ELSE agent END,
+    task = CASE WHEN ? = ? AND task = '' THEN ? ELSE task END,
     llm_calls = llm_calls + CASE WHEN ? = ? THEN 1 ELSE 0 END,
     tool_calls = tool_calls + CASE WHEN ? = ? THEN 1 ELSE 0 END,
     in_tokens = in_tokens + CASE WHEN ? = ? THEN ? ELSE 0 END,
     out_tokens = out_tokens + CASE WHEN ? = ? THEN ? ELSE 0 END,
-    blocked = blocked + CASE WHEN ? = ? AND ? = 'deny' THEN 1 ELSE 0 END,
+    blocked = blocked + CASE WHEN ? = ? AND ? = 'deny' THEN 1 ELSE 0 END
+                      + CASE WHEN ? = ? AND ? THEN 1 ELSE 0 END,
     masked = masked + CASE WHEN ? = ? AND ? = 'mask' THEN 1 ELSE 0 END,
     errors = errors + CASE WHEN ? = ? AND ? THEN 1 ELSE 0 END
 WHERE run_id = ?`
@@ -234,11 +268,14 @@ WHERE run_id = ?`
 		string(ev.Kind), string(journal.EvRunStart), string(ev.Kind), string(journal.EvRunEnd), dataString(data, "status"),
 		string(ev.Kind), string(journal.EvRunStart), source,
 		string(ev.Kind), string(journal.EvRunStart), sessionID,
+		string(ev.Kind), string(journal.EvRunStart), dataString(data, "agent"),
+		string(ev.Kind), string(journal.EvRunStart), dataString(data, "task"),
 		string(ev.Kind), string(journal.EvLLMReponse),
 		string(ev.Kind), string(journal.EvToolResult),
 		string(ev.Kind), string(journal.EvLLMReponse), journal.IntFrom(data, "in_tokens"),
 		string(ev.Kind), string(journal.EvLLMReponse), journal.IntFrom(data, "out_tokens"),
 		string(ev.Kind), string(journal.EvGuardrail), action,
+		string(ev.Kind), string(journal.EvPermission), journal.Denied(dataString(data, "decision")),
 		string(ev.Kind), string(journal.EvGuardrail), action,
 		string(ev.Kind), string(journal.EvToolResult), isError,
 		ev.RunID,
@@ -381,7 +418,7 @@ func (j *Journal) List(f journal.ListFilter) ([]journal.RunMeta, error) {
 		return nil, fmt.Errorf("journal: sqlite is closed")
 	}
 	query := `
-	SELECT run_id, session_id, source, started_at, ended_at, status,
+	SELECT run_id, session_id, source, agent, task, started_at, ended_at, status,
 	       llm_calls, tool_calls, in_tokens, out_tokens, blocked, masked, errors
 	FROM journal_runs
 	WHERE 1 = 1`
@@ -397,6 +434,10 @@ func (j *Journal) List(f journal.ListFilter) ([]journal.RunMeta, error) {
 	if !f.Since.IsZero() {
 		query += " AND started_at >= ?"
 		args = append(args, f.Since.UnixNano())
+	}
+	if !f.Before.IsZero() {
+		query += " AND started_at < ?"
+		args = append(args, f.Before.UnixNano())
 	}
 	query += " ORDER BY started_at DESC, run_id DESC"
 	if f.Limit > 0 {
@@ -415,7 +456,7 @@ func (j *Journal) List(f journal.ListFilter) ([]journal.RunMeta, error) {
 			meta               journal.RunMeta
 			startedAt, endedAt int64
 		)
-		if err := rows.Scan(&meta.ID, &meta.SessionID, &meta.Source, &startedAt, &endedAt, &meta.Status,
+		if err := rows.Scan(&meta.ID, &meta.SessionID, &meta.Source, &meta.Agent, &meta.Task, &startedAt, &endedAt, &meta.Status,
 			&meta.Summary.LLMCalls, &meta.Summary.ToolCalls, &meta.Summary.InTokens, &meta.Summary.OutTokens,
 			&meta.Summary.Blocked, &meta.Summary.Masked, &meta.Summary.Errors); err != nil {
 			_ = rows.Close()

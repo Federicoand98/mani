@@ -246,3 +246,74 @@ type DraftInput struct {
 type Draft struct {
 	ID string `json:"id"`
 }
+
+// Run is one row of the Runs page: a run of an agent of this folder, read from
+// its journal. Agent is empty for runs recorded before mani wrote it.
+type Run struct {
+	ID        string     `json:"id"`
+	Agent     string     `json:"agent"`
+	AgentPath string     `json:"agentPath"` // the manifest of this folder it came from, when it is known
+	Model     string     `json:"model"`     // "provider / model"
+	Task      string     `json:"task"`
+	Source    string     `json:"source"` // "web", "cli", "daily", "cron", "webhook", "server", "mcp", "flow", ...
+	SessionID string     `json:"sessionId"`
+	Title     string     `json:"title"`  // of the console conversation it belongs to, if any
+	Status    string     `json:"status"` // "running", "ok", "error" or "cancelled"
+	StartedAt string     `json:"startedAt"`
+	EndedAt   string     `json:"endedAt"` // "" while it runs
+	Summary   RunSummary `json:"summary"`
+}
+
+type RunSummary struct {
+	LLMCalls  int `json:"llmCalls"`
+	ToolCalls int `json:"toolCalls"`
+	InTokens  int `json:"inTokens"`
+	OutTokens int `json:"outTokens"`
+	Blocked   int `json:"blocked"`
+	Masked    int `json:"masked"`
+	Errors    int `json:"errors"`
+}
+
+// AgentRef names an agent of this folder by its name and its manifest.
+type AgentRef struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// RunList is a page of runs, newest first. Next is the cursor of the following
+// page ("" when there is none); Unrecorded lists the agents that keep no journal.
+type RunList struct {
+	Runs       []Run      `json:"runs"`
+	Next       string     `json:"next"`
+	Unrecorded []AgentRef `json:"unrecorded"`
+}
+
+type RunLimits struct {
+	MaxTokens     int    `json:"maxTokens"`
+	MaxToolCalls  int    `json:"maxToolCalls"`
+	MaxIterations int    `json:"maxIterations"`
+	MaxDuration   string `json:"maxDuration"`
+}
+
+// RunEvent is one step of a run, as the journal recorded it.
+type RunEvent struct {
+	Seq   int            `json:"seq"`
+	At    string         `json:"at"`
+	Depth int            `json:"depth"` // 0 for the agent, 1 and more for its subagents
+	Kind  string         `json:"kind"`  // "run_start", "llm_call", "llm_response", "tool_call", "tool_result", "permission", "guardrail", "run_end"
+	Data  map[string]any `json:"data" tstype:"{ [key: string]: any }"`
+}
+
+// RunDetail is a whole run. Limits is null when the run did not record them;
+// Conversation is the id of the console conversation it belongs to, if any.
+type RunDetail struct {
+	Run               `tstype:",extends"`
+	Manifest          string         `json:"manifest"` // the file the runner read, as it named it
+	Answer            string         `json:"answer"`
+	Error             string         `json:"error"`
+	Limits            *RunLimits     `json:"limits"`
+	Result            map[string]any `json:"result" tstype:"{ [key: string]: any } | null"`
+	Events            []RunEvent     `json:"events"`
+	Conversation      string         `json:"conversation"`
+	ConversationTitle string         `json:"conversationTitle"`
+}

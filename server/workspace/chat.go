@@ -578,7 +578,7 @@ func (c *chats) ask(conv string, t *turn, p app.PermissionRequestPayload) {
 	ok := c.allowed[conv][p.ToolName]
 	c.mu.Unlock()
 	if ok {
-		go func() { p.Respond <- app.AllowOnce }()
+		go func() { p.Respond <- app.AllowRemembered }()
 		return
 	}
 	reqID := RandomToken()[:16]
@@ -589,7 +589,7 @@ func (c *chats) ask(conv string, t *turn, p app.PermissionRequestPayload) {
 	t.mu.Lock()
 	t.pending[reqID] = a
 	t.mu.Unlock()
-	a.timer = time.AfterFunc(permissionTimeout, func() { c.decide(conv, reqID, "deny") })
+	a.timer = time.AfterFunc(permissionTimeout, func() { c.decide(conv, reqID, "expired") })
 	t.broadcast(msg)
 }
 
@@ -624,6 +624,9 @@ func (c *chats) decide(conv, reqID, decision string) {
 		}
 		c.allowed[conv][a.tool] = true
 		c.mu.Unlock()
+	case "expired":
+		d = app.DenyExpired
+		decision = "deny"
 	default:
 		decision = "deny"
 	}

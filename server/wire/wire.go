@@ -140,6 +140,8 @@ func ParseDecision(s string) app.Decision {
 		return app.AllowOnce
 	case "allow_always":
 		return app.AllowAlways
+	case "expired": // the server's own timeout, never sent by a client
+		return app.DenyExpired
 	default:
 		return app.Deny
 	}

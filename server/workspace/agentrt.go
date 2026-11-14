@@ -69,6 +69,7 @@ func (s *Server) acquireAgent(ctx context.Context, rel string) (*app.Runtime, fu
 		return nil, nil, fmt.Errorf("the agent %s has %d problem(s), first: %s; fix it in the editor", rel, len(problems), problems[0].Message)
 	}
 	s.anchor(&spec)
+	spec.File = rel // the runs of this agent say which file it was
 	rt, err := buildAgent(ctx, spec)
 	if err != nil {
 		return nil, nil, fmt.Errorf("the agent %s cannot start: %w", rel, err)

@@ -45,6 +45,8 @@ type Runtime struct {
 	mcpSessions     []*mcp.Session
 	subagents       map[string]manifest.SubagentSpec
 	journal         journal.Journal
+	agentInfo       journal.Agent  // who runs, for the journal
+	limitsInfo      journal.Limits // the limits in force, for the journal
 	cancel          context.CancelFunc
 	clientErr       error      // != nil if provider is not available
 	mu              sync.Mutex // protege l'accesso a cancel
@@ -195,6 +197,9 @@ func (r *Runtime) spawnChild() *core.Agent {
 	if r.toolOutputLimit > 0 {
 		child.Hooks().OnPostToolUse(truncationHook(r.toolOutputLimit))
 	}
+	if r.journal != nil {
+		attachJournalResults(child.Hooks(), r.journal)
+	}
 
 	return child
 }
@@ -247,6 +252,9 @@ func (r *Runtime) spawnNamed(name string) (*core.Agent, manifest.SubagentSpec, e
 
 	if r.toolOutputLimit > 0 {
 		child.Hooks().OnPostToolUse(truncationHook(r.toolOutputLimit))
+	}
+	if r.journal != nil {
+		attachJournalResults(child.Hooks(), r.journal)
 	}
 
 	return child, spec, nil
@@ -390,6 +398,7 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 	if r.journal != nil {
 		_ = r.journal.Start(journal.RunRecord{
 			ID: runID, SessionID: sess.ID, Source: source, StartedAt: time.Now(), Status: "running",
+			Agent: r.agentInfo, Task: clip(input, maxJournalText), Limits: r.limitsInfo,
 		})
 	}
 
@@ -432,13 +441,13 @@ func (r *Runtime) ExecuteIn(ctx context.Context, sess *session.Session, input st
 
 		switch {
 		case errors.Is(err, context.Canceled) && saveErr == nil:
-			r.finishRun(runID, "cancelled", nil)
+			r.finishRun(runID, journal.RunOutcome{Status: "cancelled"})
 			ch <- Event{Type: EventCancelled}
 		case err != nil:
-			r.finishRun(runID, "error", nil)
+			r.finishRun(runID, journal.RunOutcome{Status: "error", Error: err.Error()})
 			ch <- Event{Type: EventError, Payload: ErrorPayload{RunID: runID, Err: err}}
 		default:
-			r.finishRun(runID, "ok", res.FinalResult)
+			r.finishRun(runID, journal.RunOutcome{Status: "ok", Result: res.FinalResult, Answer: clip(res.Text, maxJournalText)})
 			ch <- Event{Type: EventDone, Payload: DonePayload{
 				RunID:  runID,
 				Result: res.FinalResult,
@@ -460,9 +469,9 @@ func (r *Runtime) Execute(ctx context.Context, input string, attachments ...core
 	return ch
 }
 
-func (r *Runtime) finishRun(runID string, status string, result map[string]any) {
+func (r *Runtime) finishRun(runID string, out journal.RunOutcome) {
 	if r.journal != nil {
-		_ = r.journal.Finish(runID, journal.RunOutcome{Status: status, Result: result})
+		_ = r.journal.Finish(runID, out)
 	}
 }
 

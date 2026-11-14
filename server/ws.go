@@ -154,7 +154,7 @@ func (conn *conn) forwardPermission(ctx context.Context, ev app.Event) {
 	conn.mu.Unlock()
 
 	time.AfterFunc(permissionTimeout, func() {
-		conn.routeDecision(reqID, "deny")
+		conn.routeDecision(reqID, "expired")
 	})
 
 	conn.send(ctx, wire.ServerMsg{Type: "permission_request", Payload: wire.PermissionRequest{
@@ -179,7 +179,7 @@ func (cn *conn) shutdown() {
 
 	for id, ch := range cn.pending {
 		select {
-		case ch <- app.Deny:
+		case ch <- app.DenyExpired: // the client left without answering
 		default:
 		}
 		delete(cn.pending, id)

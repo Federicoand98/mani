@@ -22,29 +22,64 @@ observability:
     path: ./runs
 ```
 
-The record holds the run id, its source, start and end, status, the counters (tokens, tool calls,
-blocked calls), the structured result if the manifest declared one, and the full event list:
+The record holds:
+
+- the run id, its source, start and end, and its status;
+- who ran it: the agent's name, the manifest it was read from, the provider and the model;
+- the task it was given and the answer it gave, or the error that stopped it;
+- the limits in force when it started (`max_tokens`, `max_tool_calls`, `max_iterations`,
+  `max_duration`), so a later change to the manifest does not rewrite what this run was allowed;
+- the counters: tokens, tool calls, blocked calls, masked results;
+- the structured result, if the manifest declared one;
+- the full event list.
 
 ```
-run 82fdb6ffaa1b  ok  2026-08-31 18:06:10 → 18:06:13 (3.6s)
-source: trigger:every   tokens: 681 in / 96 out   tools: 2   blocked: 1
+run 82fdb6ffaa1b  error  2026-08-31 07:00:00 → 07:00:41 (41s)
+source: daily   tokens: 9870 in / 612 out   tools: 6   blocked: 2   masked: 0
+agent:  monitor (agents/monitor.yaml, ollama / qwen3.5:9b)
+task:   Morning check: report partitions above 85% and what fills them.
 
-18:06:11.8  tool_call      read       {"path":"incident.log"}
-18:06:11.8  tool_result    read       ok  559 bytes
-18:06:12.1  tool_call      delegate   {"agent":"researcher"}
-18:06:12.4     |- llm_call     messages=4 tools=2
-18:06:12.9     |- tool_result  read  ok  1204 bytes
-18:06:13.1  guardrail      bash       deny  "recursive delete"
-18:06:13.6  run_end        ok
+07:00:01.2  tool_call      bash       {"command":"df -h"}
+07:00:01.4  tool_result    bash       ok  612 bytes
+07:00:07.0  tool_call      delegate   {"agent":"researcher"}
+07:00:08.8     |- tool_result  bash  ok  74 bytes
+07:00:14.1  tool_call      bash       {"command":"journalctl --vacuum-size=2G"}
+07:00:14.1  permission     bash       unattended
+07:00:15.0  guardrail      bash       deny  "no deleting"
+07:00:41.3  run_end        error
+
+error  budget: max_tokens reached (limit: 10000)
 ```
+
+Each tool result keeps a preview of its output, the first 2 KB, written after redaction and
+truncation: the journal never holds what the model itself was not shown. Task and answer are kept
+up to 16 KB each.
 
 Subagent events are indented. The journal is a flat log read as a tree: every event carries a
 depth, and the reader does the nesting.
 
+## Who answered an "ask"
+
+A tool set to `ask` leaves a `permission` event with the answer it got:
+
+| Decision | Meaning |
+|---|---|
+| `allowed` | a person allowed this call (on a trigger with an allowing policy: the policy did) |
+| `allowed_always` | a person allowed the tool for the rest of the session |
+| `remembered` | allowed earlier, nobody was asked this time |
+| `denied` | a person said no |
+| `expired` | someone could have answered, nobody did within 10 minutes |
+| `unattended` | nobody to ask: a trigger, `mani run`, an API call |
+
+The last three count as blocked calls, with the calls a rule or the policy denied.
+
+Runs recorded by an older mani have none of the fields above beyond the counters and the events:
+they read as runs of an unknown agent.
+
 ## The source field
 
-Every run records where it came from: `cli`, `tui`, `server`, `mcp`, `batch`, `flow`,
-`trigger:<name>`. That one field answers the question you will actually have in front of a
+Every run records where it came from: `cli`, `tui`, `web`, `server`, `mcp`, `batch`, `flow`, or
+the trigger that started it, `daily`, `cron` or `webhook`. That one field answers the question you will actually have in front of a
 surprising record, which is *who started this*.
 
 ## Two shapes on disk
@@ -74,7 +109,7 @@ mani runs --path ./runs.db --json | jq '.[].summary.blocked'
 ```
 
 A unique id prefix is enough, the way `git` works. The server exposes the same data on `GET /runs`
-with the same filters.
+with the same filters, and `mani web` shows the runs of every agent in its folder on its Runs page.
 
 ## Provenance: a result that knows where it came from
 

@@ -259,3 +259,76 @@ export interface DraftInput {
 export interface Draft {
   id: string;
 }
+/**
+ * Run is one row of the Runs page: a run of an agent of this folder, read from
+ * its journal. Agent is empty for runs recorded before mani wrote it.
+ */
+export interface Run {
+  id: string;
+  agent: string;
+  agentPath: string; // the manifest of this folder it came from, when it is known
+  model: string; // "provider / model"
+  task: string;
+  source: string; // "web", "cli", "daily", "cron", "webhook", "server", "mcp", "flow", ...
+  sessionId: string;
+  title: string; // of the console conversation it belongs to, if any
+  status: string; // "running", "ok", "error" or "cancelled"
+  startedAt: string;
+  endedAt: string; // "" while it runs
+  summary: RunSummary;
+}
+export interface RunSummary {
+  llmCalls: number /* int */;
+  toolCalls: number /* int */;
+  inTokens: number /* int */;
+  outTokens: number /* int */;
+  blocked: number /* int */;
+  masked: number /* int */;
+  errors: number /* int */;
+}
+/**
+ * AgentRef names an agent of this folder by its name and its manifest.
+ */
+export interface AgentRef {
+  name: string;
+  path: string;
+}
+/**
+ * RunList is a page of runs, newest first. Next is the cursor of the following
+ * page ("" when there is none); Unrecorded lists the agents that keep no journal.
+ */
+export interface RunList {
+  runs: Run[];
+  next: string;
+  unrecorded: AgentRef[];
+}
+export interface RunLimits {
+  maxTokens: number /* int */;
+  maxToolCalls: number /* int */;
+  maxIterations: number /* int */;
+  maxDuration: string;
+}
+/**
+ * RunEvent is one step of a run, as the journal recorded it.
+ */
+export interface RunEvent {
+  seq: number /* int */;
+  at: string;
+  depth: number /* int */; // 0 for the agent, 1 and more for its subagents
+  kind: string; // "run_start", "llm_call", "llm_response", "tool_call", "tool_result", "permission", "guardrail", "run_end"
+  data: { [key: string]: any };
+}
+/**
+ * RunDetail is a whole run. Limits is null when the run did not record them;
+ * Conversation is the id of the console conversation it belongs to, if any.
+ */
+export interface RunDetail extends Run {
+  manifest: string; // the file the runner read, as it named it
+  answer: string;
+  error: string;
+  limits?: RunLimits;
+  result: { [key: string]: any } | null;
+  events: RunEvent[];
+  conversation: string;
+  conversationTitle: string;
+}

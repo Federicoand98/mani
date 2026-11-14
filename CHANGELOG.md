@@ -152,6 +152,25 @@ library.
   `agent`. `mani init --help` lists them with what each gives you. The templates move to
   `internal/templates`, shared by `mani init` and `mani web`.
 
+- **Runs in `mani web` (fifth milestone).** A Runs page lists the runs of every agent in the
+  folder, whatever started them: the chat, `mani run`, a trigger, a flow, `mani serve`, MCP. It
+  filters by status, agent, source and period (the filters live in the URL), loads 50 at a time,
+  and refreshes itself every 3 seconds while the tab is visible. The messages of one chat
+  conversation fold into one row. A run opens on its task, its answer, a timeline where each tool
+  call reads as one step with the answer to its "ask", the rule that blocked or masked it and a
+  preview of its output, and the limits it used against those it ran with. "Download JSON" and
+  "Copy command" give the same run to the terminal; runs of a chat open their conversation.
+  Agents that keep no journal are listed with "Turn on", which adds `observability.journal` to
+  the manifest without touching the rest of the file. The Home shows the runs of the last day.
+
+- **The journal tells the whole run.** Each run records who ran it (agent name, manifest,
+  provider, model), its task, its answer or the error that stopped it, and the limits in force
+  when it started. Tool results keep a 2 KB preview of their output, written after redaction and
+  truncation. A tool set to `ask` leaves a `permission` event with the answer it got: `allowed`,
+  `allowed_always`, `remembered`, `denied`, `expired` or `unattended`; the last three count as
+  blocked calls. `mani runs <id>` prints agent, task, answers and errors. A SQLite journal from an
+  older mani gains its new columns when it is opened; older runs read as runs of an unknown agent.
+
 - **Custom model endpoints.** A provider can be any server that speaks the OpenAI, Anthropic or
   Ollama API: LM Studio, vLLM, llama.cpp, a company gateway. It lives in `config.json` with a
   `type`, an optional `label`, and an optional `models` list that wins over what the server
@@ -161,6 +180,13 @@ library.
   page; removing one deletes it from `config.json`.
 
 ### Changed
+
+- **A permission answer says why.** `app.Decision` gains `AllowRemembered`, `DenyExpired` and
+  `DenyUnattended`, so the journal can tell "nobody answered" from "no". `mani serve` and
+  `mani web` answer an expired request with `DenyExpired`, the daemon, `mani run`, the REST API and
+  the MCP server with `DenyUnattended`. A program that answers with `Deny` keeps working.
+  `journal.ListFilter` gains `Before`, a cursor for paging back in time, and `manifest.Spec`
+  gains `File`, the path `manifest.Load` read it from.
 
 - **`mani validate` lists every problem, each with its line,** instead of stopping at the first:
 
@@ -190,6 +216,8 @@ library.
   `manifest.Sources`; build one with `manifest.One("step")`.
 
 ### Fixed
+
+- Runs started from the terminal chat recorded no source; they record `tui`.
 
 - OpenAI and Anthropic streaming adapters support calls without a token callback, including
   compaction requests. Transient retries stop after a callback has emitted partial output.

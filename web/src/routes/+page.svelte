@@ -4,13 +4,22 @@
 	import { app, enabledProviders } from '#lib/state.svelte.ts';
 
 	const t = m.home;
-	import { agentsApi, api } from '#lib/api/client.ts';
+	import { agentsApi, api, runsApi } from '#lib/api/client.ts';
+	import type { RunList } from '#lib/api/types.ts';
+	import { when } from '#lib/runs/runs.ts';
 
 	const connected = $derived(enabledProviders().length);
 	let chats = $state(0);
 	let agentCount = $state(0);
 	agentsApi.list().then((r) => (agentCount = r.agents.length), () => {});
 	api.conversations().then((r) => (chats = r.conversations.length), () => {});
+
+	// Recent runs (decision M5-7): the last day, errors first.
+	let recent = $state<RunList | null>(null);
+	runsApi.list('?period=24h&limit=200').then((r) => (recent = r), () => {});
+	const errors = $derived(recent?.runs.filter((r) => r.status === 'error') ?? []);
+	const runningCount = $derived(recent?.runs.filter((r) => r.status === 'running').length ?? 0);
+	const highlights = $derived((errors.length ? errors : (recent?.runs ?? [])).slice(0, 3));
 </script>
 
 <svelte:head><title>{t.title} - mani</title></svelte:head>
@@ -53,7 +62,57 @@
 	</div>
 </section>
 
+{#if recent && (recent.runs.length || agentCount > 0)}
+	<section class="card start">
+		<div class="row between">
+			<h2>{t.recentRuns}</h2>
+			<a class="btn ghost small" href="/runs">{t.allRuns}</a>
+		</div>
+		{#if recent.runs.length}
+			<div class="row counts sm">
+				<span><b>{recent.runs.length}{recent.next ? '+' : ''}</b> <span class="mu">{t.today}</span></span>
+				<a href="/runs?status=error&period=24h"><b class:bad={errors.length > 0}>{errors.length}</b> <span class="mu">{t.errors}</span></a>
+				{#if runningCount}<span><b>{runningCount}</b> <span class="mu">{t.running}</span></span>{/if}
+			</div>
+			<div class="recent">
+				{#each highlights as r (r.id)}
+					<a class="step" href="/runs/{r.id}">
+						<span class="badge {r.status === 'error' ? 'error' : r.status === 'ok' ? 'ok' : 'muted'}">{m.runs.statuses[r.status] ?? r.status}</span>
+						<span class="grow"><b class="sm">{r.agent || m.runs.unknownAgent}</b><span class="sm mu ellipsis">{r.task}</span></span>
+						<span class="cap">{when(r.startedAt)}</span>
+					</a>
+				{/each}
+			</div>
+		{:else}
+			<p class="sm mu">{t.noRuns}</p>
+		{/if}
+	</section>
+{/if}
+
 <style>
+	.between {
+		justify-content: space-between;
+	}
+	.counts {
+		gap: 16px;
+	}
+	.counts a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.bad {
+		color: var(--er);
+	}
+	.recent {
+		display: flex;
+		flex-direction: column;
+	}
+	.ellipsis {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.start {
 		display: flex;
 		flex-direction: column;

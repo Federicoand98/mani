@@ -120,7 +120,7 @@ func (s *Server) handleCall(ctx context.Context, req *mcp.CallToolRequest) (*mcp
 	for ev := range ch {
 		switch ev.Type {
 		case app.EventPermissionRequest:
-			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny
+			ev.Payload.(app.PermissionRequestPayload).Respond <- app.DenyUnattended
 
 		case app.EventDone:
 			p := ev.Payload.(app.DonePayload)

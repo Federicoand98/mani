@@ -20,6 +20,8 @@ import type {
 	Provider,
 	ProviderInput,
 	ProviderList,
+	RunDetail,
+	RunList,
 	TestResult
 } from './types.ts';
 
@@ -99,3 +101,10 @@ export const agentsApi = {
 };
 
 const c = (id: string) => '/conversations/' + encodeURIComponent(id);
+
+export const runsApi = {
+	/** query comes from apiQuery in #lib/runs/runs.ts. */
+	list: (query: string, signal?: AbortSignal) => call<RunList>('GET', '/runs' + query, undefined, signal),
+	get: (id: string, after = -1, signal?: AbortSignal) =>
+		call<RunDetail>('GET', '/runs/' + encodeURIComponent(id) + (after >= 0 ? '?after=' + after : ''), undefined, signal)
+};

@@ -79,7 +79,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, rt *app.Runtime
 	for ev := range rt.Execute(app.WithSource(r.Context(), "server"), body.Input) {
 		switch ev.Type {
 		case app.EventPermissionRequest:
-			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny
+			ev.Payload.(app.PermissionRequestPayload).Respond <- app.DenyUnattended
 		case app.EventUsage:
 			u := ev.Payload.(app.UsagePayload)
 			usage.Input += u.Input

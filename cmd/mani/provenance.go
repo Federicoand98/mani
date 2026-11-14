@@ -37,7 +37,7 @@ func consume(ch <-chan app.Event) turnResult {
 	for ev := range ch {
 		switch ev.Type {
 		case app.EventPermissionRequest:
-			ev.Payload.(app.PermissionRequestPayload).Respond <- app.Deny
+			ev.Payload.(app.PermissionRequestPayload).Respond <- app.DenyUnattended
 		case app.EventUsage:
 			p := ev.Payload.(app.UsagePayload)
 			t.InTokens += p.Input

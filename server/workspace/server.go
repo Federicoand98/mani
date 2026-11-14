@@ -78,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	s.api(mux, "POST /api/agents/check", s.handleCheckAgent)
 	s.api(mux, "GET /api/folders", s.handleFolders)
 	s.api(mux, "POST /api/folders/pick", s.handlePickFolder)
+	s.api(mux, "GET /api/runs", s.handleListRuns)
+	s.api(mux, "GET /api/runs/{id}", s.handleGetRun)
 	s.api(mux, "GET /api/templates", s.handleTemplates)
 	s.api(mux, "POST /api/drafts", s.handleCreateDraft)
 	s.api(mux, "GET /api/drafts/{id}/ws", s.handleDraftSocket)
