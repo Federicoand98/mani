@@ -1,6 +1,7 @@
 <script lang="ts">
 	import AddProviderDialog from '#lib/components/AddProviderDialog.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import ModelLimitsDialog from '#lib/components/ModelLimitsDialog.svelte';
 	import { api, ApiError } from '#lib/api/client.ts';
 	import type { Provider } from '#lib/api/types.ts';
 	import { m } from '#lib/messages/en.ts';
@@ -14,6 +15,8 @@
 	let models = $state<Record<string, Models>>({});
 	let tests = $state<Record<string, { ok: boolean; text: string } | 'running'>>({});
 	let confirming = $state<string | null>(null);
+	let limitsOpen = $state(false);
+	let limitsProvider = $state<Provider | null>(null);
 
 	const enabled = $derived(enabledProviders());
 
@@ -130,6 +133,7 @@
 									<button class="btn danger small" onclick={() => remove(p)}>{t.confirmRemove}</button>
 								{:else}
 									<button class="btn ghost small" disabled={tr === 'running'} onclick={() => test(p)}>{tr === 'running' ? t.testing : t.test}</button>
+									<button class="btn ghost small" onclick={() => { limitsProvider = p; limitsOpen = true; }}>{m.context.limitsTitle}</button>
 									<button class="btn ghost small" onclick={() => (confirming = p.name)}>{t.remove}</button>
 								{/if}
 							</div>
@@ -145,6 +149,7 @@
 {/if}
 
 <AddProviderDialog bind:open={addOpen} providers={app.providers} onadded={added} />
+<ModelLimitsDialog bind:open={limitsOpen} provider={limitsProvider} models={limitsProvider ? models[limitsProvider.name]?.list ?? [] : []} onsaved={async () => { await loadProviders(); toast(m.context.saved); }} />
 
 <style>
 	.head {
