@@ -151,14 +151,15 @@ export class Manifest {
 
 	// --- rendering -------------------------------------------------------------
 
-	private scalarText(v: unknown, like?: Scalar, keyCol = 0): string {
+	private scalarText(v: unknown, like?: Scalar, keyCol = 0, flow = false): string {
 		if (typeof v !== 'string') return String(v);
 		if (like?.type === 'QUOTE_DOUBLE') return JSON.stringify(v);
 		if (like?.type === 'QUOTE_SINGLE') return `'${v.replace(/'/g, "''")}'`;
+		if (flow) return this.flowText(v);
 		if (v.includes('\n') || like?.type === 'BLOCK_LITERAL' || like?.type === 'BLOCK_FOLDED') {
 			const pad = ' '.repeat(keyCol + 2);
 			const body = v.replace(/\n$/, '').split('\n').map((l) => (l ? pad + l : ''));
-			return `${v.endsWith('\n') ? '|' : '|-'}\n${body.join('\n')}`;
+			return `${v.endsWith('\n\n') ? '|+' : v.endsWith('\n') ? '|' : '|-'}\n${body.join('\n')}`;
 		}
 		return stringify(v, { lineWidth: 0 }).trimEnd();
 	}
@@ -167,10 +168,12 @@ export class Manifest {
 		if (Array.isArray(v)) return `[${v.map((x) => this.flowText(x)).join(', ')}]`;
 		if (v && typeof v === 'object') {
 			return `{ ${Object.entries(v)
-				.map(([k, x]) => `${k}: ${this.flowText(x)}`)
+				.map(([k, x]) => `${this.flowText(k)}: ${this.flowText(x)}`)
 				.join(', ')} }`;
 		}
-		return typeof v === 'string' ? stringify(v, { lineWidth: 0 }).trimEnd() : String(v);
+		return typeof v === 'string'
+			? stringify([v], { collectionStyle: 'flow', flowCollectionPadding: false, lineWidth: 0 }).trimEnd().slice(1, -1)
+			: String(v);
 	}
 
 	/** Block YAML for a value, every line indented by col. */
@@ -201,7 +204,14 @@ export class Manifest {
 			const keyCol = this.col(this.lineStart(start) + (this.text.slice(this.lineStart(start)).match(/^\s*/)?.[0].length ?? 0));
 			let end = valueEnd;
 			if (node.type === 'BLOCK_LITERAL' || node.type === 'BLOCK_FOLDED') end = this.lineEnd(this.lastChar(node)) - 1;
-			return this.splice(start, end, this.scalarText(value, node, keyCol));
+			const parent = (path.length > 1 ? this.doc.getIn(path.slice(0, -1), true) : this.doc.contents) as Node | null;
+			const flow = (isMap(parent) || isSeq(parent)) && parent.flow === true;
+			let replacement = this.scalarText(value, node, keyCol, flow);
+			if (replacement.startsWith('|+\n')) {
+				end += this.text.slice(end).match(/^(?:[ \t]*\r?\n)+/)?.[0].length ?? 0;
+				replacement += '\n';
+			}
+			return this.splice(start, end, replacement);
 		}
 
 		const coll = node as YAMLMap | YAMLSeq;

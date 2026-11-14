@@ -7,6 +7,7 @@ import type {
 	Draft,
 	TemplateList,
 	FolderList,
+	NativeFolderResult,
 	Conversation,
 	ConversationInput,
 	ConversationList,
@@ -33,16 +34,18 @@ export class ApiError extends Error {
 	}
 }
 
-export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
 	let res: Response;
 	try {
 		res = await fetch('/api' + path, {
 			method,
+			signal,
 			credentials: 'same-origin',
 			headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
 			body: body === undefined ? undefined : JSON.stringify(body)
 		});
-	} catch {
+	} catch (e) {
+		if (signal?.aborted) throw e;
 		throw new ApiError(0, "mani isn't answering");
 	}
 	let data: unknown = null;
@@ -89,6 +92,7 @@ export const agentsApi = {
 	remove: (path: string) => call<null>('DELETE', a(path)),
 	check: (text: string, path: string) => call<CheckResult>('POST', '/agents/check', { text, path }),
 	folders: (path: string) => call<FolderList>('GET', '/folders?path=' + encodeURIComponent(path)),
+	pickFolder: (path: string, signal?: AbortSignal) => call<NativeFolderResult>('POST', '/folders/pick', { path }, signal),
 	templates: () => call<TemplateList>('GET', '/templates'),
 	draft: (text: string, folder: string) => call<Draft>('POST', '/drafts', { text, folder }),
 	endDraft: (id: string) => call<null>('DELETE', '/drafts/' + encodeURIComponent(id))

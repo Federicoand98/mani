@@ -154,6 +154,29 @@ The first one creates `<dir>/.mani/.gitignore`, so they stay out of git without 
 project's own ignore file. A reply in progress keeps running when the browser tab closes, and
 stopping `mani web` stops it and saves what was written.
 
+### Creating an agent
+
+Choose a template under **Agents - New agent**, or import an existing YAML file. The workbench
+keeps configuration beside a real trial chat; drag the divider, or focus it and use the arrow
+keys, to resize them. Small screens switch between Configure and Try agent.
+
+Instructions support Markdown source and preview, preserving newlines and indentation in the
+manifest. Tools selects the available capabilities; Policy sets Allow, Ask or Deny. Output,
+Limits, Run, Records and File are under **Advanced options**. Drafts survive a page reload.
+Edits patch only the YAML values involved, preserving template comments and untouched includes.
+
+**Start trial** builds an ephemeral agent from the current settings. Its tools execute for
+real, with approvals in the conversation, but its history and journal are not saved. After
+editing settings, **Apply changes** explicitly starts a fresh trial; it is unavailable while
+the current turn is active. Stop or finish that turn first.
+
+**Workspace folder - Browse** opens the operating system's native directory selector on the
+machine running mani. It can select outside `--dir`, subject to OS permissions; file tools are
+then confined to the selected workspace. The separate manifest destination under File remains
+inside `--dir`. Linux needs a desktop session and `zenity` or `kdialog`; macOS uses its native
+AppleScript chooser and Windows uses PowerShell's native folder dialog. When native selection
+is unavailable, the console reports the error and the path can still be entered manually.
+
 ## `mani init`
 
 | Flag | Default | Meaning |

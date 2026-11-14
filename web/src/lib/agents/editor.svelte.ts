@@ -13,9 +13,12 @@ export class ManifestState {
 	text = $state('');
 	problems = $state<Problem[]>([]);
 	rev = $state(0);
+	checking = $state(false);
+	checkError = $state('');
 	m = new Manifest('');
 
 	private checkTimer: ReturnType<typeof setTimeout> | undefined;
+	private checkEpoch = 0;
 
 	constructor(path: string, text = '') {
 		this.path = path;
@@ -66,16 +69,31 @@ export class ManifestState {
 
 	scheduleCheck() {
 		clearTimeout(this.checkTimer);
+		this.checkEpoch++;
+		this.checking = true;
+		this.checkError = '';
 		this.checkTimer = setTimeout(() => this.check(), 350);
 	}
 
 	async check() {
+		clearTimeout(this.checkTimer);
+		const text = this.text, path = this.path;
+		const epoch = ++this.checkEpoch;
+		this.checking = true;
 		try {
-			this.problems = (await agentsApi.check(this.text, this.path)).problems;
-		} catch {
-			// the next edit checks again
+			const result = await agentsApi.check(text, path);
+			if (epoch === this.checkEpoch && text === this.text && path === this.path) {
+				this.problems = result.problems;
+				this.checkError = '';
+			}
+		} catch (e) {
+			if (epoch === this.checkEpoch && text === this.text && path === this.path) this.checkError = (e as Error).message;
+		} finally {
+			if (epoch === this.checkEpoch && text === this.text && path === this.path) this.checking = false;
 		}
 	}
+
+	dispose() { clearTimeout(this.checkTimer); this.checkEpoch++; }
 }
 
 // The editor of a manifest saved on disk: load, save with a version, and watch

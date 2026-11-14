@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -30,10 +31,14 @@ type Server struct {
 	device deviceFlow
 	chats  *chats
 	agents agentRuntimes
+
+	folderMu   sync.Mutex
+	pickFolder func(context.Context, string) (string, bool, error)
 }
 
 func New(opt Options) *Server {
 	s := &Server{opt: opt, auth: newSessions(opt.Token, opt.OnLogin), chats: newChats(opt.Dir)}
+	s.pickFolder = desktopFolderPicker().pick
 	s.chats.agent = s.acquireAgent
 	if opt.Assets != nil {
 		if fi, err := fs.Stat(opt.Assets, "index.html"); err == nil && !fi.IsDir() {
@@ -72,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	s.api(mux, "DELETE /api/agents/file/{path...}", s.handleDeleteAgent)
 	s.api(mux, "POST /api/agents/check", s.handleCheckAgent)
 	s.api(mux, "GET /api/folders", s.handleFolders)
+	s.api(mux, "POST /api/folders/pick", s.handlePickFolder)
 	s.api(mux, "GET /api/templates", s.handleTemplates)
 	s.api(mux, "POST /api/drafts", s.handleCreateDraft)
 	s.api(mux, "GET /api/drafts/{id}/ws", s.handleDraftSocket)

@@ -15,6 +15,16 @@ library.
 
 ### Added
 
+- **Agent creation workbench.** A resizable configuration/trial split replaces the seven-step
+  wizard. Instructions have Markdown source and preview; tool access uses Allow/Ask/Deny
+  segments, with less-used fields under Advanced options. Templates, imports, draft restoration
+  and precise YAML edits remain intact. Trials still run real tools with inline approvals;
+  changed settings require an explicit fresh trial instead of replaying actions.
+  Workspace Browse uses an authenticated OS-native directory dialog and returns the absolute
+  selected path, including outside the console folder. Manifest destinations remain confined
+  to the console folder. Linux requires zenity or kdialog and a desktop session; unsupported
+  environments report an error and keep manual path entry available.
+
 - **Managed chat context.** Provider/model limits can be discovered or configured manually.
   Input and shared-context ceilings are distinct, with a configurable output reserve (4,096
   tokens by default). Console and terminal model-only chats summarize older complete turns at

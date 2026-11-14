@@ -221,6 +221,19 @@ export interface FolderList {
   folders: string[];
 }
 /**
+ * NativeFolderRequest optionally starts the OS dialog at a directory on this machine.
+ */
+export interface NativeFolderRequest {
+  path?: string;
+}
+/**
+ * NativeFolderResult contains the absolute directory selected outside or inside the workspace.
+ */
+export interface NativeFolderResult {
+  path: string;
+  cancelled: boolean;
+}
+/**
  * Template is a manifest to start a new agent from, shared with mani init.
  */
 export interface Template {

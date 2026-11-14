@@ -14,10 +14,11 @@
 	import ContextMeter from './ContextMeter.svelte';
 	import { contextSummarized, reduceContext } from '../chat/context.ts';
 	import { m as messages } from '../messages/en.ts';
+	import { toast } from '../state.svelte.ts';
 
 	// A trial of an agent that is not saved yet (M4-4): a real conversation, tools
 	// and approvals included, that mani keeps in memory and drops at the end.
-	let { text, folder, who, onworked }: { text: string; folder: string; who: string; onworked: () => void } = $props();
+	let { text, folder, who, onworked, onbusy }: { text: string; folder: string; who: string; onworked: () => void; onbusy?: (busy: boolean) => void } = $props();
 
 	type Entry = { kind: 'user'; text: string } | { kind: 'reply'; segments: Segment[]; error: string };
 	let history = $state<Entry[]>([]);
@@ -30,24 +31,34 @@
 	let log: HTMLElement | undefined = $state();
 	let socket: ChatSocket | null = null;
 	let draftId = '';
+	let destroyed = false;
+	$effect(() => onbusy?.(turn.status !== 'idle'));
 
 	onMount(async () => {
 		try {
 			const d = await agentsApi.draft(text, folder);
+			if (destroyed) {
+				await agentsApi.endDraft(d.id);
+				return;
+			}
 			draftId = d.id;
 			socket = new ChatSocket(d.id, onMessage, () => {}, `/api/drafts/${encodeURIComponent(d.id)}/ws`);
 			ready = true;
 		} catch (e) {
-			error = `The agent cannot start yet: ${(e as Error).message}. Go back to Check.`;
+			if (!destroyed) error = `The agent cannot start yet: ${(e as Error).message}. Review the agent settings.`;
+			else toast((e as Error).message);
 		}
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		socket?.close();
-		if (draftId) agentsApi.endDraft(draftId).catch(() => {});
+		onbusy?.(false);
+		if (draftId) agentsApi.endDraft(draftId).catch((e: Error) => toast(e.message));
 	});
 
 	async function onMessage(m: ServerMsg) {
+		if (destroyed) return;
 		if (contextSummarized(context, m)) summarized = true;
 		context = reduceContext(context, m);
 		turn = reduce(turn, m, Date.now());
@@ -78,7 +89,7 @@
 		{#if error}
 			<div class="banner error" role="alert"><Icon name="warn" /><span>{error}</span></div>
 		{:else if !history.length && turn.status === 'idle'}
-			<p class="sm mu hint">Give it a real task. Tools run for real, inside its working folder; nothing of this conversation is kept.</p>
+			<p class="sm mu hint">Tools run for real. Trial history is not saved.</p>
 		{/if}
 		{#each history as h, i (i)}
 			{#if h.kind === 'user'}
@@ -119,15 +130,15 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
+		flex: 1;
+		min-height: 0;
 	}
 	.log {
-		min-height: 260px;
-		max-height: 460px;
+		min-height: 0;
+		flex: 1;
 		overflow: auto;
-		border: 1px solid var(--bd);
-		border-radius: var(--r-card);
 		background: var(--bg);
-		padding: 16px;
+		padding: 8px 0;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;

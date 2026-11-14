@@ -212,6 +212,17 @@ type FolderList struct {
 	Folders []string `json:"folders"`
 }
 
+// NativeFolderRequest optionally starts the OS dialog at a directory on this machine.
+type NativeFolderRequest struct {
+	Path string `json:"path,omitempty"`
+}
+
+// NativeFolderResult contains the absolute directory selected outside or inside the workspace.
+type NativeFolderResult struct {
+	Path      string `json:"path"`
+	Cancelled bool   `json:"cancelled"`
+}
+
 // Template is a manifest to start a new agent from, shared with mani init.
 type Template struct {
 	Name  string `json:"name"`

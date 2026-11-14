@@ -4,10 +4,13 @@ import { Manifest } from './doc.ts';
 import { NAME_RE } from './files.ts';
 import { read, write } from '../storage.ts';
 
-// The guided creation of an agent, minus the page: its steps, the checks that
-// gate each one, where the file goes, and the draft kept in the browser (M4-6).
-
-export const STEPS = ['Start from', 'Name and model', 'Tools', 'Permissions', 'Limits', 'Check', 'Try'] as const;
+export const MAIN_SECTIONS = [
+	['agent', 'Agent'], ['tools', 'Tools'], ['policy', 'Policy'], ['context', 'Context']
+] as const;
+export const ADVANCED_SECTIONS = [
+	['output', 'Output'], ['limits', 'Limits'], ['run', 'Run'], ['records', 'Records'], ['file', 'File']
+] as const;
+export type SetupSection = typeof MAIN_SECTIONS[number][0] | typeof ADVANCED_SECTIONS[number][0];
 
 export type Draft = {
 	template: string;
@@ -15,14 +18,24 @@ export type Draft = {
 	step: number;
 	folder: string;
 	tried: boolean;
+	section?: SetupSection;
+	filename?: string;
 };
 
 const KEY = 'mani:new-agent';
 
 export function loadDraft(): Draft | null {
 	try {
-		const d = JSON.parse(read(KEY) ?? 'null') as Draft | null;
-		return d && typeof d.text === 'string' && typeof d.step === 'number' ? d : null;
+		const d: unknown = JSON.parse(read(KEY) ?? 'null');
+		if (!d || typeof d !== 'object' || !('text' in d) || typeof d.text !== 'string'
+			|| !('template' in d) || typeof d.template !== 'string'
+			|| !('folder' in d) || typeof d.folder !== 'string') return null;
+		const step = 'step' in d && typeof d.step === 'number' && Number.isInteger(d.step) ? d.step : 1;
+		const legacy: SetupSection[] = ['agent', 'agent', 'tools', 'policy', 'limits', 'file', 'agent'];
+		const section = 'section' in d && [...MAIN_SECTIONS, ...ADVANCED_SECTIONS].some(([key]) => key === d.section)
+			? d.section as SetupSection : legacy[step] ?? 'agent';
+		return { template: d.template, text: d.text, folder: d.folder, step, tried: false, section,
+			filename: 'filename' in d && typeof d.filename === 'string' ? d.filename : undefined };
 	} catch {
 		return null;
 	}
@@ -33,42 +46,45 @@ export function saveDraft(d: Draft | null) {
 }
 
 /** Where the file will be written: the chosen folder, named after the agent (M4-3). */
-export function targetPath(folder: string, name: string): string {
+export function targetPath(folder: string, name: string, filename?: string): string {
 	const dir = folder && folder !== '.' ? folder.replace(/^\.\//, '').replace(/\/$/, '') + '/' : '';
-	return `${dir}${name}.yaml`;
+	return `${dir}${filename ?? `${name}.yaml`}`;
 }
 
 /**
- * What keeps a step from moving on, in words; empty when it may.
+ * What prevents creation or a trial; empty when the local fields are ready.
  * existing holds the agent files already in the folder; providers the enabled ones.
  */
-export function stepBlockers(step: number, text: string, folder: string, existing: string[], providers: string[]): string[] {
+export function creationBlockers(text: string, folder: string, existing: string[], providers: string[], filename?: string): string[] {
 	const m = new Manifest(text);
 	if (!m.ok) return ['The YAML does not parse: fix it before going on.'];
 	const out: string[] = [];
-	if (step === 1) {
 		const name = m.str(['identity', 'name']);
-		if (!NAME_RE.test(name)) out.push('Give it a name: letters, digits, - and _ (it also names the file).');
-		else if (existing.includes(targetPath(folder, name))) out.push(`${targetPath(folder, name)} already exists: pick another name.`);
+		if (!NAME_RE.test(name)) out.push('Name: use 1-64 letters, digits, hyphens or underscores.');
+		if (filename !== undefined && !/^[a-zA-Z0-9_-]{1,64}\.ya?ml$/.test(filename)) out.push('File name: use letters, digits, hyphens or underscores, ending in .yaml or .yml.');
+		if (existing.includes(targetPath(folder, name, filename))) out.push(`${targetPath(folder, name, filename)} already exists: pick another name.`);
 		if (!providers.includes(m.str(['identity', 'provider']))) out.push('Pick a model provider that is connected, or add one in Providers.');
 		if (!m.str(['identity', 'model'])) out.push('Pick a model.');
-		if (!m.str(['identity', 'prompt']) && !m.includeOf(['identity', 'prompt'])) out.push('Say in a sentence what it must do: it is all the model knows about its job.');
-	}
+		if (!m.str(['identity', 'prompt']) && !m.includeOf(['identity', 'prompt'])) out.push('Instructions are required.');
 	return out;
 }
 
-/** The step where a problem can be fixed, for "Fix" on the Check step. */
-export function stepFor(p: Problem): number {
+/** The workbench section that owns a validation problem. */
+export function sectionFor(p: Problem): SetupSection {
 	switch (blockOf(p)) {
 		case 'identity':
-			return 1;
+			return 'agent';
 		case 'capabilities':
-			return 2;
+			return p.path.startsWith('capabilities.workspace') ? 'agent' : 'tools';
 		case 'policy':
-			return 3;
+			return 'policy';
 		case 'limits':
-			return 4;
+			return 'limits';
+		case 'context': return 'context';
+		case 'output': return 'output';
+		case 'run': return 'run';
+		case 'observability': return 'records';
 		default:
-			return 5; // context, output, run, observability: not in the guided steps
+			return 'file';
 	}
 }

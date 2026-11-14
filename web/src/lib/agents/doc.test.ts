@@ -21,6 +21,27 @@ policy:
 `;
 
 describe('Manifest', () => {
+	it('quotes interpolation, punctuation and multiline strings inside flow collections', () => {
+		const m = new Manifest('identity: { name: demo, prompt: old }\ncapabilities:\n  tools:\n    - name: lookup\n      env: { KEY: old }\n');
+		m.set(['capabilities', 'tools', 0, 'env'], { KEY: '${NEW_TOKEN}', 'odd,key': 'a,b' });
+		m.set(['identity', 'prompt'], '## Task\nFirst\nSecond\n');
+		expect(m.ok).toBe(true);
+		expect(m.str(['identity', 'prompt'])).toBe('## Task\nFirst\nSecond\n');
+		expect(m.map(['capabilities', 'tools', 0, 'env'])).toEqual({ KEY: '${NEW_TOKEN}', 'odd,key': 'a,b' });
+	});
+
+	it('preserves Markdown whitespace and trailing blank lines when instructions are edited', () => {
+		for (const suffix of ['', '\n', '\n\n', '\n\n\n']) {
+			for (const separator of ['', '\n', '\n\n']) {
+			const m = new Manifest(`identity:\n  name: notes\n  prompt: |\n    Original\n${separator}limits:\n  max_tokens: 10\n`);
+			const prompt = '## Rules\nFirst line\nSecond line\n\n```text\n  indented\n```' + suffix;
+			m.set(['identity', 'prompt'], prompt);
+			expect(new Manifest(m.toString()).str(['identity', 'prompt'])).toBe(prompt);
+			expect(m.toString()).toContain('limits:\n  max_tokens: 10');
+			}
+		}
+	});
+
 	it('round-trips a hand-written file unchanged', () => {
 		expect(new Manifest(handWritten).toString()).toBe(handWritten);
 	});
