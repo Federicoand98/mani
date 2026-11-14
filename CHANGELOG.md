@@ -17,7 +17,9 @@ library.
 
 - **Agent creation workbench.** A resizable configuration/trial split replaces the seven-step
   wizard. Instructions have Markdown source and preview; tool access uses Allow/Ask/Deny
-  segments, with less-used fields under Advanced options. Templates, imports, draft restoration
+  segments, with less-used fields under Advanced options. Provider and model both use dropdowns;
+  model choices refresh for the selected provider without discarding existing unlisted values.
+  Templates, imports, draft restoration
   and precise YAML edits remain intact. Trials still run real tools with inline approvals;
   changed settings require an explicit fresh trial instead of replaying actions.
   Workspace Browse uses an authenticated OS-native directory dialog and returns the absolute

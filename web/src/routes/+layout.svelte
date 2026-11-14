@@ -87,7 +87,7 @@
 					<span class="ws" title={m.app.workspace}><Icon name="folder" size={16} />{app.health.dir}</span>
 				{/if}
 			</header>
-			<main id="main" tabindex="-1" class="content" class:full={page.url.pathname.startsWith('/chat')}>
+			<main id="main" tabindex="-1" class="content" class:full={page.url.pathname.startsWith('/chat') || page.url.pathname === '/agents/new'}>
 				{#if app.connection === 'offline'}
 					<div class="banner error" role="alert">
 						<Icon name="warn" />

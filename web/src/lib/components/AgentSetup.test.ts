@@ -359,8 +359,52 @@ it('reports model discovery failures explicitly and offers retry', async () => {
 	await vi.waitFor(() => {
 		flushSync();
 		expect(document.body.textContent).not.toContain('Model service offline');
-		expect(document.querySelectorAll('#setup-models option')).toHaveLength(2);
+		expect(document.querySelectorAll('#f-model option')).toHaveLength(2);
 	});
+});
+
+it('offers provider models in a dropdown and writes the selected model without changing template comments', async () => {
+	const ed = setup('agent');
+	await vi.waitFor(() => {
+		flushSync();
+		expect(document.querySelectorAll('#f-model option')).toHaveLength(2);
+	});
+	expect(control('identity.model').tagName).toBe('SELECT');
+	input('identity.model', 'large');
+	expect(ed.str(['identity', 'model'])).toBe('large');
+	expect(ed.text).toContain('name: helper  # Keep the name comment.');
+	expect(ed.text).toContain('prompt: !include instructions.md');
+});
+
+it('keeps an existing unlisted model visible rather than silently replacing it', async () => {
+	const ed = setup('agent', template.replace('model: small', 'model: configured-model'));
+	await vi.waitFor(() => {
+		flushSync();
+		expect(document.querySelectorAll('#f-model option')).toHaveLength(3);
+	});
+	expect(control('identity.model').value).toBe('configured-model');
+	expect(document.querySelector('#f-model option')?.textContent).toBe('configured-model (not listed)');
+	expect(ed.text).toBe(template.replace('model: small', 'model: configured-model'));
+});
+
+it('updates the dropdown for the selected provider and ignores an obsolete model response', async () => {
+	let resolveLocal: (result: { models: string[] }) => void = () => {};
+	app.providers = [...app.providers, { ...app.providers[0], name: 'remote', label: 'Remote' }];
+	vi.mocked(api.models).mockImplementation((name) => name === 'local'
+		? new Promise((resolve) => { resolveLocal = resolve; })
+		: Promise.resolve({ models: ['remote-model'] }));
+	setup('agent');
+	input('identity.provider', 'remote');
+	await vi.waitFor(() => {
+		flushSync();
+		expect([...document.querySelectorAll<HTMLOptionElement>('#f-model option')].map((option) => option.value)).toContain('remote-model');
+	});
+	resolveLocal({ models: ['obsolete-model'] });
+	await Promise.resolve(); flushSync();
+	const values = [...document.querySelectorAll<HTMLOptionElement>('#f-model option')].map((option) => option.value);
+	expect(values).not.toContain('obsolete-model');
+	expect(values).toContain('remote-model');
+	expect((control('identity.model') as HTMLSelectElement).disabled).toBe(false);
 });
 
 it('reports provider discovery failures instead of silently showing an empty list', async () => {

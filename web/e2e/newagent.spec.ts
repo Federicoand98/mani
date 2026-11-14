@@ -12,6 +12,8 @@ test('from a template to a working, saved agent, with a trial on the way', async
 
 	await page.getByRole('button', { name: /Documents assistant/ }).click();
 	await page.locator('#f-name').fill('handbook');
+	await expect(page.locator('select#f-model option[value="llama3.2:3b"]')).toHaveCount(1);
+	await page.locator('#f-model').selectOption('llama3.2:3b');
 	await page.getByRole('button', { name: 'Start trial' }).click();
 	await page.getByLabel('Task for the trial').fill('please read notes');
 	await page.keyboard.press('Enter');
@@ -24,6 +26,7 @@ test('from a template to a working, saved agent, with a trial on the way', async
 	const file = readFileSync(join(mani.home, 'handbook.yaml'), 'utf8');
 	expect(file).toContain('identity:                    # who thinks?');
 	expect(file).toContain('  name: handbook');
+	expect(parse(file).identity.model).toBe('llama3.2:3b');
 	// The trial left nothing behind.
 	expect(existsSync(join(mani.home, 'runs'))).toBe(false);
 

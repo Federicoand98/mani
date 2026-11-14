@@ -27,9 +27,12 @@
 	let providerError = $state('');
 	let modelError = $state('');
 	let models = $state<string[]>([]);
+	let modelsLoading = $state(false);
 	let providerRetry = $state(0);
 	let modelRetry = $state(0);
 	const provider = $derived(ed.str(['identity', 'provider']));
+	const model = $derived(ed.str(['identity', 'model']));
+	const connected = $derived(app.providers.some((p) => p.name === provider && p.enabled));
 	const verdicts = $derived(ed.map(['policy', 'tools']));
 	const fallback = $derived(String(verdicts.default ?? 'allow'));
 	const structuredOutput = $derived(ed.has(['output', 'schema']) || !!drafts[key(['output', 'schema'])]?.trim());
@@ -92,14 +95,15 @@
 	$effect(() => {
 		const name = provider;
 		void modelRetry;
-		const connected = app.providers.some((p) => p.name === name && p.enabled);
+		const available = connected;
 		let active = true;
 		models = [];
 		modelError = '';
-		if (connected) api.models(name).then((result) => {
-			if (active) models = result.models;
+		modelsLoading = available;
+		if (available) api.models(name).then((result) => {
+			if (active) { models = [...new Set(result.models)]; modelsLoading = false; }
 		}, (error: unknown) => {
-			if (active) modelError = `Models: ${error instanceof Error ? error.message : String(error)}`;
+			if (active) { modelError = `Models: ${error instanceof Error ? error.message : String(error)}`; modelsLoading = false; }
 		});
 		return () => { active = false; };
 	});
@@ -314,8 +318,12 @@
 			{@render select(['identity', 'provider'], 'Provider', app.providers.map((p) => [p.name, `${p.label}${p.enabled ? '' : ' (not connected)'}`]), '', 'f-provider')}
 			<div class="field">
 				<label for="f-model">Model</label>
-				<input id="f-model" class="input" list="setup-models" data-path="identity.model" value={ed.str(['identity', 'model'])} oninput={(e) => set(['identity', 'model'], e.currentTarget.value)} />
-				<datalist id="setup-models">{#each models as model (model)}<option value={model}></option>{/each}</datalist>
+				<select id="f-model" class="input" data-path="identity.model" value={model} disabled={modelsLoading || !connected} aria-busy={modelsLoading} onchange={(e) => set(['identity', 'model'], e.currentTarget.value)}>
+					{#if !model}<option value="" disabled>{modelsLoading ? 'Loading models…' : models.length ? 'Choose a model' : 'No models available'}</option>{/if}
+					{#if model && !models.includes(model)}<option value={model}>{model}{models.length ? ' (not listed)' : ''}</option>{/if}
+					{#each models as name (name)}<option value={name}>{name}</option>{/each}
+				</select>
+				{#if connected && !modelsLoading && !modelError && !models.length}<span class="help">No models listed. Add them in <a href="/providers">Providers</a>.</span>{/if}
 			</div>
 		</div>
 		{#if providerError}<div class="field-error" role="alert">{providerError} <button type="button" class="btn ghost small" onclick={() => providerRetry++}>Retry</button></div>{/if}
